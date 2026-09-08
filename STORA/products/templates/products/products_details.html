@@ -7,14 +7,17 @@
 <div class="info">
     <p><strong>ID: </strong>{{ product.internal_code }}</p>
     <p><strong>Category: </strong>{{ product.category }}</p>
-    <p><strong>Available Qty: </strong>{{ product.quantity }}</p>
+    <p><strong>Sold by: </strong>{{ product.get_unit_type_display }}</p>
+    {% if not product.is_recipe %}
+    <p><strong>Available Qty: </strong>{{ product.quantity|quantity_display:product.unit_type }}</p>
+    {% endif %}
     <p><strong>Delivery Price: </strong>{{ product.delivery_price|currency}}</p>
     <p><strong>Selling Price: </strong>{{ product.sell_price|currency }}</p>
 
     <h3>Associated Suppliers:</h3>
     <ul>
-        {% for supplier in product.supplier.all %}
-            <li> {{ supplier.name }}</li>
+        {% for link in product.product_suppliers.all %}
+            <li>{{ link.supplier.name }}{% if forloop.first %} (Primary){% endif %}</li>
         {% empty %}
             <li> No suppliers are associated to this product.</li>
         {% endfor %}
@@ -23,17 +26,32 @@
     <h3>Associated Barcodes:</h3>
     <ul>
         {% for barcode in product.barcode.all %}
-            <li> {{ barcode.code }}</li>
+            <li>{{ barcode.code }}{% if forloop.first %} (Primary){% endif %}</li>
         {% empty %}
             <li> No barcode is associated to this product.</li>
         {% endfor %}
     </ul>
 
+    {% if product.is_recipe %}
+    <h3>Recipe Ingredients:</h3>
+    <ul>
+        {% for link in product.recipe_ingredients.all %}
+            <li>{{ link.quantity|quantity_display:link.ingredient.unit_type }} {{ link.ingredient.name }}</li>
+        {% empty %}
+            <li> No ingredients defined yet.</li>
+        {% endfor %}
+    </ul>
+    {% if not product.ingredients_backfilled_at %}
+        <p style="color: #b8860b;">Ingredient stock for past sales of this product is being backfilled in the background.</p>
+    {% endif %}
+    {% endif %}
+
 </div>
 
 <div>
-    <a href="{% url 'product_edit' product.pk %}" class="button_edit">EDIT</a>
-    <a href="{% url 'product_delete' product.pk %}" class="button_delete">DELETE</a>
+    {% if perms.products.change_product %}<a href="{% url 'product_edit' product.pk %}" class="button_edit">EDIT</a>{% endif %}
+    {% if perms.products.delete_product %}<a href="{% url 'product_delete' product.pk %}" class="button_delete">DELETE</a>{% endif %}
+    <a href="{% url 'product_history' product.pk %}" class="button_history">HISTORY</a>
 </div>
 
 

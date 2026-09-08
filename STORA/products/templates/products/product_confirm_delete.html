@@ -5,6 +5,10 @@
 <h1>Are you sure you want to delete:
     "{{ product.name }}"?</h1>
 
+{% if protected_error %}
+<div style="color: red;">{{ protected_error }}</div>
+{% endif %}
+
 <form method="POST">
     {% csrf_token %}
     <button type="submit" class="delete_button">YES</button>

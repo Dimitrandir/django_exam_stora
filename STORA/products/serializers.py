@@ -5,7 +5,7 @@ from STORA.products.models import Product, Barcode
 class BarcodeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Barcode
-        fields = ['id', 'code']
+        fields = ['id', 'code', 'position']
 
 
 class ProductSerializer(serializers.ModelSerializer):

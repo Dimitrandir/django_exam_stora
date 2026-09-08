@@ -1,0 +1,67 @@
+{{ barcode_formset.management_form }}
+
+<p><strong>Barcodes</strong></p>
+
+<div id="barcode-forms-container">
+    {% for barcode_form in barcode_formset %}
+    <div class="barcode-row" style="border:1px solid #ddd; border-radius:4px; padding:8px 12px; margin-bottom:8px;">
+        <strong>Barcode #<span class="barcode-index">{{ forloop.counter }}</span></strong>
+        {{ barcode_form.id }}
+        {{ barcode_form.position }}
+        <p>
+            {{ barcode_form.code.label_tag }}
+            {{ barcode_form.code }}
+            {{ barcode_form.code.errors }}
+        </p>
+        {% if barcode_form.instance.pk %}
+        <label>{{ barcode_form.DELETE }} Remove this barcode</label>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+
+<button type="button" id="add-barcode-btn">+ Add another barcode</button>
+
+<template id="empty-barcode-form">
+    <div class="barcode-row" style="border:1px solid #ddd; border-radius:4px; padding:8px 12px; margin-bottom:8px;">
+        <strong>Barcode #<span class="barcode-index"></span></strong>
+        {{ barcode_formset.empty_form.id }}
+        {{ barcode_formset.empty_form.position }}
+        <p>
+            {{ barcode_formset.empty_form.code.label_tag }}
+            {{ barcode_formset.empty_form.code }}
+        </p>
+    </div>
+</template>
+
+<script>
+(function () {
+    var container = document.getElementById('barcode-forms-container');
+    var totalForms = document.getElementById('id_barcode-TOTAL_FORMS');
+    var addBtn = document.getElementById('add-barcode-btn');
+    var template = document.getElementById('empty-barcode-form');
+
+    // The displayed "Barcode #N" IS the stored `position` -- renumbering
+    // (add/remove rows) keeps the hidden position input in sync so what
+    // the user sees matches what gets saved.
+    function renumber() {
+        container.querySelectorAll('.barcode-row').forEach(function (row, i) {
+            row.querySelector('.barcode-index').textContent = i + 1;
+            var positionInput = row.querySelector('input[name$="-position"]');
+            if (positionInput) positionInput.value = i + 1;
+        });
+    }
+
+    addBtn.addEventListener('click', function () {
+        var index = parseInt(totalForms.value, 10);
+        var html = template.innerHTML.replace(/__prefix__/g, index);
+        var wrapper = document.createElement('div');
+        wrapper.innerHTML = html.trim();
+        container.appendChild(wrapper.firstElementChild);
+        totalForms.value = index + 1;
+        renumber();
+    });
+
+    renumber();
+})();
+</script>

@@ -1,0 +1,68 @@
+{{ supplier_formset.management_form }}
+
+<p><strong>Suppliers</strong></p>
+
+<div id="supplier-forms-container">
+    {% for supplier_form in supplier_formset %}
+    <div class="supplier-row" style="border:1px solid #ddd; border-radius:4px; padding:8px 12px; margin-bottom:8px;">
+        <strong>{% if forloop.first %}Primary Supplier{% else %}Alternate Supplier #<span class="supplier-index">{{ forloop.counter0 }}</span>{% endif %}</strong>
+        {{ supplier_form.id }}
+        {{ supplier_form.position }}
+        <p>
+            {{ supplier_form.supplier.label_tag }}
+            {{ supplier_form.supplier }}
+            {{ supplier_form.supplier.errors }}
+        </p>
+        {% if supplier_form.instance.pk %}
+        <label>{{ supplier_form.DELETE }} Remove this supplier</label>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+
+<button type="button" id="add-supplier-btn">+ Add another supplier</button>
+
+<template id="empty-supplier-form">
+    <div class="supplier-row" style="border:1px solid #ddd; border-radius:4px; padding:8px 12px; margin-bottom:8px;">
+        <strong>Alternate Supplier #<span class="supplier-index"></span></strong>
+        {{ supplier_formset.empty_form.id }}
+        {{ supplier_formset.empty_form.position }}
+        <p>
+            {{ supplier_formset.empty_form.supplier.label_tag }}
+            {{ supplier_formset.empty_form.supplier }}
+        </p>
+    </div>
+</template>
+
+<script>
+(function () {
+    var container = document.getElementById('supplier-forms-container');
+    var totalForms = document.getElementById('id_supplier-TOTAL_FORMS');
+    var addBtn = document.getElementById('add-supplier-btn');
+    var template = document.getElementById('empty-supplier-form');
+
+    // Same idea as the barcode formset: position 1 = primary, matching
+    // whatever's first in the list; renumbering keeps the hidden position
+    // input in sync with what's displayed.
+    function renumber() {
+        container.querySelectorAll('.supplier-row').forEach(function (row, i) {
+            var label = row.querySelector('strong');
+            label.textContent = i === 0 ? 'Primary Supplier' : 'Alternate Supplier #' + i;
+            var positionInput = row.querySelector('input[name$="-position"]');
+            if (positionInput) positionInput.value = i + 1;
+        });
+    }
+
+    addBtn.addEventListener('click', function () {
+        var index = parseInt(totalForms.value, 10);
+        var html = template.innerHTML.replace(/__prefix__/g, index);
+        var wrapper = document.createElement('div');
+        wrapper.innerHTML = html.trim();
+        container.appendChild(wrapper.firstElementChild);
+        totalForms.value = index + 1;
+        renumber();
+    });
+
+    renumber();
+})();
+</script>

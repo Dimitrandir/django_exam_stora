@@ -9,7 +9,7 @@
         <tr>
             <th>Name</th>
             <th>Description</th>
-            <th><a href="{% url 'category_create' %}" class="add-btn-table" title="Add a new category">+</a></th>
+            <th>{% if perms.products.add_category %}<a href="{% url 'category_create' %}" class="add-btn-table" title="Add a new category">+</a>{% endif %}</th>
         </tr>
     </thead>
     <tbody>
@@ -18,9 +18,9 @@
             <td>{{ category.name }}</td>
             <td>{{ category.description }}</td>
             <td>
-                <a href="{% url 'category_edit' category.pk %}">Edit</a>
-                |
-                <a href="{% url 'category_delete' category.pk %}">Delete</a>
+                {% if perms.products.change_category %}<a href="{% url 'category_edit' category.pk %}">Edit</a>{% endif %}
+                {% if perms.products.change_category and perms.products.delete_category %}|{% endif %}
+                {% if perms.products.delete_category %}<a href="{% url 'category_delete' category.pk %}">Delete</a>{% endif %}
             </td>
         </tr>
         {% empty %}

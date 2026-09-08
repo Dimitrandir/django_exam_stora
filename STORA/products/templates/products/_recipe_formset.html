@@ -1,0 +1,59 @@
+{{ recipe_formset.management_form }}
+
+<p><strong>Ingredients</strong></p>
+<p class="text-muted">Quantity is in the ingredient's own unit (kg for a weight ingredient, pcs for a piece one).</p>
+
+<div id="recipe-forms-container">
+    {% for ingredient_form in recipe_formset %}
+    <div class="recipe-row" style="border:1px solid #ddd; border-radius:4px; padding:8px 12px; margin-bottom:8px;">
+        {{ ingredient_form.id }}
+        <p>
+            {{ ingredient_form.ingredient.label_tag }}
+            {{ ingredient_form.ingredient }}
+            {{ ingredient_form.ingredient.errors }}
+        </p>
+        <p>
+            {{ ingredient_form.quantity.label_tag }}
+            {{ ingredient_form.quantity }}
+            {{ ingredient_form.quantity.errors }}
+        </p>
+        {% if ingredient_form.instance.pk %}
+        <label>{{ ingredient_form.DELETE }} Remove this ingredient</label>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+
+<button type="button" id="add-recipe-btn">+ Add another ingredient</button>
+
+<template id="empty-recipe-form">
+    <div class="recipe-row" style="border:1px solid #ddd; border-radius:4px; padding:8px 12px; margin-bottom:8px;">
+        {{ recipe_formset.empty_form.id }}
+        <p>
+            {{ recipe_formset.empty_form.ingredient.label_tag }}
+            {{ recipe_formset.empty_form.ingredient }}
+        </p>
+        <p>
+            {{ recipe_formset.empty_form.quantity.label_tag }}
+            {{ recipe_formset.empty_form.quantity }}
+        </p>
+    </div>
+</template>
+
+<script>
+(function () {
+    var container = document.getElementById('recipe-forms-container');
+    var totalForms = document.getElementById('id_recipe-TOTAL_FORMS');
+    var addBtn = document.getElementById('add-recipe-btn');
+    var template = document.getElementById('empty-recipe-form');
+
+    addBtn.addEventListener('click', function () {
+        var index = parseInt(totalForms.value, 10);
+        var html = template.innerHTML.replace(/__prefix__/g, index);
+        var wrapper = document.createElement('div');
+        wrapper.innerHTML = html.trim();
+        container.appendChild(wrapper.firstElementChild);
+        totalForms.value = index + 1;
+    });
+})();
+</script>

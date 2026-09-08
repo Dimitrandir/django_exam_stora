@@ -4,11 +4,13 @@
 
     <h1>Add a new product</h1>
 
-    {% if form.errors or barcode_formset.errors %}
+    {% if form.non_field_errors or barcode_formset.non_form_errors or supplier_formset.non_form_errors or recipe_formset.non_form_errors %}
     <div style="color: red;">
         <strong>Please correct these errors:</strong>
-        {{ form.errors }}
-        {{ barcode_formset.errors }}
+        {{ form.non_field_errors }}
+        {{ barcode_formset.non_form_errors }}
+        {{ supplier_formset.non_form_errors }}
+        {{ recipe_formset.non_form_errors }}
     </div>
     {% endif %}
 
@@ -18,6 +20,8 @@
         <p>
             {{ form.internal_code.label_tag }}
             {{ form.internal_code }}
+            <button type="button" id="suggest-first-free-code-btn" style="margin-left: 10px;">First free ({{ first_free_code }})</button>
+            <button type="button" id="suggest-next-free-code-btn">Next free ({{ next_free_code }})</button>
             {{ form.internal_code.errors }}
         </p>
 
@@ -25,6 +29,13 @@
             {{ form.name.label_tag }}
             {{ form.name }}
             {{ form.name.errors }}
+        </p>
+
+        <p>
+            {{ form.unit_type.label_tag }}
+            {{ form.unit_type }}
+            <small>{{ form.unit_type.help_text }}</small>
+            {{ form.unit_type.errors }}
         </p>
 
         <p>
@@ -46,25 +57,43 @@
             {{ form.category.errors }}
         </p>
 
-        {{ barcode_formset.management_form }}
-        <hr>
-        {% for barcode_form in barcode_formset %}
-            <div class="barcode-form">
-                {{ barcode_form.as_p }}
-            </div>
-        {% endfor %}
-        <hr>
         <p>
-            {{ form.supplier.label_tag }}
-            {{ form.supplier }}
-            <a href="{% url 'suppliers_create' %}" target="_blank" style="margin-left: 10px;">+ New supplier</a>
-            {{ form.supplier.errors }}
+            <label>{{ form.is_recipe }} {{ form.is_recipe.label }}</label>
+            <small>{{ form.is_recipe.help_text }}</small>
+            {{ form.is_recipe.errors }}
         </p>
+
+        <hr>
+        {% include 'products/_barcode_formset.html' %}
+        <hr>
+        {% include 'products/_supplier_formset.html' %}
+        <a href="{% url 'suppliers_create' %}" target="_blank">+ New supplier</a>
+        <hr>
+        <div id="recipe-section">
+            {% include 'products/_recipe_formset.html' %}
+        </div>
+        <hr>
 
         <button type="submit">Save</button>
         <a href="{% url 'product_list' %}">Cancel</a>
 
     </form>
 
+    <script>
+    document.getElementById('suggest-first-free-code-btn').addEventListener('click', function () {
+        document.getElementById('id_internal_code').value = '{{ first_free_code }}';
+    });
+    document.getElementById('suggest-next-free-code-btn').addEventListener('click', function () {
+        document.getElementById('id_internal_code').value = '{{ next_free_code }}';
+    });
+
+    (function () {
+        var checkbox = document.getElementById('id_is_recipe');
+        var section = document.getElementById('recipe-section');
+        function sync() { section.style.display = checkbox.checked ? '' : 'none'; }
+        checkbox.addEventListener('change', sync);
+        sync();
+    })();
+    </script>
 
 {% endblock %}

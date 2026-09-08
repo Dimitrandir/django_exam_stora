@@ -1,44 +1,273 @@
 {% extends 'base.html' %}
-{% load static %}
+{% load static cache_bust %}
+
+{% block main_class %}main-wide{% endblock %}
+{% block container_class %}container-fluid{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
+{% endblock %}
 
 {% block content %}
 
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
         <h1 class="h2 mb-1">Products List</h1>
-        <p class="text-muted mb-0">Overview of all products in stock.</p>
+        <p class="text-muted mb-0">Overview of all products in stock. Click a row to open it, a column header to sort, use the ▾ to filter.</p>
+    </div>
+    <div class="page-actions">
+        <button type="button" id="products-export-btn" class="btn btn-outline-secondary btn-sm">Export to Excel</button>
+        {% if perms.products.change_product %}
+        <button type="button" id="products-edit-toggle-btn" class="btn btn-outline-primary btn-sm">Enable Edit</button>
+        {% endif %}
+        {% if perms.products.add_product %}<a href="{% url 'product_create' %}" class="btn btn-primary btn-sm">+ New Product</a>{% endif %}
     </div>
 </div>
 
-<table>
-    <thead>
-        <tr>
-            <th>Code</th>
-            <th>Name</th>
-            <th>Category</th>
-            <th>Stock</th>
-            <th>
-                <a href="{% url 'product_create' %}" class="add-btn-table" title="New Product">+</a>
-            </th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for product in products %}
-        <tr>
-            <td>{{ product.internal_code }}</td>
-            <td>{{ product.name }}</td>
-            <td>{{ product.category }}</td>
-            <td>{{ product.quantity }}</td>
-            <td>
-                <a href="{% url 'product_details' product.pk %}" title="View product">
-                    <img src="{% static 'visibility.png' %}" alt="View" style="width:24px;height:24px;max-width:24px;max-height:24px;object-fit:contain;display:inline-block;vertical-align:middle;">
-            </td>
-        </tr>
-        <tr>
-            {% empty %}
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
+<div id="bulk-actions-bar" class="alert alert-secondary d-none align-items-center gap-2 flex-wrap mb-2">
+    <strong><span id="bulk-selected-count">0</span> selected</strong>
+    {% if perms.products.change_product %}
+    <select id="bulk-category-select" class="form-select form-select-sm" style="width: auto;">
+        <option value="">-- Category --</option>
+        {% for name in category_choices %}<option value="{{ name }}">{{ name }}</option>{% endfor %}
+    </select>
+    <button type="button" id="bulk-category-apply-btn" class="btn btn-sm btn-outline-primary">Apply Category</button>
 
+    <input type="number" id="bulk-price-input" class="form-control form-control-sm" style="width: 110px;" step="0.01" min="0.01" placeholder="Sell price">
+    <button type="button" id="bulk-price-apply-btn" class="btn btn-sm btn-outline-primary">Apply Price</button>
+    {% endif %}
+    {% if perms.products.delete_product %}
+    <button type="button" id="bulk-delete-btn" class="btn btn-sm btn-outline-danger ms-auto">Delete Selected</button>
+    {% endif %}
+</div>
+
+{{ products_data|json_script:"products-table-data" }}
+{{ category_choices|json_script:"category-choices-data" }}
+<div id="products-table" class="table-sm"></div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'vendor/sheetjs/xlsx.full.min.js' %}"></script>
+<script src="{% static 'vendor/tabulator/tabulator.min.js' %}"></script>
+<script src="{% static_v 'js/data-table.js' %}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    function currencyFormatter(cell) {
+        var v = Number(cell.getValue());
+        return isNaN(v) ? '' : v.toFixed(2) + ' eur';
+    }
+
+    var unitTypeLabels = {piece: 'Piece (pcs)', weight: 'Weight (kg)'};
+    function unitTypeFormatter(cell) {
+        return unitTypeLabels[cell.getValue()] || cell.getValue();
+    }
+
+    function stockFormatter(cell) {
+        var v = Number(cell.getValue());
+        if (isNaN(v)) return '';
+        var row = cell.getRow().getData();
+        return row.unit_type === 'weight' ? v.toFixed(3) + ' kg' : Math.round(v) + ' pcs';
+    }
+
+    function getCookie(name) {
+        var match = document.cookie.match('(?:^|; )' + name + '=([^;]*)');
+        return match ? decodeURIComponent(match[1]) : '';
+    }
+
+    var editMode = false;
+    var categoryChoices = JSON.parse(document.getElementById('category-choices-data').textContent);
+
+    // A column that merely *can* be edited (has an `editor`) swallows its
+    // clicks internally in Tabulator -- even while `editable` returns
+    // false -- so they never reach rowClick/cellClick. That would silently
+    // break "click row to open" on every editable column. So instead of a
+    // static editor + an editable() check, these fields start with NO
+    // editor at all, and the "Enable Edit" toggle adds/removes it via
+    // column.updateDefinition() -- see below.
+    var editorConfig = {
+        name: {editor: 'input'},
+        category: {editor: 'list', editorParams: {values: categoryChoices, clearable: true}},
+        unit_type: {editor: 'list', editorParams: {values: unitTypeLabels}},
+        sell_price: {editor: 'number', editorParams: {min: 0, step: 0.01}},
+        delivery_price: {editor: 'number', editorParams: {min: 0, step: 0.01}},
+    };
+
+    var table = initExcelStyleTable('#products-table', 'products-table-data', [
+        {
+            formatter: 'rowSelection', titleFormatter: 'rowSelection', hozAlign: 'center',
+            width: 40, headerSort: false, headerFilter: false, hideable: false,
+            cellClick: function (e, cell) { cell.getRow().toggleSelect(); },
+        },
+        {title: 'Code', field: 'internal_code', width: 120},
+        {title: 'Name', field: 'name', width: 300},
+        {title: 'Category', field: 'category', width: 130},
+        {title: 'Sold By', field: 'unit_type', width: 130, formatter: unitTypeFormatter},
+        {
+            title: 'Recipe', field: 'is_recipe', width: 90,
+            formatter: function (cell) { return cell.getValue() ? 'Yes' : 'No'; },
+            visible: false,
+        },
+        {
+            title: 'Sell Price', field: 'sell_price', width: 120, hozAlign: 'right', sorter: 'number',
+            formatter: currencyFormatter,
+        },
+        {
+            title: 'Delivery Price', field: 'delivery_price', width: 130, hozAlign: 'right', sorter: 'number',
+            formatter: currencyFormatter, visible: false,
+        },
+        {
+            // bottomCalc sums the raw numbers regardless of unit -- fine
+            // while everything's "piece", but once weight products are
+            // actually in use, a sum mixing pcs and kg stops being
+            // meaningful. Revisit (e.g. split into two calcs) then.
+            title: 'Stock', field: 'quantity', width: 110, hozAlign: 'right', sorter: 'number',
+            formatter: stockFormatter, bottomCalc: 'sum',
+        },
+        // Read-only: a product can have several barcodes/suppliers, but a
+        // grid needs a fixed number of columns. Editing them still happens
+        // on the product's own page, where the full list is managed.
+        {title: 'Barcode 1', field: 'barcode_1', width: 140},
+        {title: 'Barcode 2', field: 'barcode_2', width: 140, visible: false},
+        {title: 'Barcode 3', field: 'barcode_3', width: 140, visible: false},
+        {title: 'Supplier (Primary)', field: 'supplier_1', width: 160},
+        {title: 'Alt Supplier 1', field: 'supplier_2', width: 160, visible: false},
+        {title: 'Alt Supplier 2', field: 'supplier_3', width: 160, visible: false},
+    ], {placeholder: 'No products found.', selectableRows: true});
+
+    // Row click opens the product -- disabled while Edit mode is on, since
+    // every editable cell removes its own editor in that state (see below)
+    // and a stray click on the selection checkbox column (no field) should
+    // just select, not navigate.
+    table.on('rowClick', function (e, row) {
+        if (editMode) return;
+        var cellEl = e.target.closest('.tabulator-cell');
+        var field = cellEl ? cellEl.getAttribute('tabulator-field') : null;
+        if (field === null) return; // the selection checkbox column has no field
+        window.location = row.getData().view_url;
+    });
+
+    document.getElementById('products-export-btn').addEventListener('click', function () {
+        table.download('xlsx', 'products.xlsx', {sheetName: 'Products'});
+    });
+
+    var editToggleBtn = document.getElementById('products-edit-toggle-btn');
+    if (editToggleBtn) {
+        editToggleBtn.addEventListener('click', function () {
+            editMode = !editMode;
+            editToggleBtn.textContent = editMode ? 'Disable Edit' : 'Enable Edit';
+            editToggleBtn.classList.toggle('btn-outline-primary', !editMode);
+            editToggleBtn.classList.toggle('btn-primary', editMode);
+            document.getElementById('products-table').classList.toggle('edit-mode-active', editMode);
+
+            Object.keys(editorConfig).forEach(function (field) {
+                var column = table.getColumn(field);
+                if (editMode) {
+                    column.updateDefinition(editorConfig[field]);
+                } else {
+                    column.updateDefinition({editor: false});
+                }
+            });
+        });
+
+        table.on('cellEdited', function (cell) {
+            var field = cell.getField();
+            var productId = cell.getRow().getData().id;
+            var value = cell.getValue();
+
+            var body = new URLSearchParams();
+            body.set('field', field);
+            body.set('value', value === null || value === undefined ? '' : String(value));
+
+            fetch('/products/' + productId + '/inline-update/', {
+                method: 'POST',
+                headers: {'X-CSRFToken': getCookie('csrftoken')},
+                body: body,
+            })
+                .then(function (response) {
+                    return response.json().then(function (data) {
+                        return {ok: response.ok, data: data};
+                    });
+                })
+                .then(function (result) {
+                    if (!result.ok) {
+                        alert(result.data.error || 'Could not save the change.');
+                        cell.setValue(cell.getOldValue());
+                    }
+                })
+                .catch(function () {
+                    alert('Network error -- change was not saved.');
+                    cell.setValue(cell.getOldValue());
+                });
+        });
+    }
+
+    // Bulk actions on the selected rows.
+    var bulkBar = document.getElementById('bulk-actions-bar');
+    var bulkCount = document.getElementById('bulk-selected-count');
+
+    table.on('rowSelectionChanged', function (data) {
+        bulkCount.textContent = data.length;
+        bulkBar.classList.toggle('d-none', data.length === 0);
+        bulkBar.classList.toggle('d-flex', data.length > 0);
+    });
+
+    function bulkPost(action, value) {
+        var selected = table.getSelectedData();
+        if (!selected.length) return;
+
+        var body = new URLSearchParams();
+        body.set('action', action);
+        if (value !== undefined) body.set('value', value);
+        selected.forEach(function (row) { body.append('ids', row.id); });
+
+        return fetch('{% url "product_bulk_action" %}', {
+            method: 'POST',
+            headers: {'X-CSRFToken': getCookie('csrftoken')},
+            body: body,
+        }).then(function (response) {
+            return response.json().then(function (data) {
+                return {ok: response.ok, data: data};
+            });
+        });
+    }
+
+    var categoryApplyBtn = document.getElementById('bulk-category-apply-btn');
+    if (categoryApplyBtn) {
+        categoryApplyBtn.addEventListener('click', function () {
+            var value = document.getElementById('bulk-category-select').value;
+            bulkPost('set_category', value).then(function (result) {
+                if (!result.ok) { alert(result.data.error || 'Could not apply category.'); return; }
+                location.reload();
+            });
+        });
+    }
+
+    var priceApplyBtn = document.getElementById('bulk-price-apply-btn');
+    if (priceApplyBtn) {
+        priceApplyBtn.addEventListener('click', function () {
+            var value = document.getElementById('bulk-price-input').value;
+            if (!value) { alert('Enter a sell price first.'); return; }
+            bulkPost('set_sell_price', value).then(function (result) {
+                if (!result.ok) { alert(result.data.error || 'Could not apply price.'); return; }
+                location.reload();
+            });
+        });
+    }
+
+    var deleteBtn = document.getElementById('bulk-delete-btn');
+    if (deleteBtn) {
+        deleteBtn.addEventListener('click', function () {
+            var selected = table.getSelectedData();
+            if (!selected.length) return;
+            if (!confirm('Delete ' + selected.length + ' selected product(s)? This cannot be undone.')) return;
+
+            bulkPost('delete').then(function (result) {
+                if (result.data.error) alert(result.data.error);
+                location.reload();
+            });
+        });
+    }
+});
+</script>
 {% endblock %}

@@ -17,7 +17,7 @@
             <th>BULSTAT</th>
             <th>VAT Number</th>
             <th>
-                <a href="{% url 'suppliers_create' %}" class="add-btn-table" title="New Supplier">+</a>
+                {% if perms.products.add_suppliers %}<a href="{% url 'suppliers_create' %}" class="add-btn-table" title="New Supplier">+</a>{% endif %}
             </th>
         </tr>
     </thead>
@@ -28,13 +28,16 @@
             <td>{{ supplier.bulstat }}</td>
             <td>{{ supplier.vat_n }}</td>
             <td>
-                <a href="{% url 'suppliers_edit' supplier.pk %}" title="View supplier">
+                {% if perms.products.change_suppliers %}
+                <a href="{% url 'suppliers_edit' supplier.pk %}" title="Edit supplier">
                     <img src="{% static 'visibility.png' %}" alt="View" style="width:24px;height:24px;max-width:24px;max-height:24px;object-fit:contain;">
                 </a>
+                {% endif %}
             </td>
         </tr>
+        {% empty %}
         <tr>
-            {% empty %}
+            <td colspan="4">No suppliers found.</td>
         </tr>
         {% endfor %}
     </tbody>

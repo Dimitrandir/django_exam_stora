@@ -1,0 +1,76 @@
+{% extends 'base.html' %}
+{% load static cache_bust %}
+
+{% block main_class %}main-wide{% endblock %}
+{% block container_class %}container-fluid{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
+{% endblock %}
+
+{% block content %}
+
+<h1>History: {{ product.name }}</h1>
+
+<form method="get" class="mb-3">
+    {{ form.start_date.label_tag }} {{ form.start_date }}
+    {{ form.end_date.label_tag }} {{ form.end_date }}
+    <button type="submit" class="btn btn-primary btn-sm">Filter</button>
+    {{ form.non_field_errors }}
+</form>
+
+<div class="d-flex justify-content-end mb-2">
+    <button type="button" id="history-export-btn" class="btn btn-outline-secondary btn-sm">Export to Excel</button>
+</div>
+
+{{ events_data|json_script:"history-table-data" }}
+<div id="history-table" class="table-sm"></div>
+
+<hr>
+<a href="{% url 'product_details' product.pk %}">Cancel and back to product</a>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'vendor/sheetjs/xlsx.full.min.js' %}"></script>
+<script src="{% static 'vendor/tabulator/tabulator.min.js' %}"></script>
+<script src="{% static_v 'js/data-table.js' %}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var table = initExcelStyleTable('#history-table', 'history-table-data', [
+        {title: 'Date', field: 'date', width: 160},
+        {title: 'Event', field: 'event_type', width: 100},
+        {
+            title: 'Quantity', field: 'quantity_change', width: 110, hozAlign: 'right', sorter: 'number',
+            formatter: function (cell) {
+                var v = cell.getValue();
+                return v > 0 ? ('+' + v) : v;
+            },
+            bottomCalc: 'sum',
+            bottomCalcFormatter: function (cell) {
+                var v = cell.getValue();
+                return (v > 0 ? '+' : '') + v + ' net';
+            },
+        },
+        {
+            title: 'Unit Price', field: 'unit_price', width: 120, hozAlign: 'right', sorter: 'number',
+            formatter: function (cell) {
+                var v = Number(cell.getValue());
+                return isNaN(v) ? '' : v.toFixed(2) + ' eur';
+            },
+            bottomCalc: 'avg',
+            bottomCalcFormatter: function (cell) {
+                var v = Number(cell.getValue());
+                return isNaN(v) ? '' : v.toFixed(2) + ' eur avg';
+            },
+        },
+        {title: 'Supplier', field: 'supplier', width: 180},
+        {title: 'Cashier', field: 'cashier', width: 200},
+    ], {placeholder: 'No sales or deliveries for {{ product.name|escapejs }} in this period.'});
+
+    document.getElementById('history-export-btn').addEventListener('click', function () {
+        table.download('xlsx', 'product-history.xlsx', {sheetName: 'History'});
+    });
+});
+</script>
+{% endblock %}
