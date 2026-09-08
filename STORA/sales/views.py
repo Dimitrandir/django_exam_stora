@@ -15,7 +15,7 @@ from STORA.core.session_service import (
     get_cashier_operation_state,
     set_cashier_operation_state,
 )
-from STORA.core.utils import build_cashier_operation_state, build_restore_formset_data
+from STORA.core.utils import build_cashier_operation_state, build_restore_formset_data, dispatch_task
 from STORA.products.models import Product, Barcode
 from STORA.sales.forms import SaleForms, SaleItemFormSet
 from STORA.sales.models import SaleAttributes
@@ -43,7 +43,7 @@ def sales_add(request):
             formset.save()
             sale.save()
 
-            log_sale_completed.delay(sale.id)
+            dispatch_task(log_sale_completed, sale.id)
 
             clear_cashier_operation_state(request)
             return redirect('sales_list')
