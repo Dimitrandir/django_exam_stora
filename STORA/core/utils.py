@@ -1,3 +1,22 @@
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+def dispatch_task(task, *args, **kwargs) -> None:
+    """Fires a Celery task with `.delay()`, but never lets a down/unreachable
+    broker (e.g. Redis not running locally) turn into a 500 for the user.
+    These are all "fire and forget" background jobs -- nothing in the
+    request depends on their result, so a failed dispatch should only be
+    logged, not raised.
+    """
+    try:
+        task.delay(*args, **kwargs)
+    except Exception:
+        logger.warning('Could not schedule background task %s -- is the Celery broker running?',
+                       getattr(task, 'name', task), exc_info=True)
+
+
 def get_cashier_operation_type(path: str) -> str | None:
     if path == '/sales/add/':
         return 'sale'

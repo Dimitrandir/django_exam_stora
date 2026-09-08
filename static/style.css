@@ -1,0 +1,351 @@
+:root {
+    --primary-color: #2c3e50;
+    --secondary-color: #34495e;
+    --accent-color: #3498db;
+    --danger-color: #e74c3c;
+    --success-color: #27ae60;
+    --light-bg: #f4f7f6;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: var(--light-bg);
+    margin: 0;
+    color: #333;
+}
+
+/* Navigation */
+nav {
+    background-color: var(--primary-color);
+    padding: 1rem 2rem;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+nav a {
+    color: white;
+    text-decoration: none;
+    margin-right: 20px;
+    font-weight: bold;
+    transition: color 0.3s;
+}
+
+nav a:hover {
+    color: var(--accent-color);
+}
+
+/* Main Content */
+main {
+    max-width: 1100px;
+    margin: 2rem auto;
+    background: white;
+    padding: 2rem;
+    border-radius: 8px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+}
+
+/* Opt-out of the centered "card" look for pages that want to use the full
+   browser width -- e.g. data tables, where the card's max-width just wastes
+   space on the sides. Set via {% block main_class %}main-wide{% endblock %}. */
+main.main-wide {
+    max-width: none;
+    width: 100%;
+    margin: 1rem 0;
+    box-shadow: none;
+    border-radius: 0;
+}
+
+h1 { color: var(--primary-color); border-bottom: 2px solid var(--accent-color); padding-bottom: 10px; }
+
+/* Tables */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0;
+}
+
+.table {
+    background: white;
+}
+
+table, th, td {
+    border: 1px solid #ddd;
+}
+
+th {
+    background-color: var(--secondary-color);
+    color: white;
+    padding: 12px;
+    text-align: left;
+}
+
+td { padding: 10px; border-bottom: 1px solid #eee; }
+
+tr:hover { background-color: #f9f9f9; }
+
+/* Buttons */
+.btn, button, .button_edit, .button_delete {
+    padding: 8px 15px;
+    border-radius: 4px;
+    text-decoration: none;
+    display: inline-block;
+    cursor: pointer;
+    border: none;
+    font-weight: 600;
+}
+
+button, .btn-primary { background-color: var(--accent-color); color: white; }
+.button_edit { background-color: var(--success-color); color: white; margin-right: 5px; }
+.button_delete, .delete_button { background-color: var(--danger-color); color: white; }
+.button_cancel { background-color: #95a5a6; color: white; }
+
+
+.add-btn-table {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--success-color);
+    color: white !important;
+    width: 28px;
+    height: 28px;
+    text-decoration: none;
+    border-radius: 50%;
+    font-size: 20px;
+    font-weight: bold;
+    line-height: 1;
+    transition: transform 0.2s, background-color 0.2s;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.add-btn-table:hover {
+    background-color: #219150;
+    transform: scale(1.1);
+    color: white;
+}
+
+
+th:last-child {
+    text-align: center;
+    width: 50px;
+}
+
+/* Forms */
+form p { margin-bottom: 15px; }
+input[type="text"], input[type="number"], input[type="email"], select, textarea {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-sizing: border-box;
+}
+
+.card {
+    border-radius: 1rem;
+}
+
+.data-table {
+    width: 100%;
+    background: white;
+}
+
+.page-actions {
+    display: flex;
+    gap: .75rem;
+    flex-wrap: wrap;
+}
+
+.form-errors {
+    margin-bottom: 1rem;
+}
+
+.sale-form,
+.delivery-form {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 1rem;
+    box-shadow: 0 0.5rem 1rem rgba(0,0,0,.05);
+}
+
+.reports-dashboard,
+.reports-sales,
+.reports-deliveries {
+    padding: 0.5rem 0 1rem;
+}
+
+.report-filter__field label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 0.35rem;
+}
+
+.report-filter__field input,
+.report-filter__field select {
+    width: 100%;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid #ced4da;
+    border-radius: 0.5rem;
+    background: #fff;
+}
+
+.report-card__value {
+    font-weight: 700;
+    color: #0d6efd;
+    line-height: 1;
+}
+
+.report-actions {
+    margin-top: 1rem;
+}
+
+.report-link {
+    text-decoration: none;
+}
+
+.report-link:hover {
+    text-decoration: underline;
+}
+
+/* Sale Items Formset Row */
+.products-in-sale {
+    border-left: 4px solid var(--accent-color);
+    padding-left: 15px;
+    margin-bottom: 10px;
+    background: #fcfcfc;
+}
+
+.view-icon {
+    width: 8px !important;
+    height: 8px !important;
+    max-width: 8px !important;
+    max-height: 8px !important;
+    object-fit: contain;
+    display: inline-block;
+    vertical-align: middle;
+}
+.report-filter__fields {
+    align-items: end;
+}
+
+.report-filter__field {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+}
+
+.report-filter__field input,
+.report-filter__field select {
+    height: 48px;
+    box-sizing: border-box;
+}
+
+/* Excel-style header filter (Tabulator tables) */
+.excel-filter {
+    display: inline-block;
+}
+
+.excel-filter-toggle {
+    display: inline-block;
+    padding: 0 2px;
+    font-size: 11px;
+    font-weight: normal;
+    line-height: 1;
+    cursor: pointer;
+    user-select: none;
+}
+
+/* Positioned via JS (top/left) as position:fixed and appended to <body>,
+   so it floats above the table instead of being clipped by Tabulator's
+   header cell or pushing the row layout down. */
+.excel-filter-panel {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    background: white;
+    color: #333;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    padding: 8px;
+    max-height: 220px;
+    overflow-y: auto;
+    min-width: 160px;
+    text-align: left;
+    font-weight: normal;
+    text-transform: none;
+}
+
+.excel-filter-panel.is-open {
+    display: block;
+}
+
+.excel-filter-panel label {
+    display: block;
+    white-space: nowrap;
+    font-size: 13px;
+    font-weight: normal;
+    padding: 2px 0;
+}
+
+.excel-filter-search {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 4px 6px;
+    margin-bottom: 6px;
+    font-size: 13px;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+}
+
+/* Products grid "Enable Edit" mode -- tints editable cells so it's obvious
+   which ones you can type into. */
+.edit-mode-active .tabulator-editable {
+    background-color: #fff8e1;
+}
+
+/* Navbar global search dropdown */
+.global-search-results {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 1050;
+    background: white;
+    color: #333;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+    max-height: 400px;
+    overflow-y: auto;
+    margin-top: 2px;
+}
+
+.global-search-results.is-open {
+    display: block;
+}
+
+.global-search-group-title {
+    padding: 6px 10px 2px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #888;
+}
+
+.global-search-result {
+    display: block;
+    padding: 6px 10px;
+    font-size: 14px;
+    color: #333;
+    text-decoration: none;
+}
+
+.global-search-result:hover {
+    background-color: var(--light-bg);
+    color: var(--accent-color);
+}
+
+.global-search-empty {
+    padding: 10px;
+    font-size: 13px;
+    color: #888;
+}

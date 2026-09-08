@@ -1,26 +1,3 @@
-def get_cashier_operation_type(path: str) -> str | None:
-    if path == '/sales/add/':
-        return 'sale'
-
-    if path == '/deliveries/add/':
-        return 'delivery'
-
-    return None
-
-
-def get_cashier_operation_session_key() -> str:
-    return 'cashier_last_operation'
-
-
-def build_cashier_operation_state(operation_type: str, path: str, data: dict | None = None, active: bool = True) -> dict:
-    return {
-        'type': operation_type,
-        'path': path,
-        'active': active,
-        'data': data or {},
-    }
-
-
 from STORA.core.utils import get_cashier_operation_session_key
 
 
