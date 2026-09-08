@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.db import models
 from django.core.validators import MinValueValidator
 from django.utils import timezone
@@ -41,8 +43,12 @@ class DeliveryItems(models.Model):
                              verbose_name='Delivery Reference')
     delivery_item = models.ForeignKey(Product, on_delete=models.PROTECT, related_name='delivered_items',
                                   verbose_name='Product')
-    delivery_quantity = models.PositiveIntegerField(default=1,validators=[MinValueValidator(1)] ,
-                                                verbose_name='Quantity Delivered')
+    # Decimal, not an integer count -- matches Product.quantity /
+    # SaleItems.sale_quantity, so `unit_type=weight` products can be
+    # received in fractional amounts (e.g. 12.500 kg).
+    delivery_quantity = models.DecimalField(default=1, max_digits=10, decimal_places=3,
+                                            validators=[MinValueValidator(Decimal('0.001'))],
+                                            verbose_name='Quantity Delivered')
     price_at_delivery = models.DecimalField(blank=True, null= True, max_digits=9, decimal_places=2,
                                         verbose_name='Unit Price at Delivery',
                                         help_text='Price of the product at the moment of delivery')
