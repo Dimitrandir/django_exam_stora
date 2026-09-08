@@ -13,8 +13,8 @@
 </div>
 
 <div>
-    <a href="{% url 'employee_edit' employee.pk %}" class="button_edit">EDIT</a>
-    <a href="{% url 'employee_delete' employee.pk %}" class="button_delete">DELETE</a>
+    {% if perms.accounts.change_employee %}<a href="{% url 'employee_edit' employee.pk %}" class="button_edit">EDIT</a>{% endif %}
+    {% if perms.accounts.delete_employee %}<a href="{% url 'employee_delete' employee.pk %}" class="button_delete">DELETE</a>{% endif %}
 </div>
 
 {% endblock %}

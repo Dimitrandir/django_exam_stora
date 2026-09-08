@@ -10,7 +10,7 @@
         <th>First Name</th>
         <th>Last Name</th>
         <th>Position</th>
-        <th><a href="{% url 'register'%}" class="add-btn-table" title="Add a new employee">+</a></th>
+        <th>{% if perms.accounts.add_employee %}<a href="{% url 'register'%}" class="add-btn-table" title="Add a new employee">+</a>{% endif %}</th>
     </tr>
     </thead>
     <tbody>

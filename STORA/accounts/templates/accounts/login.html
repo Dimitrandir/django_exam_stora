@@ -3,19 +3,9 @@
 {% block content %}
 <h1>Login</h1>
 
-{% if form.errors %}
-<div style="color: red;">
-    <strong>Please correct these errors:</strong>
-    {{ form.errors }}
-</div>
-{% endif %}
-
 <form method="post" action="{% url 'login' %}{% if next %}?next={{ next }}{% endif %}">
     {% csrf_token %}
     {{ form.as_p }}
     <button type="submit">Login</button>
 </form>
-
-<hr>
-<a href="{% url 'register' %}">Create new account</a>
 {% endblock %}

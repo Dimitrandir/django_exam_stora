@@ -13,7 +13,7 @@
 <hr>
 
 <a href="{% url 'employee_details' employee.pk%}">Cancel and back to details</a>
-<a href="{% url 'employee_delete' employee.pk %}" class="button_delete">DELETE Employee</a>
+{% if perms.accounts.delete_employee %}<a href="{% url 'employee_delete' employee.pk %}" class="button_delete">DELETE Employee</a>{% endif %}
 
 
 {% endblock %}
