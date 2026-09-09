@@ -13,8 +13,10 @@
             {{ barcode_form.code }}
             {{ barcode_form.code.errors }}
         </p>
+        <label><small>{{ barcode_form.is_scale_code }} {{ barcode_form.is_scale_code.label }}</small></label>
+        <br><small class="text-muted">{{ barcode_form.is_scale_code.help_text }}</small>
         {% if barcode_form.instance.pk %}
-        <label>{{ barcode_form.DELETE }} Remove this barcode</label>
+        <br><label>{{ barcode_form.DELETE }} Remove this barcode</label>
         {% endif %}
     </div>
     {% endfor %}
@@ -31,6 +33,7 @@
             {{ barcode_formset.empty_form.code.label_tag }}
             {{ barcode_formset.empty_form.code }}
         </p>
+        <label><small>{{ barcode_formset.empty_form.is_scale_code }} {{ barcode_formset.empty_form.is_scale_code.label }}</small></label>
     </div>
 </template>
 

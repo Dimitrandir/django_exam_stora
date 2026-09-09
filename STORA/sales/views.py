@@ -21,8 +21,8 @@ from STORA.sales.forms import SaleForms, SaleItemFormSet
 from STORA.sales.models import SaleAttributes
 
 def sales_add(request):
-    products_data = list(Product.objects.values('id', 'internal_code', 'name', 'sell_price'))
-    barcodes_data = list(Barcode.objects.values('code', 'product_id'))
+    products_data = list(Product.objects.values('id', 'internal_code', 'name', 'sell_price', 'unit_type'))
+    barcodes_data = list(Barcode.objects.values('code', 'product_id', 'is_scale_code'))
 
     formset_prefix = 'items'
     state = get_cashier_operation_state(request)

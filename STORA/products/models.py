@@ -49,6 +49,19 @@ class Barcode(models.Model):
                                 help_text='1 = primary barcode, 2+ = alternates')
     product = models.ForeignKey('Product', on_delete=models.CASCADE, related_name='barcode',
                                 verbose_name='Linked Product')
+    # A scale (weighing) barcode is 13 digits: a 7- or 8-digit product code
+    # prefix, then a 5- or 4-digit quantity (grams or piece count depending
+    # on the product's unit_type), then an EAN-13 check digit -- the actual
+    # scanned code is different every time (it encodes the weighed amount),
+    # so `code` here holds just the fixed PREFIX, not a full barcode.
+    # See STORA/products/scale_barcode.py for the decode logic.
+    is_scale_code = models.BooleanField(
+        default=False, verbose_name='Scale (weighing) barcode prefix',
+        help_text=(
+            'Check this if the barcode above is a 7 or 8 digit scale-printed prefix '
+            '(not a full barcode) -- the scale encodes weight/quantity after it.'
+        ),
+    )
 
     class Meta:
         verbose_name = "Barcode"

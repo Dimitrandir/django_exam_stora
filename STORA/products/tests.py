@@ -13,6 +13,7 @@ from STORA.accounts.models import Employee
 from STORA.deliveries.models import DeliveryAttributes, DeliveryItems
 from STORA.products.forms import ProductForms, RecipeIngredientForm
 from STORA.products.models import Product, Barcode, Category, Suppliers, ProductSupplier, RecipeIngredient
+from STORA.products.scale_barcode import ean13_check_digit, is_valid_ean13, decode_scale_barcode
 from STORA.products.templatetags.currency_filters import quantity_display
 from STORA.products.views import get_free_internal_codes
 from STORA.sales.models import SaleAttributes, SaleItems
@@ -975,3 +976,108 @@ class SupplierCreatePopupTests(TestCase):
         supplier = Suppliers.objects.get(name='Popup Test Supplier B')
         self.assertContains(response, str(supplier.pk))
 
+
+class ScaleBarcodeTests(TestCase):
+    """Scale (weighing) barcodes: 13 digits total -- a 7 or 8 digit product
+    code prefix (registered as Barcode.is_scale_code=True), then a 5 or 4
+    digit quantity (grams for a weight product, a plain count for a piece
+    one), then an EAN-13 check digit. See STORA/products/scale_barcode.py.
+
+    Both example codes below were computed from the same prefix+quantity
+    (2000001 -> qty 00154, or 20000012 -> qty 0154) so a weight-vs-piece
+    product resolves the identical scanned digits differently -- the
+    quantity codepath is what's under test, not the barcode arithmetic.
+    """
+
+    SEVEN_DIGIT_CODE = '2000001001547'   # prefix 2000001, qty 00154, check 7
+    EIGHT_DIGIT_CODE = '2000001201541'   # prefix 20000012, qty 0154, check 1
+
+    def test_ean13_check_digit_matches_known_value(self):
+        # Verified by hand in the session that added this: odd positions
+        # (1,3,5,7,9,11) sum to 8, even (2,4,6,8,10,12) sum to 15*... -> 7.
+        self.assertEqual(ean13_check_digit('200000100154'), 7)
+
+    def test_is_valid_ean13_rejects_wrong_check_digit(self):
+        self.assertTrue(is_valid_ean13(self.SEVEN_DIGIT_CODE))
+        tampered = self.SEVEN_DIGIT_CODE[:-1] + '0'
+        self.assertFalse(is_valid_ean13(tampered))
+
+    def test_is_valid_ean13_rejects_non_13_digit_or_non_numeric(self):
+        self.assertFalse(is_valid_ean13('123'))
+        self.assertFalse(is_valid_ean13('20000010015X7'))
+
+    def test_decode_seven_digit_prefix_weight_product(self):
+        milk = Product.objects.create(
+            internal_code='SC000001', name='Scale Milk', sell_price=2, quantity=Decimal('5.000'),
+            unit_type=Product.WEIGHT,
+        )
+        Barcode.objects.create(code='2000001', product=milk, is_scale_code=True)
+
+        result = decode_scale_barcode(self.SEVEN_DIGIT_CODE)
+        self.assertIsNotNone(result)
+        product, quantity = result
+        self.assertEqual(product, milk)
+        self.assertEqual(quantity, Decimal('0.154'))
+
+    def test_decode_seven_digit_prefix_piece_product(self):
+        eggs = Product.objects.create(
+            internal_code='SC000002', name='Scale Eggs', sell_price=1, quantity=100,
+        )
+        Barcode.objects.create(code='2000001', product=eggs, is_scale_code=True)
+
+        product, quantity = decode_scale_barcode(self.SEVEN_DIGIT_CODE)
+        self.assertEqual(product, eggs)
+        self.assertEqual(quantity, Decimal('154'))
+
+    def test_decode_eight_digit_prefix(self):
+        cheese = Product.objects.create(
+            internal_code='SC000003', name='Scale Cheese', sell_price=10, quantity=Decimal('3.000'),
+            unit_type=Product.WEIGHT,
+        )
+        Barcode.objects.create(code='20000012', product=cheese, is_scale_code=True)
+
+        product, quantity = decode_scale_barcode(self.EIGHT_DIGIT_CODE)
+        self.assertEqual(product, cheese)
+        self.assertEqual(quantity, Decimal('0.154'))
+
+    def test_decode_returns_none_for_unregistered_prefix(self):
+        self.assertIsNone(decode_scale_barcode(self.SEVEN_DIGIT_CODE))
+
+    def test_decode_returns_none_for_invalid_check_digit(self):
+        milk = Product.objects.create(
+            internal_code='SC000004', name='Scale Milk 2', sell_price=2, quantity=Decimal('5.000'),
+            unit_type=Product.WEIGHT,
+        )
+        Barcode.objects.create(code='2000001', product=milk, is_scale_code=True)
+        tampered = self.SEVEN_DIGIT_CODE[:-1] + '0'
+        self.assertIsNone(decode_scale_barcode(tampered))
+
+    def test_regular_barcode_is_not_treated_as_scale_code_by_default(self):
+        """is_scale_code defaults to False -- a normal fixed barcode that
+        happens to be 13 digits must never get reinterpreted as a scale
+        code just because it matches the length."""
+        product = Product.objects.create(internal_code='SC000005', name='Normal Product', sell_price=5, quantity=10)
+        Barcode.objects.create(code=self.SEVEN_DIGIT_CODE[:7], product=product, is_scale_code=False)
+
+        self.assertIsNone(decode_scale_barcode(self.SEVEN_DIGIT_CODE))
+
+    def test_sale_add_context_exposes_is_scale_code_and_unit_type(self):
+        """The scale-barcode decoding happens client-side in sale_add.html
+        -- it needs is_scale_code on each barcode and unit_type on each
+        product in the JSON blobs the view injects into the page."""
+        manager = Employee.objects.create_user(
+            username='manager19', password='pass12345', role=Employee.MANAGER
+        )
+        product = Product.objects.create(
+            internal_code='SC000006', name='Scale Context Product', sell_price=2, quantity=Decimal('1.000'),
+            unit_type=Product.WEIGHT,
+        )
+        Barcode.objects.create(code='2000001', product=product, is_scale_code=True)
+
+        self.client.force_login(manager)
+        response = self.client.get(reverse('sale_add'))
+
+        barcode_row = next(b for b in response.context['barcodes_data'] if b['code'] == '2000001')
+        self.assertTrue(barcode_row['is_scale_code'])
+        product_row = next(p for p in response.context['products_data'] if p['id'] == product.pk)
+        self.assertEqual(product_row['unit_type'], 'weight')

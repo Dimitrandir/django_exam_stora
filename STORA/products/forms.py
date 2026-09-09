@@ -88,9 +88,10 @@ class SuppliersForm(forms.ModelForm):
 class BarcodeForm(forms.ModelForm):
     class Meta:
         model = Barcode
-        fields = ['code', 'position']
+        fields = ['code', 'position', 'is_scale_code']
         labels = {
             'code': 'Barcode Number',
+            'is_scale_code': 'Scale barcode (weight/qty encoded)',
         }
         widgets = {
             'code': forms.TextInput(attrs={'placeholder': 'Scan or enter barcode'}),

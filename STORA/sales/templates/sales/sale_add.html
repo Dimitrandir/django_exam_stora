@@ -61,6 +61,7 @@
                             <tr class="sale-row">
                                 <td>
                                     {{ s_form.product_code }}
+                                    <small class="scale-hint text-muted"></small>
                                     {{ s_form.sale_item }}
                                     {{ s_form.id }}
                                 </td>
@@ -81,6 +82,7 @@
                 <tr class="sale-row">
                     <td>
                         {{ formset.empty_form.product_code }}
+                        <small class="scale-hint text-muted"></small>
                         {{ formset.empty_form.sale_item }}
                         {{ formset.empty_form.id }}
                     </td>
@@ -123,11 +125,82 @@
             const byInternalCode = productsData.find(p => p.internal_code === cleanCode);
             if (byInternalCode) return byInternalCode;
 
-            const barcodeMatch = barcodesData.find(b => b.code === cleanCode);
+            const barcodeMatch = barcodesData.find(b => b.code === cleanCode && !b.is_scale_code);
             if (barcodeMatch) {
                 return productsData.find(p => String(p.id) === String(barcodeMatch.product_id));
             }
             return null;
+        }
+
+        // Scale (weighing) barcodes: 13 digits total -- a fixed 7 or 8
+        // digit product-code prefix (registered as a Barcode row with
+        // is_scale_code=true), then a 5 or 4 digit quantity (grams for a
+        // weight product, a plain count for a piece one), then a standard
+        // EAN-13 check digit. Mirrors STORA/products/scale_barcode.py.
+        const SCALE_PREFIX_LENGTHS = [7, 8];
+
+        function ean13CheckDigit(digits12) {
+            let total = 0;
+            for (let i = 0; i < digits12.length; i++) {
+                const digit = parseInt(digits12[i], 10);
+                total += (i % 2 === 0) ? digit : digit * 3;
+            }
+            return (10 - (total % 10)) % 10;
+        }
+
+        function isValidEan13(code) {
+            if (!/^\d{13}$/.test(code)) return false;
+            return ean13CheckDigit(code.slice(0, 12)) === parseInt(code[12], 10);
+        }
+
+        function decodeScaleBarcode(code) {
+            const cleanCode = code.trim();
+            if (!isValidEan13(cleanCode)) return null;
+
+            for (const prefixLength of SCALE_PREFIX_LENGTHS) {
+                const prefix = cleanCode.slice(0, prefixLength);
+                const quantityDigits = cleanCode.slice(prefixLength, 12);
+                const barcodeEntry = barcodesData.find(b => b.code === prefix && b.is_scale_code);
+                if (!barcodeEntry) continue;
+                const product = productsData.find(p => String(p.id) === String(barcodeEntry.product_id));
+                if (!product) continue;
+
+                const rawQuantity = parseInt(quantityDigits, 10);
+                const quantity = product.unit_type === 'weight' ? rawQuantity / 1000 : rawQuantity;
+                return {product, quantity};
+            }
+            return null;
+        }
+
+        // Live hint while typing/scanning -- a digit counter until 13
+        // digits are in, then a preview of what it decoded to (or a
+        // warning if the check digit doesn't match), so a cashier typing
+        // one of these by hand knows when to stop instead of guessing.
+        function updateScaleHint(row) {
+            const codeInput = row.querySelector('.product-code-input');
+            const hintEl = row.querySelector('.scale-hint');
+            if (!hintEl) return;
+            const raw = codeInput.value.trim();
+
+            if (!raw || !/^\d+$/.test(raw)) {
+                hintEl.textContent = '';
+                return;
+            }
+            if (raw.length < 13) {
+                hintEl.textContent = raw.length + '/13';
+                return;
+            }
+            const decoded = decodeScaleBarcode(raw);
+            if (decoded) {
+                const unitLabel = decoded.product.unit_type === 'weight' ? 'kg' : 'pcs';
+                const quantityLabel = decoded.product.unit_type === 'weight'
+                    ? decoded.quantity.toFixed(3) : decoded.quantity;
+                hintEl.textContent = decoded.product.name + ': ' + quantityLabel + ' ' + unitLabel;
+            } else if (!isValidEan13(raw)) {
+                hintEl.textContent = 'invalid check digit';
+            } else {
+                hintEl.textContent = '';
+            }
         }
 
         function updateTransactionTotal() {
@@ -221,8 +294,19 @@
             const nameInput = row.querySelector('.product-name-input');
             const unitPriceInput = row.querySelector('.unit-price-input');
 
+            codeInput.addEventListener('input', () => updateScaleHint(row));
+
             codeInput.addEventListener('change', async () => {
-                const product = findProductByCode(codeInput.value);
+                let product = findProductByCode(codeInput.value);
+                let scaleQuantity = null;
+
+                if (!product) {
+                    const decoded = decodeScaleBarcode(codeInput.value);
+                    if (decoded) {
+                        product = decoded.product;
+                        scaleQuantity = decoded.quantity;
+                    }
+                }
 
                 if (!product) {
                     alert('Product not found');
@@ -232,6 +316,9 @@
                 saleItemInput.value = product.id;
                 nameInput.value = product.name;
                 unitPriceInput.value = product.sell_price;
+                if (scaleQuantity !== null) {
+                    qtyInput.value = product.unit_type === 'weight' ? scaleQuantity.toFixed(3) : scaleQuantity;
+                }
                 recalculateRow(row);
                 await saveDraft();
             });
