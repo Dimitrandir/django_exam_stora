@@ -1,7 +1,9 @@
 from django import forms
 from django.forms import inlineformset_factory
 
-from STORA.products.models import Product, Category, Suppliers, Barcode, ProductSupplier, RecipeIngredient
+from STORA.products.models import (
+    Product, Category, Suppliers, Barcode, ProductSupplier, RecipeIngredient, TaxGroup,
+)
 
 
 class ProductForms(forms.ModelForm):
@@ -14,8 +16,8 @@ class ProductForms(forms.ModelForm):
         # silently wipe out whatever the supplier formset just saved.
         # Suppliers are managed entirely through ProductSupplierFormSet.
         fields = [
-            'internal_code', 'name', 'unit_type', 'delivery_price', 'sell_price', 'category', 'quantity',
-            'is_recipe',
+            'internal_code', 'name', 'unit_type', 'delivery_price', 'sell_price', 'category', 'tax_group',
+            'quantity', 'is_recipe',
         ]
 
         labels = {
@@ -69,6 +71,13 @@ class CategoryForm(forms.ModelForm):
         fields = '__all__'
 
         labels = {'name': 'Category Name', 'description': 'Description'}
+
+
+class TaxGroupForm(forms.ModelForm):
+    class Meta:
+        model = TaxGroup
+        fields = '__all__'
+        labels = {'name': 'Tax Group Name', 'rate': 'VAT Rate (%)'}
 
 
 class SuppliersForm(forms.ModelForm):

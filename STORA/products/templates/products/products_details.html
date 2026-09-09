@@ -11,8 +11,18 @@
     {% if not product.is_recipe %}
     <p><strong>Available Qty: </strong>{{ product.quantity|quantity_display:product.unit_type }}</p>
     {% endif %}
-    <p><strong>Delivery Price: </strong>{{ product.delivery_price|currency}}</p>
-    <p><strong>Selling Price: </strong>{{ product.sell_price|currency }}</p>
+    {% if product.tax_group %}
+    <p><strong>Tax Group: </strong>{{ product.tax_group.name }} ({{ product.tax_group.rate }}%)</p>
+    {% endif %}
+    <p>
+        <strong>Delivery Price: </strong>{{ product.delivery_price|currency}}
+        {% if delivery_price_without_vat is not None %}<span class="text-muted">({{ delivery_price_without_vat|currency }} without VAT)</span>{% endif %}
+    </p>
+    <p>
+        <strong>Selling Price: </strong>{{ product.sell_price|currency }}
+        {% if sell_price_without_vat is not None %}<span class="text-muted">({{ sell_price_without_vat|currency }} without VAT)</span>{% endif %}
+        {% if markup_percent is not None %}<span class="text-muted">&mdash; Markup: {{ markup_percent }}%</span>{% endif %}
+    </p>
 
     <h3>Associated Suppliers:</h3>
     <ul>
@@ -45,6 +55,15 @@
         <p style="color: #b8860b;">Ingredient stock for past sales of this product is being backfilled in the background.</p>
     {% endif %}
     {% endif %}
+
+    <h3>Recent Activity:</h3>
+    <ul>
+        {% for event in recent_events %}
+            <li>{{ event.date|date:"Y-m-d H:i" }} &mdash; {{ event.event_type }}: {{ event.quantity_change|quantity_display:product.unit_type }}</li>
+        {% empty %}
+            <li>No sales or deliveries yet.</li>
+        {% endfor %}
+    </ul>
 
 </div>
 

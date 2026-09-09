@@ -41,23 +41,44 @@
             {{ form.unit_type.errors }}
         </p>
 
-        <p>
-            {{ form.delivery_price.label_tag }}
-            {{ form.delivery_price }}
-            <small id="delivery-price-recipe-hint" class="text-muted" style="display:none;">Auto-calculated from ingredient costs.</small>
-            {{ form.delivery_price.errors }}
-        </p>
+        <fieldset style="border:1px solid #ddd; border-radius:4px; padding:12px; margin-bottom:12px;">
+            <legend>Prices</legend>
 
-        <p>
-            {{ form.sell_price.label_tag }}
-            {{ form.sell_price }}
-            {{ form.sell_price.errors }}
-            <span style="margin-left: 10px;">
-                <label for="markup-percent-input">Markup %:</label>
-                <input type="number" id="markup-percent-input" step="0.1" style="width: 90px;">
-            </span>
-            <br><small class="text-muted">Type either one -- Selling Price or Markup % -- and the other fills in, based on Last Delivery Price.</small>
-        </p>
+            <p>
+                {{ form.tax_group.label_tag }}
+                {{ form.tax_group }}
+                <a href="{% url 'tax_group_create' %}?popup=1" target="_blank" style="margin-left: 10px;">+ New tax group</a>
+                {{ form.tax_group.errors }}
+            </p>
+
+            <label><input type="checkbox" id="show-prices-without-vat"> Show prices without VAT too</label>
+
+            <p>
+                {{ form.delivery_price.label_tag }}
+                {{ form.delivery_price }}
+                <small id="delivery-price-recipe-hint" class="text-muted" style="display:none;">Auto-calculated from ingredient costs.</small>
+                {{ form.delivery_price.errors }}
+            </p>
+            <p id="delivery-price-without-vat-row" style="display:none;">
+                <label for="delivery-price-without-vat-input">Delivery Price (without VAT):</label>
+                <input type="number" id="delivery-price-without-vat-input" step="0.01" style="width: 120px;">
+            </p>
+
+            <p>
+                {{ form.sell_price.label_tag }}
+                {{ form.sell_price }}
+                {{ form.sell_price.errors }}
+                <span style="margin-left: 10px;">
+                    <label for="markup-percent-input">Markup %:</label>
+                    <input type="number" id="markup-percent-input" step="0.1" style="width: 90px;">
+                </span>
+                <br><small class="text-muted">Type either one -- Selling Price or Markup % -- and the other fills in, based on Last Delivery Price.</small>
+            </p>
+            <p id="sell-price-without-vat-row" style="display:none;">
+                <label for="sell-price-without-vat-input">Selling Price (without VAT):</label>
+                <input type="number" id="sell-price-without-vat-input" step="0.01" style="width: 120px;">
+            </p>
+        </fieldset>
 
          <p>
             {{ form.quantity.label_tag }}
@@ -82,6 +103,8 @@
 
     <button type="submit"> Update Product</button>
 </form>
+
+{{ tax_group_rates|json_script:"tax-group-rates" }}
 
 <script>
 document.getElementById('suggest-first-free-code-btn').addEventListener('click', function () {
@@ -114,7 +137,68 @@ window.addEventListener('message', function (e) {
         select.appendChild(opt);
         select.value = e.data.id;
     }
+    if (e.data.type === 'tax-group-created') {
+        var tgSelect = document.getElementById('id_tax_group');
+        var tgOpt = document.createElement('option');
+        tgOpt.value = e.data.id;
+        tgOpt.textContent = e.data.name;
+        tgSelect.appendChild(tgOpt);
+        tgSelect.value = e.data.id;
+        taxGroupRates[String(e.data.id)] = e.data.rate;
+        tgSelect.dispatchEvent(new Event('change', {bubbles: true}));
+    }
 });
+
+// Prices section: tax_group rates come from the server (same idea as
+// products_data/barcodes_data elsewhere) so the VAT math below doesn't
+// need a request per keystroke.
+var taxGroupRatesEl = document.getElementById('tax-group-rates');
+var taxGroupRates = taxGroupRatesEl ? JSON.parse(taxGroupRatesEl.textContent) : {};
+
+document.getElementById('show-prices-without-vat').addEventListener('change', function (e) {
+    var display = e.target.checked ? '' : 'none';
+    document.getElementById('delivery-price-without-vat-row').style.display = display;
+    document.getElementById('sell-price-without-vat-row').style.display = display;
+});
+
+function currentTaxRate() {
+    var groupId = document.getElementById('id_tax_group').value;
+    if (!groupId || !(groupId in taxGroupRates)) return null;
+    return parseFloat(taxGroupRates[groupId]);
+}
+
+function wireVatPair(withVatInput, withoutVatInput) {
+    var lastEdited = null; // 'with' or 'without'
+
+    function fillWithout() {
+        var rate = currentTaxRate();
+        var withVat = parseFloat(withVatInput.value);
+        if (rate === null || isNaN(withVat)) return;
+        withoutVatInput.value = (withVat / (1 + rate / 100)).toFixed(2);
+    }
+
+    function fillWith() {
+        var rate = currentTaxRate();
+        var withoutVat = parseFloat(withoutVatInput.value);
+        if (rate === null || isNaN(withoutVat)) return;
+        withVatInput.value = (withoutVat * (1 + rate / 100)).toFixed(2);
+        // Setting .value via JS doesn't fire 'input' on its own -- the
+        // Markup %/recipe-cost calculators listen for it on this same
+        // field to stay in sync.
+        withVatInput.dispatchEvent(new Event('input', {bubbles: true}));
+    }
+
+    withVatInput.addEventListener('input', function () { lastEdited = 'with'; fillWithout(); });
+    withoutVatInput.addEventListener('input', function () { lastEdited = 'without'; fillWith(); });
+    document.getElementById('id_tax_group').addEventListener('change', function () {
+        if (lastEdited === 'without') { fillWith(); } else { fillWithout(); }
+    });
+
+    fillWithout();
+}
+
+wireVatPair(document.getElementById('id_delivery_price'), document.getElementById('delivery-price-without-vat-input'));
+wireVatPair(document.getElementById('id_sell_price'), document.getElementById('sell-price-without-vat-input'));
 
 (function () {
     var deliveryPriceInput = document.getElementById('id_delivery_price');

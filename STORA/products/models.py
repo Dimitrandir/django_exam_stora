@@ -2,8 +2,12 @@ from decimal import Decimal
 
 from django.contrib.postgres.indexes import GinIndex
 from django.core.exceptions import ValidationError
-from django.core.validators import MinValueValidator, RegexValidator
+from django.core.validators import MaxValueValidator, MinValueValidator, RegexValidator
 from django.db import models
+from django.db.models.signals import post_save, pre_save
+from django.dispatch import receiver
+
+from STORA.accounts.models import Employee
 
 
 
@@ -41,6 +45,30 @@ class Category(models.Model):
 
     def __str__(self):
         return f"{self.name}"
+
+class TaxGroup(models.Model):
+    """A VAT rate a product can be assigned to (e.g. "Standard 20%",
+    "Reduced 9%", "Zero-rated 0%") -- a manageable list like Category, not
+    a hardcoded set, since VAT rules/rates can change by law. Product's
+    own `delivery_price`/`sell_price` stay VAT-inclusive (gross) as before;
+    this just lets the product create/edit form compute the matching
+    VAT-exclusive amount live, and lets reports derive it later without a
+    separately stored "without VAT" field."""
+
+    name = models.CharField(max_length=60, unique=True)
+    rate = models.DecimalField(
+        max_digits=5, decimal_places=2, validators=[MinValueValidator(0), MaxValueValidator(100)],
+        verbose_name='VAT rate (%)',
+    )
+
+    class Meta:
+        verbose_name = 'Tax Group'
+        verbose_name_plural = 'Tax Groups'
+        ordering = ['name']
+
+    def __str__(self):
+        return f'{self.name} ({self.rate}%)'
+
 
 class Barcode(models.Model):
     code = models.CharField(max_length=13, null=True, blank=True, unique=True, verbose_name='Barcode number',
@@ -87,6 +115,10 @@ class Product(models.Model):
     sell_price = models.DecimalField(validators=[MinValueValidator(0.01)], max_digits=9,
                                      decimal_places=2, verbose_name='sale price', help_text="Selling price per unit")
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, related_name='product')
+    tax_group = models.ForeignKey(
+        TaxGroup, on_delete=models.SET_NULL, null=True, blank=True, related_name='products',
+        verbose_name='Tax group',
+    )
     # DecimalField (not Integer) so `unit_type=weight` products can carry
     # fractional stock like 2.350 kg; `piece` products just always store a
     # whole number in the same field (e.g. 5.000).
@@ -133,6 +165,40 @@ class Product(models.Model):
         if self.delivery_price != total:
             self.delivery_price = total
             self.save(update_fields=['delivery_price'])
+
+
+# Fields worth an audit trail entry when they change -- deliberately not
+# `quantity` (that already has its own history via SaleItems/DeliveryItems,
+# see ProductHistoryView) and not the barcode/supplier/recipe formsets
+# (each of those is its own set of rows, not a simple field edit).
+PRODUCT_TRACKED_FIELDS = [
+    'internal_code', 'name', 'unit_type', 'delivery_price', 'sell_price', 'category', 'tax_group', 'is_recipe',
+]
+
+
+class ProductChangeLog(models.Model):
+    """One row per changed field per save -- who changed what on a Product
+    and when, so "did someone touch this?" has an answer. Populated
+    automatically by the pre_save/post_save signals below; catches edits
+    from the Edit form and the Products grid's inline edit alike, since
+    both go through Product.save(). Bulk actions (ProductBulkActionView)
+    use QuerySet.update(), which bypasses model signals entirely -- not
+    covered here."""
+
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='change_log')
+    changed_by = models.ForeignKey(Employee, on_delete=models.SET_NULL, null=True, related_name='product_changes')
+    changed_at = models.DateTimeField(auto_now_add=True)
+    field_name = models.CharField(max_length=50)
+    old_value = models.CharField(max_length=255, blank=True)
+    new_value = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        verbose_name = 'Product Change'
+        verbose_name_plural = 'Product Changes'
+        ordering = ['-changed_at']
+
+    def __str__(self):
+        return f'{self.product} -- {self.field_name}: {self.old_value!r} -> {self.new_value!r}'
 
 
 class RecipeIngredient(models.Model):
@@ -185,3 +251,38 @@ class ProductSupplier(models.Model):
 
     def __str__(self):
         return f'{self.product} - {self.supplier} (#{self.position})'
+
+
+@receiver(pre_save, sender=Product)
+def _snapshot_product_before_save(sender, instance, **kwargs):
+    # Grabs the row as it stood in the DB right before this save, so
+    # post_save below can diff against it. Nothing to compare a brand-new
+    # (not-yet-saved) product against.
+    if not instance.pk:
+        instance._previous_state = None
+        return
+    try:
+        instance._previous_state = Product.objects.get(pk=instance.pk)
+    except Product.DoesNotExist:
+        instance._previous_state = None
+
+
+@receiver(post_save, sender=Product)
+def _log_product_field_changes(sender, instance, created, **kwargs):
+    previous = getattr(instance, '_previous_state', None)
+    if created or previous is None:
+        return
+    changed_by = getattr(instance, '_changed_by', None)
+    entries = []
+    for field_name in PRODUCT_TRACKED_FIELDS:
+        old_value = getattr(previous, field_name)
+        new_value = getattr(instance, field_name)
+        if old_value == new_value:
+            continue
+        entries.append(ProductChangeLog(
+            product=instance, changed_by=changed_by, field_name=field_name,
+            old_value='' if old_value is None else str(old_value),
+            new_value='' if new_value is None else str(new_value),
+        ))
+    if entries:
+        ProductChangeLog.objects.bulk_create(entries)

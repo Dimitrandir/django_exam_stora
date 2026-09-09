@@ -41,6 +41,9 @@ def create_default_groups(sender, **kwargs):
             'view_suppliers',
             'add_suppliers',
             'change_suppliers',
+            'view_taxgroup',
+            'add_taxgroup',
+            'change_taxgroup',
         ]
     )
     warehouse_group.permissions.set(product_permissions)

@@ -6,7 +6,10 @@
 <script>
 if (window.opener) {
     window.opener.postMessage(
-        {type: '{{ message_type }}', id: {{ created_id }}, name: "{{ created_name|escapejs }}"},
+        {
+            type: '{{ message_type }}', id: {{ created_id }}, name: "{{ created_name|escapejs }}"
+            {% if created_rate is not None %}, rate: {{ created_rate }}{% endif %}
+        },
         window.location.origin
     );
 }

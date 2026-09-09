@@ -19,9 +19,9 @@ from STORA.core.utils import dispatch_task
 from STORA.deliveries.models import DeliveryItems
 from STORA.products.forms import (
     ProductForms, ProductInlineEditForm, CategoryForm, SuppliersForm, BarcodeFormSet, ProductSupplierFormSet,
-    RecipeIngredientFormSet, ProductHistoryPeriodForm,
+    RecipeIngredientFormSet, ProductHistoryPeriodForm, TaxGroupForm,
 )
-from STORA.products.models import Product, Barcode, Category, Suppliers
+from STORA.products.models import Product, Barcode, Category, Suppliers, TaxGroup
 from STORA.sales.models import SaleAttributes, SaleItems
 from STORA.sales.tasks import backfill_recipe_ingredient_stock
 
@@ -117,6 +117,9 @@ class ProductInlineUpdateView(LoginRequiredMixin, StaffPermissionRequiredMixin, 
             first_error = next(iter(form.errors.values()))[0]
             return JsonResponse({'error': first_error}, status=400)
 
+        # See ProductUpdateView -- lets the ProductChangeLog signal
+        # attribute this change to whoever made it.
+        form.instance._changed_by = request.user
         form.save()
         return JsonResponse({
             'name': product.name,
@@ -194,6 +197,41 @@ class ProductDetailView(LoginRequiredMixin, StaffPermissionRequiredMixin, Detail
     model = Product
     template_name = 'products/products_details.html'
     context_object_name = 'product'
+
+    RECENT_EVENTS_LIMIT = 5
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        product = self.object
+
+        if product.tax_group:
+            divisor = Decimal('1') + product.tax_group.rate / Decimal('100')
+            if product.delivery_price is not None:
+                context['delivery_price_without_vat'] = (product.delivery_price / divisor).quantize(Decimal('0.01'))
+            if product.sell_price is not None:
+                context['sell_price_without_vat'] = (product.sell_price / divisor).quantize(Decimal('0.01'))
+
+        # Falsy check on purpose -- also skips a zero delivery_price (never
+        # entered yet), which would otherwise divide by zero.
+        if product.delivery_price and product.sell_price is not None:
+            context['markup_percent'] = (
+                (product.sell_price - product.delivery_price) / product.delivery_price * Decimal('100')
+            ).quantize(Decimal('0.1'))
+
+        recent_sales = [
+            {'date': item.sale.time_of_sale, 'event_type': 'Sale', 'quantity_change': -item.sale_quantity}
+            for item in SaleItems.objects.filter(sale_item=product)
+                .select_related('sale').order_by('-sale__time_of_sale')[:self.RECENT_EVENTS_LIMIT]
+        ]
+        recent_deliveries = [
+            {'date': item.delivery.time_of_delivery, 'event_type': 'Delivery', 'quantity_change': item.delivery_quantity}
+            for item in DeliveryItems.objects.filter(delivery_item=product)
+                .select_related('delivery').order_by('-delivery__time_of_delivery')[:self.RECENT_EVENTS_LIMIT]
+        ]
+        context['recent_events'] = sorted(
+            recent_sales + recent_deliveries, key=lambda event: event['date'], reverse=True
+        )[:self.RECENT_EVENTS_LIMIT]
+        return context
 
 
 class ProductHistoryView(LoginRequiredMixin, StaffPermissionRequiredMixin, DetailView):
@@ -274,6 +312,20 @@ class ProductHistoryView(LoginRequiredMixin, StaffPermissionRequiredMixin, Detai
             }
             for event in events
         ]
+
+        changes = product.change_log.filter(
+            changed_at__date__range=(start_date, end_date)
+        ).select_related('changed_by')
+        context['changes_data'] = [
+            {
+                'date': change.changed_at.strftime('%Y-%m-%d %H:%M'),
+                'field_name': change.field_name,
+                'old_value': change.old_value,
+                'new_value': change.new_value,
+                'changed_by': str(change.changed_by) if change.changed_by else '',
+            }
+            for change in changes
+        ]
         return context
 
 
@@ -342,6 +394,7 @@ class ProductCreateView(LoginRequiredMixin, StaffPermissionRequiredMixin, Create
             context['supplier_formset'] = ProductSupplierFormSet(prefix='supplier')
             context['recipe_formset'] = RecipeIngredientFormSet(prefix='recipe')
         context['first_free_code'], context['next_free_code'] = get_free_internal_codes()
+        context['tax_group_rates'] = {str(tg.pk): str(tg.rate) for tg in TaxGroup.objects.all()}
         return context
 
     def form_valid(self, form):
@@ -394,6 +447,7 @@ class ProductUpdateView(LoginRequiredMixin, StaffPermissionRequiredMixin, Update
             context['supplier_formset'] = ProductSupplierFormSet(instance=self.object, prefix='supplier')
             context['recipe_formset'] = RecipeIngredientFormSet(instance=self.object, prefix='recipe')
         context['first_free_code'], context['next_free_code'] = get_free_internal_codes()
+        context['tax_group_rates'] = {str(tg.pk): str(tg.rate) for tg in TaxGroup.objects.all()}
         return context
 
     def form_valid(self, form):
@@ -404,6 +458,11 @@ class ProductUpdateView(LoginRequiredMixin, StaffPermissionRequiredMixin, Update
 
         if not barcode_formset.is_valid() or not supplier_formset.is_valid() or not recipe_formset.is_valid():
             return self.render_to_response(context)
+
+        # Read by the post_save signal in models.py (ProductChangeLog) so
+        # each logged field change is attributed to whoever made it -- the
+        # signal itself has no access to the request/user.
+        form.instance._changed_by = self.request.user
 
         self.object = form.save()
         barcode_formset.instance = self.object
@@ -486,6 +545,49 @@ class CategoryDeleteView(LoginRequiredMixin, StaffPermissionRequiredMixin, Delet
     model = Category
     template_name = 'products/category_confirm_delete.html'
     success_url = reverse_lazy('category_list')
+
+
+class TaxGroupListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListView):
+    permission_required = 'products.view_taxgroup'
+    model = TaxGroup
+    template_name = 'products/tax_group_list.html'
+    context_object_name = 'tax_groups'
+
+
+class TaxGroupCreateView(LoginRequiredMixin, StaffPermissionRequiredMixin, CreateView):
+    permission_required = 'products.add_taxgroup'
+    model = TaxGroup
+    form_class = TaxGroupForm
+    template_name = 'products/tax_group_form.html'
+    success_url = reverse_lazy('tax_group_list')
+
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        # Same popup pattern as CategoryCreateView/SupplierCreateView.
+        if self.request.GET.get('popup'):
+            return render(self.request, 'products/_popup_close.html', {
+                'created_id': self.object.pk,
+                'created_name': str(self.object),
+                'created_rate': self.object.rate,
+                'message_type': 'tax-group-created',
+            })
+        return response
+
+
+class TaxGroupUpdateView(LoginRequiredMixin, StaffPermissionRequiredMixin, UpdateView):
+    permission_required = 'products.change_taxgroup'
+    model = TaxGroup
+    form_class = TaxGroupForm
+    template_name = 'products/tax_group_form.html'
+    context_object_name = 'tax_group'
+    success_url = reverse_lazy('tax_group_list')
+
+
+class TaxGroupDeleteView(LoginRequiredMixin, StaffPermissionRequiredMixin, DeleteView):
+    permission_required = 'products.delete_taxgroup'
+    model = TaxGroup
+    template_name = 'products/tax_group_confirm_delete.html'
+    success_url = reverse_lazy('tax_group_list')
 
 
 class SuppliersListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListView):

@@ -11,8 +11,10 @@ from django.utils import timezone
 
 from STORA.accounts.models import Employee
 from STORA.deliveries.models import DeliveryAttributes, DeliveryItems
-from STORA.products.forms import ProductForms, RecipeIngredientForm
-from STORA.products.models import Product, Barcode, Category, Suppliers, ProductSupplier, RecipeIngredient
+from STORA.products.forms import ProductForms, RecipeIngredientForm, TaxGroupForm
+from STORA.products.models import (
+    Product, Barcode, Category, Suppliers, ProductSupplier, RecipeIngredient, TaxGroup, ProductChangeLog,
+)
 from STORA.products.scale_barcode import ean13_check_digit, is_valid_ean13, decode_scale_barcode
 from STORA.products.templatetags.currency_filters import quantity_display
 from STORA.products.views import get_free_internal_codes
@@ -240,6 +242,89 @@ class ProductBarcodeFormsetTests(TestCase):
         self.assertFalse(Product.objects.filter(internal_code='P1000007').exists())
 
 
+class ProductDetailViewTests(TestCase):
+    """The read-only detail page -- kept separate from Edit on purpose so
+    Cashiers (view_product but not change_product) can still look up a
+    product's price/stock while ringing up a sale."""
+
+    def setUp(self):
+        self.manager = Employee.objects.create_user(
+            username='manager21', password='pass12345', role=Employee.MANAGER
+        )
+        self.tax_group = TaxGroup.objects.create(name='Standard', rate=Decimal('20.00'))
+
+    def test_cashier_can_view_but_not_edit(self):
+        cashier = Employee.objects.create_user(
+            username='cashier21', password='pass12345', role=Employee.CASHIER
+        )
+        product = Product.objects.create(internal_code='PD000001', name='Cashier View Product', sell_price=1, quantity=0)
+        self.client.force_login(cashier)
+        detail_response = self.client.get(reverse('product_details', kwargs={'pk': product.pk}))
+        self.assertEqual(detail_response.status_code, 200)
+        edit_response = self.client.get(reverse('product_edit', kwargs={'pk': product.pk}))
+        self.assertEqual(edit_response.status_code, 403)
+
+    def test_without_vat_prices_and_markup_are_computed(self):
+        product = Product.objects.create(
+            internal_code='PD000002', name='VAT Detail Product', delivery_price=Decimal('6.00'),
+            sell_price=Decimal('12.00'), quantity=0, tax_group=self.tax_group,
+        )
+        self.client.force_login(self.manager)
+        response = self.client.get(reverse('product_details', kwargs={'pk': product.pk}))
+
+        self.assertEqual(response.context['delivery_price_without_vat'], Decimal('5.00'))
+        self.assertEqual(response.context['sell_price_without_vat'], Decimal('10.00'))
+        self.assertEqual(response.context['markup_percent'], Decimal('100.0'))
+
+    def test_without_vat_prices_absent_when_no_tax_group(self):
+        product = Product.objects.create(
+            internal_code='PD000003', name='No Tax Group Product', delivery_price=Decimal('6.00'),
+            sell_price=Decimal('12.00'), quantity=0,
+        )
+        self.client.force_login(self.manager)
+        response = self.client.get(reverse('product_details', kwargs={'pk': product.pk}))
+
+        self.assertNotIn('delivery_price_without_vat', response.context)
+        self.assertNotIn('sell_price_without_vat', response.context)
+        self.assertEqual(response.context['markup_percent'], Decimal('100.0'))
+
+    def test_markup_absent_when_no_delivery_price(self):
+        product = Product.objects.create(internal_code='PD000004', name='No Cost Product', sell_price=5, quantity=0)
+        self.client.force_login(self.manager)
+        response = self.client.get(reverse('product_details', kwargs={'pk': product.pk}))
+        self.assertNotIn('markup_percent', response.context)
+
+    def test_recent_activity_shows_latest_sales_and_deliveries(self):
+        product = Product.objects.create(internal_code='PD000005', name='Activity Product', sell_price=2, quantity=0)
+        supplier = Suppliers.objects.create(name='Detail Supplier', bulstat='999888777')
+
+        sale = SaleAttributes.objects.create(cashier=self.manager)
+        SaleItems.objects.create(sale=sale, sale_item=product, sale_quantity=2)
+        delivery = DeliveryAttributes.objects.create(
+            receiver=self.manager, supplier=supplier, document_type='INVOICE',
+            document_date=timezone.localdate(),
+        )
+        DeliveryItems.objects.create(delivery=delivery, delivery_item=product, delivery_quantity=5, price_at_delivery=1)
+
+        self.client.force_login(self.manager)
+        response = self.client.get(reverse('product_details', kwargs={'pk': product.pk}))
+
+        events = response.context['recent_events']
+        self.assertEqual(len(events), 2)
+        event_types = {e['event_type'] for e in events}
+        self.assertEqual(event_types, {'Sale', 'Delivery'})
+
+    def test_recent_activity_capped_at_five(self):
+        product = Product.objects.create(internal_code='PD000006', name='Busy Product', sell_price=1, quantity=0)
+        sale = SaleAttributes.objects.create(cashier=self.manager)
+        for _ in range(7):
+            SaleItems.objects.create(sale=sale, sale_item=product, sale_quantity=1)
+
+        self.client.force_login(self.manager)
+        response = self.client.get(reverse('product_details', kwargs={'pk': product.pk}))
+        self.assertEqual(len(response.context['recent_events']), 5)
+
+
 class ProductHistoryViewTests(TestCase):
     def setUp(self):
         self.manager = Employee.objects.create_user(
@@ -387,6 +472,14 @@ class ProductInlineUpdateViewTests(TestCase):
         self.product.refresh_from_db()
         self.assertEqual(self.product.quantity, 7)
         self.assertEqual(list(self.product.supplier.all()), [self.supplier])
+
+    def test_inline_edit_logs_change_with_attribution(self):
+        self.client.force_login(self.manager)
+        self._post('name', 'Renamed Via Grid')
+        entry = self.product.change_log.get(field_name='name')
+        self.assertEqual(entry.old_value, 'Inline Widget')
+        self.assertEqual(entry.new_value, 'Renamed Via Grid')
+        self.assertEqual(entry.changed_by, self.manager)
 
 
 class ProductBulkActionViewTests(TestCase):
@@ -1081,3 +1174,193 @@ class ScaleBarcodeTests(TestCase):
         self.assertTrue(barcode_row['is_scale_code'])
         product_row = next(p for p in response.context['products_data'] if p['id'] == product.pk)
         self.assertEqual(product_row['unit_type'], 'weight')
+
+
+class TaxGroupTests(TestCase):
+    """Tax groups (VAT rates) -- a manageable list like Category, assigned
+    to a Product so the create/edit form can compute with/without-VAT
+    prices client-side without a separately stored "without VAT" field."""
+
+    def setUp(self):
+        self.manager = Employee.objects.create_user(
+            username='manager20', password='pass12345', role=Employee.MANAGER
+        )
+        self.cashier = Employee.objects.create_user(
+            username='cashier20', password='pass12345', role=Employee.CASHIER
+        )
+        self.standard = TaxGroup.objects.create(name='Standard', rate=Decimal('20.00'))
+
+    def test_str_includes_name_and_rate(self):
+        self.assertEqual(str(self.standard), 'Standard (20.00%)')
+
+    def test_rate_must_be_between_0_and_100(self):
+        form = TaxGroupForm(data={'name': 'Invalid', 'rate': '150'})
+        self.assertFalse(form.is_valid())
+        self.assertIn('rate', form.errors)
+
+    def test_cashier_cannot_create_tax_group(self):
+        self.client.force_login(self.cashier)
+        response = self.client.get(reverse('tax_group_create'))
+        self.assertEqual(response.status_code, 403)
+
+    def test_manager_can_list_and_create_tax_group(self):
+        self.client.force_login(self.manager)
+        self.assertEqual(self.client.get(reverse('tax_group_list')).status_code, 200)
+        response = self.client.post(reverse('tax_group_create'), {'name': 'Reduced', 'rate': '9.00'})
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(TaxGroup.objects.filter(name='Reduced', rate=Decimal('9.00')).exists())
+
+    def test_manager_can_edit_and_delete_tax_group(self):
+        self.client.force_login(self.manager)
+        edit_response = self.client.post(
+            reverse('tax_group_edit', kwargs={'pk': self.standard.pk}), {'name': 'Standard', 'rate': '22.00'}
+        )
+        self.assertEqual(edit_response.status_code, 302)
+        self.standard.refresh_from_db()
+        self.assertEqual(self.standard.rate, Decimal('22.00'))
+
+        delete_response = self.client.post(reverse('tax_group_delete', kwargs={'pk': self.standard.pk}))
+        self.assertEqual(delete_response.status_code, 302)
+        self.assertFalse(TaxGroup.objects.filter(pk=self.standard.pk).exists())
+
+    def test_deleting_tax_group_nulls_product_reference(self):
+        product = Product.objects.create(
+            internal_code='TG000001', name='Tax Group Product', sell_price=1, quantity=0, tax_group=self.standard,
+        )
+        self.client.force_login(self.manager)
+        self.client.post(reverse('tax_group_delete', kwargs={'pk': self.standard.pk}))
+        product.refresh_from_db()
+        self.assertIsNone(product.tax_group)
+
+    def test_popup_create_renders_close_script_with_rate(self):
+        self.client.force_login(self.manager)
+        response = self.client.post(reverse('tax_group_create') + '?popup=1', {'name': 'Zero-rated', 'rate': '0'})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'window.opener')
+        self.assertContains(response, 'tax-group-created')
+        tax_group = TaxGroup.objects.get(name='Zero-rated')
+        self.assertContains(response, str(tax_group.pk))
+
+    def test_product_create_and_edit_pages_expose_tax_group_rates(self):
+        self.client.force_login(self.manager)
+        create_response = self.client.get(reverse('product_create'))
+        self.assertEqual(create_response.context['tax_group_rates'], {str(self.standard.pk): '20.00'})
+
+        product = Product.objects.create(internal_code='TG000002', name='Rates Context Product', sell_price=1, quantity=0)
+        edit_response = self.client.get(reverse('product_edit', kwargs={'pk': product.pk}))
+        self.assertEqual(edit_response.context['tax_group_rates'], {str(self.standard.pk): '20.00'})
+
+    def test_product_can_be_created_with_tax_group(self):
+        category = Category.objects.create(name='VAT Test Category')
+        self.client.force_login(self.manager)
+        response = self.client.post(reverse('product_create'), {
+            'internal_code': 'TG000003',
+            'name': 'VAT Test Product',
+            'unit_type': 'piece',
+            'delivery_price': '1.00',
+            'sell_price': '1.50',
+            'quantity': '0',
+            'category': category.pk,
+            'tax_group': self.standard.pk,
+            'barcode-TOTAL_FORMS': '0',
+            'barcode-INITIAL_FORMS': '0',
+            'barcode-MIN_NUM_FORMS': '0',
+            'barcode-MAX_NUM_FORMS': '1000',
+            'supplier-TOTAL_FORMS': '0',
+            'supplier-INITIAL_FORMS': '0',
+            'supplier-MIN_NUM_FORMS': '0',
+            'supplier-MAX_NUM_FORMS': '1000',
+            'recipe-TOTAL_FORMS': '0',
+            'recipe-INITIAL_FORMS': '0',
+            'recipe-MIN_NUM_FORMS': '0',
+            'recipe-MAX_NUM_FORMS': '1000',
+        })
+        self.assertEqual(response.status_code, 302)
+        product = Product.objects.get(internal_code='TG000003')
+        self.assertEqual(product.tax_group, self.standard)
+
+
+class ProductChangeLogTests(TestCase):
+    """"Did someone touch this product?" -- an entry per changed tracked
+    field, attributed to whoever made the edit. Populated by the pre_save/
+    post_save signals in models.py, not by the views directly."""
+
+    def setUp(self):
+        self.manager = Employee.objects.create_user(
+            username='manager22', password='pass12345', role=Employee.MANAGER
+        )
+        self.category = Category.objects.create(name='Change Log Category')
+        self.product = Product.objects.create(
+            internal_code='CL000001', name='Original Name', sell_price=Decimal('2.00'), quantity=5,
+            category=self.category,
+        )
+
+    def _edit_post_data(self, **overrides):
+        data = {
+            'internal_code': self.product.internal_code,
+            'name': self.product.name,
+            'unit_type': 'piece',
+            'sell_price': str(self.product.sell_price),
+            'category': self.category.pk,
+            'barcode-TOTAL_FORMS': '0', 'barcode-INITIAL_FORMS': '0',
+            'barcode-MIN_NUM_FORMS': '0', 'barcode-MAX_NUM_FORMS': '1000',
+            'supplier-TOTAL_FORMS': '0', 'supplier-INITIAL_FORMS': '0',
+            'supplier-MIN_NUM_FORMS': '0', 'supplier-MAX_NUM_FORMS': '1000',
+            'recipe-TOTAL_FORMS': '0', 'recipe-INITIAL_FORMS': '0',
+            'recipe-MIN_NUM_FORMS': '0', 'recipe-MAX_NUM_FORMS': '1000',
+        }
+        data.update(overrides)
+        return data
+
+    def test_creating_a_product_logs_nothing(self):
+        self.assertEqual(ProductChangeLog.objects.filter(product=self.product).count(), 0)
+
+    def test_editing_name_logs_old_and_new_value_with_attribution(self):
+        self.client.force_login(self.manager)
+        response = self.client.post(
+            reverse('product_edit', kwargs={'pk': self.product.pk}),
+            self._edit_post_data(name='Renamed Product'),
+        )
+        self.assertEqual(response.status_code, 302)
+
+        entry = self.product.change_log.get(field_name='name')
+        self.assertEqual(entry.old_value, 'Original Name')
+        self.assertEqual(entry.new_value, 'Renamed Product')
+        self.assertEqual(entry.changed_by, self.manager)
+
+    def test_editing_multiple_fields_logs_one_entry_each(self):
+        self.client.force_login(self.manager)
+        response = self.client.post(
+            reverse('product_edit', kwargs={'pk': self.product.pk}),
+            self._edit_post_data(name='Multi Change Product', sell_price='9.99'),
+        )
+        self.assertEqual(response.status_code, 302)
+
+        fields_changed = set(self.product.change_log.values_list('field_name', flat=True))
+        self.assertEqual(fields_changed, {'name', 'sell_price'})
+
+    def test_resubmitting_identical_values_logs_nothing(self):
+        self.client.force_login(self.manager)
+        response = self.client.post(reverse('product_edit', kwargs={'pk': self.product.pk}), self._edit_post_data())
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(self.product.change_log.count(), 0)
+
+    def test_quantity_changes_are_not_logged(self):
+        """quantity already has its own history via SaleItems/DeliveryItems
+        (see ProductHistoryView) -- it's deliberately excluded here."""
+        self.client.force_login(self.manager)
+        self.client.post(reverse('product_edit', kwargs={'pk': self.product.pk}), self._edit_post_data(quantity='9999'))
+        self.assertFalse(self.product.change_log.filter(field_name='quantity').exists())
+
+    def test_history_view_exposes_changes_in_date_range(self):
+        self.client.force_login(self.manager)
+        self.client.post(
+            reverse('product_edit', kwargs={'pk': self.product.pk}),
+            self._edit_post_data(name='Visible In History'),
+        )
+        response = self.client.get(reverse('product_history', kwargs={'pk': self.product.pk}))
+        change_rows = [c for c in response.context['changes_data'] if c['field_name'] == 'name']
+        self.assertEqual(len(change_rows), 1)
+        self.assertEqual(change_rows[0]['old_value'], 'Original Name')
+        self.assertEqual(change_rows[0]['new_value'], 'Visible In History')
+        self.assertEqual(change_rows[0]['changed_by'], str(self.manager))
