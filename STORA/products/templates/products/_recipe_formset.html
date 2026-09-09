@@ -1,59 +1,266 @@
 {{ recipe_formset.management_form }}
 
 <p><strong>Ingredients</strong></p>
-<p class="text-muted">Quantity is in the ingredient's own unit (kg for a weight ingredient, pcs for a piece one).</p>
+<p class="text-muted">
+    Search below to add an ingredient, then set how much of it goes into one
+    unit sold (kg for a weight ingredient, pcs for a piece one).
+</p>
+
+<div class="d-flex gap-2 mb-2">
+    <select id="ingredient-category-filter" class="form-select form-select-sm" style="max-width: 220px;">
+        <option value="">All categories</option>
+    </select>
+    <div class="position-relative flex-grow-1" style="max-width: 360px;">
+        <input type="search" id="ingredient-search-input" class="form-control form-control-sm"
+               placeholder="Search ingredient by name or code..." autocomplete="off">
+        <div id="ingredient-search-results" class="global-search-results"></div>
+    </div>
+</div>
 
 <div id="recipe-forms-container">
     {% for ingredient_form in recipe_formset %}
-    <div class="recipe-row" style="border:1px solid #ddd; border-radius:4px; padding:8px 12px; margin-bottom:8px;">
+    <div class="recipe-row" data-delivery-price="{{ ingredient_form.instance.ingredient.delivery_price|default_if_none:0 }}"
+         style="border:1px solid #ddd; border-radius:4px; padding:8px 12px; margin-bottom:8px;">
         {{ ingredient_form.id }}
-        <p>
-            {{ ingredient_form.ingredient.label_tag }}
-            {{ ingredient_form.ingredient }}
-            {{ ingredient_form.ingredient.errors }}
-        </p>
-        <p>
+        {{ ingredient_form.ingredient }}
+        <strong class="recipe-row-name">
+            {% if ingredient_form.instance.ingredient_id %}{{ ingredient_form.instance.ingredient.internal_code }} — {{ ingredient_form.instance.ingredient.name }}{% endif %}
+        </strong>
+        {{ ingredient_form.ingredient.errors }}
+        <span class="ms-3">
             {{ ingredient_form.quantity.label_tag }}
             {{ ingredient_form.quantity }}
-            {{ ingredient_form.quantity.errors }}
-        </p>
+        </span>
+        {{ ingredient_form.quantity.errors }}
         {% if ingredient_form.instance.pk %}
-        <label>{{ ingredient_form.DELETE }} Remove this ingredient</label>
+        <label class="ms-3">{{ ingredient_form.DELETE }} Remove this ingredient</label>
+        {% else %}
+        <button type="button" class="btn btn-sm btn-outline-danger ms-3 remove-recipe-row">Remove</button>
         {% endif %}
     </div>
     {% endfor %}
 </div>
 
-<button type="button" id="add-recipe-btn">+ Add another ingredient</button>
+<p id="recipe-cost-summary" class="text-muted"></p>
 
 <template id="empty-recipe-form">
-    <div class="recipe-row" style="border:1px solid #ddd; border-radius:4px; padding:8px 12px; margin-bottom:8px;">
+    <div class="recipe-row" data-delivery-price="0"
+         style="border:1px solid #ddd; border-radius:4px; padding:8px 12px; margin-bottom:8px;">
         {{ recipe_formset.empty_form.id }}
-        <p>
-            {{ recipe_formset.empty_form.ingredient.label_tag }}
-            {{ recipe_formset.empty_form.ingredient }}
-        </p>
-        <p>
+        {{ recipe_formset.empty_form.ingredient }}
+        <strong class="recipe-row-name"></strong>
+        <span class="ms-3">
             {{ recipe_formset.empty_form.quantity.label_tag }}
             {{ recipe_formset.empty_form.quantity }}
-        </p>
+        </span>
+        <button type="button" class="btn btn-sm btn-outline-danger ms-3 remove-recipe-row">Remove</button>
     </div>
 </template>
 
 <script>
-(function () {
+// Wrapped in DOMContentLoaded, not run inline -- this block now renders
+// higher up the page (right under the "recipe" checkbox) than the
+// Category/Selling Price/Last Delivery Price fields it reads from, so
+// those elements don't exist yet if this ran immediately.
+document.addEventListener('DOMContentLoaded', function () {
     var container = document.getElementById('recipe-forms-container');
     var totalForms = document.getElementById('id_recipe-TOTAL_FORMS');
-    var addBtn = document.getElementById('add-recipe-btn');
     var template = document.getElementById('empty-recipe-form');
+    var searchInput = document.getElementById('ingredient-search-input');
+    var resultsBox = document.getElementById('ingredient-search-results');
+    var categoryFilter = document.getElementById('ingredient-category-filter');
+    var isRecipeCheckbox = document.getElementById('id_is_recipe');
+    var deliveryPriceInput = document.getElementById('id_delivery_price');
+    var deliveryPriceHint = document.getElementById('delivery-price-recipe-hint');
+    var sellPriceInput = document.getElementById('id_sell_price');
+    var costSummary = document.getElementById('recipe-cost-summary');
+    var CATEGORY_STORAGE_KEY = 'stora_ingredient_category_filter';
 
-    addBtn.addEventListener('click', function () {
+    // Reuses the category choices already loaded for the product's own
+    // Category field -- no extra request needed just to fill this dropdown.
+    var sourceCategorySelect = document.getElementById('id_category');
+    if (sourceCategorySelect) {
+        Array.prototype.forEach.call(sourceCategorySelect.options, function (opt) {
+            if (!opt.value) return;
+            var clone = document.createElement('option');
+            clone.value = opt.value;
+            clone.textContent = opt.textContent;
+            categoryFilter.appendChild(clone);
+        });
+    }
+    var rememberedCategory = localStorage.getItem(CATEGORY_STORAGE_KEY);
+    if (rememberedCategory) categoryFilter.value = rememberedCategory;
+
+    function existingIngredientIds() {
+        var ids = [];
+        container.querySelectorAll('.recipe-row').forEach(function (row) {
+            var deleteCb = row.querySelector('input[name$="-DELETE"]');
+            if (deleteCb && deleteCb.checked) return;
+            var input = row.querySelector('input[name$="-ingredient"]');
+            if (input && input.value) ids.push(input.value);
+        });
+        return ids;
+    }
+
+    // While "recipe" is checked, Last Delivery Price isn't something to
+    // type in by hand -- a recipe is never itself delivered, so the field
+    // is repurposed to always show the computed ingredient cost instead
+    // (readonly here client-side; Product.recalculate_ingredient_cost()
+    // enforces the same thing server-side on save, so it can't drift even
+    // if this JS didn't run for some reason).
+    function syncDeliveryPriceLock() {
+        var isRecipe = isRecipeCheckbox.checked;
+        deliveryPriceInput.readOnly = isRecipe;
+        deliveryPriceHint.style.display = isRecipe ? '' : 'none';
+    }
+    isRecipeCheckbox.addEventListener('change', function () {
+        syncDeliveryPriceLock();
+        recalcCost();
+    });
+    syncDeliveryPriceLock();
+
+    function recalcCost() {
+        var total = 0;
+        container.querySelectorAll('.recipe-row').forEach(function (row) {
+            var deleteCb = row.querySelector('input[name$="-DELETE"]');
+            if (deleteCb && deleteCb.checked) return;
+            var qtyInput = row.querySelector('input[name$="-quantity"]');
+            var price = parseFloat(row.getAttribute('data-delivery-price')) || 0;
+            var qty = parseFloat(qtyInput && qtyInput.value) || 0;
+            total += price * qty;
+        });
+
+        if (isRecipeCheckbox.checked) {
+            deliveryPriceInput.value = total.toFixed(2);
+            // Setting .value in JS doesn't fire 'input' on its own -- the
+            // Markup %/Selling Price calculator in product_create.html /
+            // product_edit.html listens for it to stay in sync with cost.
+            deliveryPriceInput.dispatchEvent(new Event('input', {bubbles: true}));
+        }
+
+        var text = '';
+        var sellPrice = parseFloat(sellPriceInput && sellPriceInput.value) || 0;
+        if (sellPrice > 0) {
+            var margin = sellPrice - total;
+            var marginPct = margin / sellPrice * 100;
+            text = 'Margin vs Selling Price: ' + margin.toFixed(2) + ' (' + marginPct.toFixed(0) + '%)';
+        }
+        costSummary.textContent = text;
+    }
+
+    function addIngredientRow(product) {
+        var already = existingIngredientIds();
+        if (already.indexOf(String(product.id)) !== -1) {
+            var existingRow = null;
+            container.querySelectorAll('.recipe-row').forEach(function (row) {
+                var input = row.querySelector('input[name$="-ingredient"]');
+                if (input && input.value === String(product.id)) existingRow = row;
+            });
+            if (existingRow) existingRow.querySelector('input[name$="-quantity"]').focus();
+            return;
+        }
+
         var index = parseInt(totalForms.value, 10);
         var html = template.innerHTML.replace(/__prefix__/g, index);
         var wrapper = document.createElement('div');
         wrapper.innerHTML = html.trim();
-        container.appendChild(wrapper.firstElementChild);
+        var row = wrapper.firstElementChild;
+        row.setAttribute('data-delivery-price', product.delivery_price);
+        row.querySelector('input[name$="-ingredient"]').value = product.id;
+        row.querySelector('.recipe-row-name').textContent = product.internal_code + ' — ' + product.name;
+        row.querySelector('.remove-recipe-row').addEventListener('click', function () {
+            row.remove();
+            recalcCost();
+        });
+        container.appendChild(row);
         totalForms.value = index + 1;
+        row.querySelector('input[name$="-quantity"]').focus();
+        recalcCost();
+    }
+
+    // Wire up the "Remove" buttons on rows already in the page (validation
+    // round-trip re-render -- see IngredientSearchView/forms.py comments).
+    container.querySelectorAll('.remove-recipe-row').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            btn.closest('.recipe-row').remove();
+            recalcCost();
+        });
     });
-})();
+
+    container.addEventListener('input', function (e) {
+        if (e.target.matches('input[name$="-quantity"]')) recalcCost();
+    });
+    container.addEventListener('change', function (e) {
+        if (e.target.matches('input[name$="-DELETE"]')) recalcCost();
+    });
+    if (sellPriceInput) sellPriceInput.addEventListener('input', recalcCost);
+
+    var debounceTimer = null;
+    var currentController = null;
+
+    function renderResults(data) {
+        resultsBox.innerHTML = '';
+        if (!data.results.length) {
+            var empty = document.createElement('div');
+            empty.className = 'global-search-empty';
+            empty.textContent = 'No matches';
+            resultsBox.appendChild(empty);
+            resultsBox.classList.add('is-open');
+            return;
+        }
+        var already = existingIngredientIds();
+        data.results.forEach(function (product) {
+            var row = document.createElement('div');
+            row.className = 'global-search-result';
+            var label = product.internal_code + ' — ' + product.name;
+            if (product.category) label += ' (' + product.category + ')';
+            if (already.indexOf(String(product.id)) !== -1) label += ' ✓ added';
+            row.textContent = label;
+            row.addEventListener('click', function () {
+                addIngredientRow(product);
+                resultsBox.classList.remove('is-open');
+            });
+            resultsBox.appendChild(row);
+        });
+        resultsBox.classList.add('is-open');
+    }
+
+    function runSearch() {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(function () {
+            if (currentController) currentController.abort();
+            currentController = new AbortController();
+            var params = new URLSearchParams();
+            var q = searchInput.value.trim();
+            if (q) params.set('q', q);
+            if (categoryFilter.value) params.set('category', categoryFilter.value);
+            fetch('{% url "ingredient_search" %}?' + params.toString(), {signal: currentController.signal})
+                .then(function (r) { return r.json(); })
+                .then(renderResults)
+                .catch(function (e) { if (e.name !== 'AbortError') { /* transient network error -- ignore */ } });
+        }, 200);
+    }
+
+    searchInput.addEventListener('input', runSearch);
+    searchInput.addEventListener('focus', runSearch);
+    categoryFilter.addEventListener('change', function () {
+        localStorage.setItem(CATEGORY_STORAGE_KEY, categoryFilter.value);
+        runSearch();
+    });
+
+    searchInput.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') {
+            resultsBox.classList.remove('is-open');
+            searchInput.blur();
+        }
+    });
+
+    document.addEventListener('click', function (e) {
+        if (!e.target.closest('#ingredient-search-input') && !e.target.closest('#ingredient-search-results')) {
+            resultsBox.classList.remove('is-open');
+        }
+    });
+
+    recalcCost();
+});
 </script>

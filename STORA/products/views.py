@@ -3,7 +3,8 @@ from decimal import Decimal, InvalidOperation
 
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.db.models import ProtectedError, Sum
+from django.contrib.postgres.search import TrigramSimilarity
+from django.db.models import ProtectedError, Q, Sum
 from django.forms.models import model_to_dict
 from django.http import HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404, render
@@ -276,6 +277,53 @@ class ProductHistoryView(LoginRequiredMixin, StaffPermissionRequiredMixin, Detai
         return context
 
 
+class IngredientSearchView(LoginRequiredMixin, StaffPermissionRequiredMixin, View):
+    """Backs the recipe-ingredient picker on the product create/edit pages
+    (see `_recipe_formset.html`). A plain `<select>` with the full product
+    catalog as `<option>`s doesn't scale once there are thousands of
+    products, so instead of rendering that queryset into the page, the JS
+    calls this endpoint on every keystroke (debounced) and only ever gets
+    back a handful of matches -- same trigram-search approach as the navbar
+    search (`GlobalSearchView`), scoped down to candidate ingredients."""
+
+    permission_required = 'products.view_product'
+    RESULTS_LIMIT = 30
+
+    def get(self, request):
+        query = request.GET.get('q', '').strip()
+        category_id = request.GET.get('category', '').strip()
+
+        # A recipe can't contain another recipe -- same rule as
+        # RecipeIngredientForm's queryset.
+        products = Product.objects.filter(is_recipe=False)
+        if category_id:
+            products = products.filter(category_id=category_id)
+
+        if query:
+            products = (
+                products
+                .filter(Q(name__icontains=query) | Q(internal_code__icontains=query))
+                .annotate(similarity=TrigramSimilarity('name', query))
+                .order_by('-similarity', 'name')
+            )
+        else:
+            products = products.order_by('name')
+
+        products = products.select_related('category')[:self.RESULTS_LIMIT]
+
+        return JsonResponse({'results': [
+            {
+                'id': product.pk,
+                'name': product.name,
+                'internal_code': product.internal_code,
+                'category': product.category.name if product.category else '',
+                'unit_type': product.unit_type,
+                'delivery_price': float(product.delivery_price) if product.delivery_price is not None else 0,
+            }
+            for product in products
+        ]})
+
+
 class ProductCreateView(LoginRequiredMixin, StaffPermissionRequiredMixin, CreateView):
     permission_required = 'products.add_product'
     model = Product
@@ -312,6 +360,7 @@ class ProductCreateView(LoginRequiredMixin, StaffPermissionRequiredMixin, Create
         supplier_formset.save()
         recipe_formset.instance = self.object
         recipe_formset.save()
+        self.object.recalculate_ingredient_cost()
         # A brand new product can't have prior sales, so there's nothing to
         # backfill -- but harmless/idempotent to call regardless (matches
         # ProductUpdateView, keeps the "just defined a recipe" path in one
@@ -363,6 +412,7 @@ class ProductUpdateView(LoginRequiredMixin, StaffPermissionRequiredMixin, Update
         supplier_formset.save()
         recipe_formset.instance = self.object
         recipe_formset.save()
+        self.object.recalculate_ingredient_cost()
 
         # First time this product becomes a recipe (or was already one but
         # never backfilled): catch up ingredient stock for all its past
@@ -407,6 +457,20 @@ class CategoryCreateView(LoginRequiredMixin, StaffPermissionRequiredMixin, Creat
     template_name = 'products/category_form.html'
     success_url = reverse_lazy('category_list')
 
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        # "+ New category" on the product form opens this in a popup window
+        # (?popup=1) so the in-progress product form isn't lost -- closing
+        # the popup instead of redirecting it to the categories list is what
+        # lets the opener pick up the new category without a full reload.
+        if self.request.GET.get('popup'):
+            return render(self.request, 'products/_popup_close.html', {
+                'created_id': self.object.pk,
+                'created_name': self.object.name,
+                'message_type': 'category-created',
+            })
+        return response
+
 
 class CategoryUpdateView(LoginRequiredMixin, StaffPermissionRequiredMixin, UpdateView):
     permission_required = 'products.change_category'
@@ -437,6 +501,20 @@ class SupplierCreateView(LoginRequiredMixin, StaffPermissionRequiredMixin, Creat
     form_class = SuppliersForm
     template_name = 'products/suppliers_form.html'
     success_url = reverse_lazy('suppliers_list')
+
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        # Same idea as CategoryCreateView -- "+ New supplier" on the product
+        # form opens this in a popup tab (?popup=1) so the in-progress
+        # product form isn't lost; closing the tab and handing the new
+        # supplier back via postMessage lets it show up there immediately.
+        if self.request.GET.get('popup'):
+            return render(self.request, 'products/_popup_close.html', {
+                'created_id': self.object.pk,
+                'created_name': self.object.name,
+                'message_type': 'supplier-created',
+            })
+        return response
 
 
 class SupplierUpdateView(LoginRequiredMixin, StaffPermissionRequiredMixin, UpdateView):

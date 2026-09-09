@@ -108,6 +108,20 @@ class ProductModelValidationTests(TestCase):
         self.assertFalse(form.is_valid())
         self.assertIn('sell_price', form.errors)
 
+    def test_category_is_not_required(self):
+        """Regression test: Product.category allows NULL at the model level
+        (null=True), but Django derives a ModelForm field's `required` from
+        `blank`, not `null` -- without ProductForms.__init__ explicitly
+        setting required=False, the rendered <select> got the HTML
+        `required` attribute and the browser silently blocked the Save
+        click (no request sent at all) whenever category was left unset,
+        with no visible error to explain why."""
+        form = ProductForms(data={
+            'internal_code': 'P1000012', 'name': 'No Category Widget', 'unit_type': 'piece',
+            'sell_price': '1.00', 'quantity': 0,
+        })
+        self.assertTrue(form.is_valid(), form.errors)
+
     def test_duplicate_barcode_is_rejected(self):
         product_a = Product.objects.create(internal_code='P1000003', name='A', sell_price=1, quantity=0)
         product_b = Product.objects.create(internal_code='P1000004', name='B', sell_price=1, quantity=0)
@@ -564,6 +578,53 @@ class ProductSupplierFormsetTests(TestCase):
         names = [link.supplier.name for link in product.product_suppliers.all()]
         self.assertEqual(names, ['Formset Supplier A', 'Formset Supplier B'])
 
+    def test_leaving_alternate_supplier_row_blank_does_not_block_save(self):
+        """Regression test: the "+ Add another supplier" row's hidden
+        `position` field is renumbered by JS the moment the row exists
+        (see _supplier_formset.html), even if the user never picks a
+        supplier for it. That alone used to make Django treat the still-
+        blank row as "changed" and demand a supplier for it -- so setting
+        only the primary supplier and leaving the alternate row untouched
+        wrongly failed with "This field is required."."""
+        manager = Employee.objects.create_user(
+            username='manager18', password='pass12345', role=Employee.MANAGER
+        )
+        category = Category.objects.create(name='Blank Alternate Category')
+        supplier_a = Suppliers.objects.create(name='Only Primary Supplier', bulstat='555555555')
+
+        self.client.force_login(manager)
+        response = self.client.post(reverse('product_create'), {
+            'internal_code': 'P3000003',
+            'name': 'Primary Only Widget',
+            'unit_type': 'piece',
+            'sell_price': '3.00',
+            'quantity': '0',
+            'category': category.pk,
+            'barcode-TOTAL_FORMS': '0',
+            'barcode-INITIAL_FORMS': '0',
+            'barcode-MIN_NUM_FORMS': '0',
+            'barcode-MAX_NUM_FORMS': '1000',
+            'supplier-TOTAL_FORMS': '2',
+            'supplier-INITIAL_FORMS': '0',
+            'supplier-MIN_NUM_FORMS': '0',
+            'supplier-MAX_NUM_FORMS': '1000',
+            'supplier-0-supplier': supplier_a.pk,
+            'supplier-0-position': '1',
+            # Alternate row: "+ Add another supplier" was clicked, but no
+            # supplier was ever picked for it -- position still gets
+            # renumbered to 2 by JS.
+            'supplier-1-supplier': '',
+            'supplier-1-position': '2',
+            'recipe-TOTAL_FORMS': '0',
+            'recipe-INITIAL_FORMS': '0',
+            'recipe-MIN_NUM_FORMS': '0',
+            'recipe-MAX_NUM_FORMS': '1000',
+        })
+        self.assertEqual(response.status_code, 302)
+        product = Product.objects.get(internal_code='P3000003')
+        names = [link.supplier.name for link in product.product_suppliers.all()]
+        self.assertEqual(names, ['Only Primary Supplier'])
+
 
 class FreeInternalCodeTests(TestCase):
     """Matches the exact scenario from the request: codes 4 and 6 taken ->
@@ -747,3 +808,170 @@ class RecipeProductTests(TestCase):
         self.assertEqual(links[0].ingredient, self.milk)
         self.assertEqual(links[0].quantity, Decimal('0.200'))
         mock_delay.assert_called_once_with(product.pk)
+
+    def test_recalculate_ingredient_cost_sums_ingredient_costs(self):
+        self.milk.delivery_price = Decimal('1.80')
+        self.milk.save(update_fields=['delivery_price'])
+        self.coffee.delivery_price = Decimal('18.00')
+        self.coffee.save(update_fields=['delivery_price'])
+        RecipeIngredient.objects.create(recipe=self.cappuccino, ingredient=self.milk, quantity=Decimal('0.050'))
+        RecipeIngredient.objects.create(recipe=self.cappuccino, ingredient=self.coffee, quantity=Decimal('0.007'))
+
+        self.cappuccino.recalculate_ingredient_cost()
+
+        self.cappuccino.refresh_from_db()
+        # 0.050 * 1.80 + 0.007 * 18.00 = 0.09 + 0.126 = 0.216, rounded to
+        # the field's 2 decimal places on save.
+        self.assertEqual(self.cappuccino.delivery_price, Decimal('0.22'))
+
+    def test_recalculate_ingredient_cost_is_noop_for_non_recipe(self):
+        self.milk.delivery_price = Decimal('9.99')
+        self.milk.save(update_fields=['delivery_price'])
+        self.milk.recalculate_ingredient_cost()
+        self.milk.refresh_from_db()
+        self.assertEqual(self.milk.delivery_price, Decimal('9.99'))
+
+    @patch('STORA.products.views.backfill_recipe_ingredient_stock.delay')
+    def test_create_view_ignores_posted_delivery_price_and_computes_it(self, mock_delay):
+        self.milk.delivery_price = Decimal('1.80')
+        self.milk.save(update_fields=['delivery_price'])
+        category = Category.objects.create(name='Cost Category')
+        self.client.force_login(self.manager)
+        response = self.client.post(reverse('product_create'), {
+            'internal_code': 'R000007',
+            'name': 'Cost Test Latte',
+            'unit_type': 'piece',
+            'sell_price': '3.50',
+            # Whatever gets typed/posted here must be overridden by the
+            # server-side computed ingredient cost, not trusted as-is.
+            'delivery_price': '999.00',
+            'quantity': '0',
+            'category': category.pk,
+            'is_recipe': 'on',
+            'barcode-TOTAL_FORMS': '0',
+            'barcode-INITIAL_FORMS': '0',
+            'barcode-MIN_NUM_FORMS': '0',
+            'barcode-MAX_NUM_FORMS': '1000',
+            'supplier-TOTAL_FORMS': '0',
+            'supplier-INITIAL_FORMS': '0',
+            'supplier-MIN_NUM_FORMS': '0',
+            'supplier-MAX_NUM_FORMS': '1000',
+            'recipe-TOTAL_FORMS': '1',
+            'recipe-INITIAL_FORMS': '0',
+            'recipe-MIN_NUM_FORMS': '0',
+            'recipe-MAX_NUM_FORMS': '1000',
+            'recipe-0-ingredient': self.milk.pk,
+            'recipe-0-quantity': '0.200',
+        })
+        self.assertEqual(response.status_code, 302)
+        product = Product.objects.get(internal_code='R000007')
+        # 0.200 * 1.80 = 0.36 -- not the posted 999.00.
+        self.assertEqual(product.delivery_price, Decimal('0.36'))
+
+
+class IngredientSearchViewTests(TestCase):
+    """Backs the ingredient picker on the recipe formset -- returns JSON so
+    the JS never has to render thousands of <option>s into the page."""
+
+    def setUp(self):
+        self.manager = Employee.objects.create_user(
+            username='manager15', password='pass12345', role=Employee.MANAGER
+        )
+        self.raw_materials = Category.objects.create(name='Raw Materials')
+        self.drinks = Category.objects.create(name='Drinks')
+        self.milk = Product.objects.create(
+            internal_code='S000001', name='Milk', sell_price=2, delivery_price=Decimal('1.80'),
+            quantity=Decimal('5.000'), unit_type=Product.WEIGHT, category=self.raw_materials,
+        )
+        self.water = Product.objects.create(
+            internal_code='S000002', name='Bottled Water', sell_price=1, category=self.drinks, quantity=0,
+        )
+        self.cappuccino = Product.objects.create(
+            internal_code='S000003', name='Cappuccino', sell_price=3, quantity=0, is_recipe=True,
+        )
+
+    def test_requires_login(self):
+        response = self.client.get(reverse('ingredient_search'))
+        self.assertEqual(response.status_code, 302)
+
+    def test_excludes_recipe_products(self):
+        self.client.force_login(self.manager)
+        response = self.client.get(reverse('ingredient_search'))
+        ids = [r['id'] for r in response.json()['results']]
+        self.assertIn(self.milk.pk, ids)
+        self.assertNotIn(self.cappuccino.pk, ids)
+
+    def test_filters_by_category(self):
+        self.client.force_login(self.manager)
+        response = self.client.get(reverse('ingredient_search'), {'category': self.raw_materials.pk})
+        ids = [r['id'] for r in response.json()['results']]
+        self.assertIn(self.milk.pk, ids)
+        self.assertNotIn(self.water.pk, ids)
+
+    def test_search_by_name(self):
+        self.client.force_login(self.manager)
+        response = self.client.get(reverse('ingredient_search'), {'q': 'Milk'})
+        ids = [r['id'] for r in response.json()['results']]
+        self.assertIn(self.milk.pk, ids)
+        self.assertNotIn(self.water.pk, ids)
+
+    def test_result_includes_delivery_price_for_cost_calculation(self):
+        self.client.force_login(self.manager)
+        response = self.client.get(reverse('ingredient_search'), {'q': 'Milk'})
+        result = next(r for r in response.json()['results'] if r['id'] == self.milk.pk)
+        self.assertEqual(result['delivery_price'], 1.80)
+
+
+class CategoryCreatePopupTests(TestCase):
+    """"+ New category" on the product form opens category_create in a new
+    tab (?popup=1) so the in-progress product form isn't lost. On success
+    that tab should hand the new category back via postMessage and close,
+    not redirect to the categories list like a normal visit would."""
+
+    def setUp(self):
+        self.manager = Employee.objects.create_user(
+            username='manager16', password='pass12345', role=Employee.MANAGER
+        )
+
+    def test_normal_create_still_redirects_to_category_list(self):
+        self.client.force_login(self.manager)
+        response = self.client.post(reverse('category_create'), {'name': 'Snacks'})
+        self.assertRedirects(response, reverse('category_list'))
+
+    def test_popup_create_renders_close_script_instead_of_redirecting(self):
+        self.client.force_login(self.manager)
+        response = self.client.post(reverse('category_create') + '?popup=1', {'name': 'Raw Materials'})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'window.opener')
+        self.assertContains(response, 'category-created')
+        category = Category.objects.get(name='Raw Materials')
+        self.assertContains(response, str(category.pk))
+
+
+class SupplierCreatePopupTests(TestCase):
+    """Same "+ New X" popup pattern as categories (see CategoryCreatePopupTests),
+    applied to "+ New supplier" on the product form's supplier formset."""
+
+    def setUp(self):
+        self.manager = Employee.objects.create_user(
+            username='manager17', password='pass12345', role=Employee.MANAGER
+        )
+
+    def test_normal_create_still_redirects_to_suppliers_list(self):
+        self.client.force_login(self.manager)
+        response = self.client.post(reverse('suppliers_create'), {
+            'name': 'Popup Test Supplier A', 'bulstat': '111222333',
+        })
+        self.assertRedirects(response, reverse('suppliers_list'))
+
+    def test_popup_create_renders_close_script_instead_of_redirecting(self):
+        self.client.force_login(self.manager)
+        response = self.client.post(reverse('suppliers_create') + '?popup=1', {
+            'name': 'Popup Test Supplier B', 'bulstat': '444555666',
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'window.opener')
+        self.assertContains(response, 'supplier-created')
+        supplier = Suppliers.objects.get(name='Popup Test Supplier B')
+        self.assertContains(response, str(supplier.pk))
+

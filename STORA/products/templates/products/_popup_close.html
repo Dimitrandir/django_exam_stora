@@ -1,0 +1,23 @@
+<!doctype html>
+<html>
+<head><title>Done</title></head>
+<body style="font-family: sans-serif; padding: 20px;">
+<p id="popup-close-message">Saved -- sending it back to the product form...</p>
+<script>
+if (window.opener) {
+    window.opener.postMessage(
+        {type: '{{ message_type }}', id: {{ created_id }}, name: "{{ created_name|escapejs }}"},
+        window.location.origin
+    );
+}
+window.close();
+// Some browsers refuse to close a tab that wasn't opened via window.open()
+// -- if we're still here a moment later, the postMessage above already
+// went through either way, so just tell the user it's safe to close this
+// tab manually and go back.
+setTimeout(function () {
+    document.getElementById('popup-close-message').textContent = 'Saved -- you can close this tab and go back.';
+}, 300);
+</script>
+</body>
+</html>

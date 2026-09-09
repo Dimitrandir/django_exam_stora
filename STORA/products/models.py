@@ -105,6 +105,22 @@ class Product(models.Model):
     def __str__(self):
         return self.name
 
+    def recalculate_ingredient_cost(self):
+        """A recipe product is never itself delivered, so `delivery_price`
+        ("Last Delivery Price") has no real value to hold for one -- instead
+        it's repurposed to show the recipe's computed cost: the sum of each
+        ingredient's own delivery_price times how much of it the recipe uses.
+        Call this after (re)saving the recipe's RecipeIngredient rows."""
+        if not self.is_recipe:
+            return
+        total = Decimal('0')
+        for link in self.recipe_ingredients.select_related('ingredient'):
+            if link.ingredient.delivery_price:
+                total += link.quantity * link.ingredient.delivery_price
+        if self.delivery_price != total:
+            self.delivery_price = total
+            self.save(update_fields=['delivery_price'])
+
 
 class RecipeIngredient(models.Model):
     """One ingredient line for a `Product` with `is_recipe=True`.

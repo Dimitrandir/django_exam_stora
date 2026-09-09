@@ -3,7 +3,7 @@ from django.urls import path
 from .api_views import ProductListAPI
 from .views import (
     ProductListView, ProductCreateView, ProductDeleteView, ProductUpdateView, ProductDetailView,
-    ProductHistoryView, ProductInlineUpdateView, ProductBulkActionView,
+    ProductHistoryView, ProductInlineUpdateView, ProductBulkActionView, IngredientSearchView,
     CategoryListView, CategoryCreateView, CategoryDeleteView, CategoryUpdateView,
     SuppliersListView, SupplierCreateView, SupplierUpdateView, SupplierDeleteView
 )
@@ -11,6 +11,7 @@ from .views import (
 urlpatterns = [
     path('', ProductListView.as_view(), name='product_list'),
     path('create/', ProductCreateView.as_view(), name='product_create'),
+    path('ingredient-search/', IngredientSearchView.as_view(), name='ingredient_search'),
     path('bulk-action/', ProductBulkActionView.as_view(), name='product_bulk_action'),
     path('<int:pk>/', ProductDetailView.as_view(), name='product_details'),
     path('<int:pk>/history/', ProductHistoryView.as_view(), name='product_history'),

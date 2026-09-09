@@ -32,6 +32,16 @@
         </p>
 
         <p>
+            <label>{{ form.is_recipe }} {{ form.is_recipe.label }}</label>
+            <small>{{ form.is_recipe.help_text }}</small>
+            {{ form.is_recipe.errors }}
+        </p>
+
+        <div id="recipe-section">
+            {% include 'products/_recipe_formset.html' %}
+        </div>
+
+        <p>
             {{ form.unit_type.label_tag }}
             {{ form.unit_type }}
             <small>{{ form.unit_type.help_text }}</small>
@@ -41,6 +51,7 @@
         <p>
             {{ form.delivery_price.label_tag }}
             {{ form.delivery_price }}
+            <small id="delivery-price-recipe-hint" class="text-muted" style="display:none;">Auto-calculated from ingredient costs.</small>
             {{ form.delivery_price.errors }}
         </p>
 
@@ -48,30 +59,25 @@
             {{ form.sell_price.label_tag }}
             {{ form.sell_price }}
             {{ form.sell_price.errors }}
+            <span style="margin-left: 10px;">
+                <label for="markup-percent-input">Markup %:</label>
+                <input type="number" id="markup-percent-input" step="0.1" style="width: 90px;">
+            </span>
+            <br><small class="text-muted">Type either one -- Selling Price or Markup % -- and the other fills in, based on Last Delivery Price.</small>
         </p>
 
         <p>
             {{ form.category.label_tag }}
             {{ form.category }}
-            <a href="{% url 'category_create' %}" target="_blank" style="margin-left: 10px;">+ New category</a>
+            <a href="{% url 'category_create' %}?popup=1" target="_blank" style="margin-left: 10px;">+ New category</a>
             {{ form.category.errors }}
-        </p>
-
-        <p>
-            <label>{{ form.is_recipe }} {{ form.is_recipe.label }}</label>
-            <small>{{ form.is_recipe.help_text }}</small>
-            {{ form.is_recipe.errors }}
         </p>
 
         <hr>
         {% include 'products/_barcode_formset.html' %}
         <hr>
         {% include 'products/_supplier_formset.html' %}
-        <a href="{% url 'suppliers_create' %}" target="_blank">+ New supplier</a>
-        <hr>
-        <div id="recipe-section">
-            {% include 'products/_recipe_formset.html' %}
-        </div>
+        <a href="{% url 'suppliers_create' %}?popup=1" target="_blank">+ New supplier</a>
         <hr>
 
         <button type="submit">Save</button>
@@ -93,6 +99,57 @@
         function sync() { section.style.display = checkbox.checked ? '' : 'none'; }
         checkbox.addEventListener('change', sync);
         sync();
+    })();
+
+    // "+ New category" opens in a new tab (?popup=1) so the in-progress
+    // product form isn't lost. That tab's window.opener still points back
+    // here (target="_blank" without rel=noopener), so once the category is
+    // saved it can hand the new category back via postMessage instead of
+    // the user having to reload this page to see it in the dropdown.
+    window.addEventListener('message', function (e) {
+        if (e.origin !== window.location.origin || !e.data) return;
+        if (e.data.type === 'category-created') {
+            var select = document.getElementById('id_category');
+            var opt = document.createElement('option');
+            opt.value = e.data.id;
+            opt.textContent = e.data.name;
+            select.appendChild(opt);
+            select.value = e.data.id;
+        }
+    });
+
+    (function () {
+        var deliveryPriceInput = document.getElementById('id_delivery_price');
+        var sellPriceInput = document.getElementById('id_sell_price');
+        var markupInput = document.getElementById('markup-percent-input');
+        var lastEdited = null; // 'markup' or 'sellPrice' -- whichever the user typed last wins when cost changes
+
+        function cost() { return parseFloat(deliveryPriceInput.value) || 0; }
+
+        function markupFromSellPrice() {
+            var sellPrice = parseFloat(sellPriceInput.value);
+            if (cost() > 0 && !isNaN(sellPrice)) {
+                markupInput.value = ((sellPrice - cost()) / cost() * 100).toFixed(1);
+            }
+        }
+
+        function sellPriceFromMarkup() {
+            var markup = parseFloat(markupInput.value);
+            if (cost() > 0 && !isNaN(markup)) {
+                sellPriceInput.value = (cost() * (1 + markup / 100)).toFixed(2);
+            }
+        }
+
+        sellPriceInput.addEventListener('input', function () { lastEdited = 'sellPrice'; markupFromSellPrice(); });
+        markupInput.addEventListener('input', function () { lastEdited = 'markup'; sellPriceFromMarkup(); });
+        // Recipe cost can change live as ingredients/quantities change (see
+        // _recipe_formset.html) -- keep whichever of markup/sell price the
+        // user set on purpose in sync with the new cost.
+        deliveryPriceInput.addEventListener('input', function () {
+            if (lastEdited === 'markup') { sellPriceFromMarkup(); } else { markupFromSellPrice(); }
+        });
+
+        markupFromSellPrice();
     })();
     </script>
 

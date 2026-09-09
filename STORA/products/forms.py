@@ -35,6 +35,15 @@ class ProductForms(forms.ModelForm):
         self.fields['quantity'].help_text = (
             'Quantity cannot be changed manually. Use Deliveries, Sales, modules to update stock levels.'
         )
+        # The model allows category=NULL (`null=True`, no `blank=True`) --
+        # without this, Django's ModelForm still marks it required (it
+        # derives `required` from `blank`, not `null`), which renders the
+        # <select> with the HTML `required` attribute. That makes the
+        # browser silently block the Save click with a native tooltip
+        # whenever category is left unset -- no page change, no visible
+        # error, easy to mistake for "did this even save?". Matches the
+        # same fix already used in ProductInlineEditForm below.
+        self.fields['category'].required = False
 
 
 class ProductInlineEditForm(forms.ModelForm):
@@ -121,6 +130,16 @@ class ProductSupplierForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.fields['position'].required = False
 
+    def has_changed(self):
+        # `position` is renumbered by JS the moment a row exists (see
+        # _supplier_formset.html), even for an "alternate supplier" row the
+        # user never touched. Without this, Django's formset sees `position`
+        # differ from its default and treats the whole (still-empty) row as
+        # "changed" -- which defeats the normal extra-blank-form skip and
+        # wrongly demands a `supplier` value for a row that was never meant
+        # to be filled in. Only `supplier` itself should decide that.
+        return 'supplier' in self.changed_data
+
 
 ProductSupplierFormSet = inlineformset_factory(
     Product,
@@ -137,12 +156,21 @@ class RecipeIngredientForm(forms.ModelForm):
         model = RecipeIngredient
         fields = ['ingredient', 'quantity']
         labels = {'quantity': 'Quantity per unit (kg for weight, pcs for piece)'}
+        widgets = {
+            # Rendering the full product queryset as <option>s doesn't scale
+            # (a shop can have thousands of products) -- the picker in
+            # _recipe_formset.html sets this value via JS after the user
+            # searches/picks a product through IngredientSearchView instead.
+            # ModelChoiceField still validates the submitted pk against the
+            # queryset below regardless of widget, so this stays just as safe.
+            'ingredient': forms.HiddenInput(),
+        }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # A recipe can't contain another recipe (no nested recipes) -- keep
-        # that impossible to pick in the UI, not just a validation error
-        # after the fact.
+        # A recipe can't contain another recipe (no nested recipes) -- kept
+        # as the validation queryset even though the widget no longer lists
+        # options from it directly.
         self.fields['ingredient'].queryset = Product.objects.filter(is_recipe=False).order_by('name')
 
 
@@ -151,7 +179,9 @@ RecipeIngredientFormSet = inlineformset_factory(
     RecipeIngredient,
     form=RecipeIngredientForm,
     fk_name='recipe',
-    extra=1,
+    # extra=0, not 1 -- rows are only ever added by picking a search result
+    # in _recipe_formset.html's JS, never by showing a blank unfilled row.
+    extra=0,
     can_delete=True,
 )
 

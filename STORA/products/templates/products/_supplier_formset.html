@@ -53,12 +53,47 @@
         });
     }
 
+    // Suppliers created via the "+ New supplier" popup (see product_create/
+    // edit.html) while this page is open: applied to every row's <select>
+    // already on the page, and re-applied to each new row the "+ Add
+    // another supplier" button creates afterwards (its <select> is cloned
+    // from server-rendered HTML captured at page load, so it doesn't know
+    // about them either without this).
+    var newlyCreatedSuppliers = [];
+
+    function addSupplierOption(select, supplier) {
+        var opt = document.createElement('option');
+        opt.value = supplier.id;
+        opt.textContent = supplier.name;
+        select.appendChild(opt);
+    }
+
+    window.addEventListener('message', function (e) {
+        if (e.origin !== window.location.origin || !e.data || e.data.type !== 'supplier-created') return;
+        var supplier = {id: e.data.id, name: e.data.name};
+        newlyCreatedSuppliers.push(supplier);
+        var autoSelected = false;
+        container.querySelectorAll('select[name$="-supplier"]').forEach(function (select) {
+            addSupplierOption(select, supplier);
+            // Pick it for the first still-empty row -- most likely the one
+            // the user clicked "+ New supplier" for. Leave already-filled
+            // rows alone.
+            if (!autoSelected && !select.value) {
+                select.value = String(supplier.id);
+                autoSelected = true;
+            }
+        });
+    });
+
     addBtn.addEventListener('click', function () {
         var index = parseInt(totalForms.value, 10);
         var html = template.innerHTML.replace(/__prefix__/g, index);
         var wrapper = document.createElement('div');
         wrapper.innerHTML = html.trim();
-        container.appendChild(wrapper.firstElementChild);
+        var row = wrapper.firstElementChild;
+        var select = row.querySelector('select[name$="-supplier"]');
+        newlyCreatedSuppliers.forEach(function (supplier) { addSupplierOption(select, supplier); });
+        container.appendChild(row);
         totalForms.value = index + 1;
         renumber();
     });
