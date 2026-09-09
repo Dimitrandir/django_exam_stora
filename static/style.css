@@ -250,6 +250,15 @@ input[type="text"], input[type="number"], input[type="email"], select, textarea 
     line-height: 1;
     cursor: pointer;
     user-select: none;
+    border-radius: 3px;
+}
+
+/* Active filter on this column -- otherwise there's no way to tell which
+   columns are filtered without opening each one's panel. */
+.excel-filter-toggle.is-filtered {
+    background-color: var(--accent-color, #0d6efd);
+    color: white;
+    font-weight: bold;
 }
 
 /* Positioned via JS (top/left) as position:fixed and appended to <body>,
