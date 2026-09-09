@@ -86,6 +86,37 @@ Apps: `accounts`, `core`, `products`, `deliveries`, `sales`, `reports`.
   като `findProductByCode`, без extra заявка към сървъра при всяко
   сканиране). Разпознато е засега само на екрана за продажби, не и при
   въвеждане на продукт извън чекбокса за маркиране.
+- **Данъчни групи (`TaxGroup`) + цени с/без ДДС — `Product.delivery_price`/
+  `sell_price` си остават с ДДС (gross), "без ДДС" НЕ се пази в базата.**
+  `TaxGroup` е управляем списък (име + `rate` %), като Category/Suppliers —
+  не фиксиран набор от 20%/9%/0%. `Product.tax_group` е nullable FK
+  (`SET_NULL`, изтриване на данъчна група просто обезличава продукта, не
+  блокира). В create/edit на продукт има "Prices" секция с чекбокс "Show
+  prices without VAT too" — скрива/показва по 2 допълнителни UI-only полета
+  (delivery/sell без ДДС), изчислени живо чрез JS и данъчния % на
+  избраната група (`tax_group_rates` json_script blob в контекста,
+  огледален на `products_data`/`barcodes_data` патърна). Двупосочно: пишеш
+  без ДДС → смята с ДДС (и обратно), досущ като Markup % ↔ Selling Price
+  патърна. Справките ще смятат "без ДДС" on-the-fly от `tax_group.rate`,
+  когато им дойде редът — не е имплементирано още.
+- **История на промените по продукт (`ProductChangeLog`) — по един ред за
+  всяко реално сменено поле, не snapshot на целия продукт.** Следи се:
+  `internal_code`, `name`, `unit_type`, `delivery_price`, `sell_price`,
+  `category`, `tax_group`, `is_recipe` — умишлено НЕ `quantity` (тя си има
+  собствена история през продажби/доставки, виж `ProductHistoryView`).
+  Пълни се автоматично през `pre_save`/`post_save` сигнали на `Product` в
+  `products/models.py` (сравнява старата стойност от базата с новата) —
+  хваща едновременно редакции през Edit формата и inline редакцията в
+  Products грида, без да пипаш всеки view поотделно. **Кой е направил
+  промяната сигналът не знае сам** — `ProductUpdateView`/
+  `ProductInlineUpdateView` слагат `form.instance._changed_by =
+  request.user` точно преди `form.save()`; ако добавиш нов view, който
+  записва Product директно, направи същото, иначе `changed_by` ще излезе
+  празен. **Bulk действията в Products грида (`ProductBulkActionView`)
+  НЕ се хващат** — ползват `QuerySet.update()`, което заобикаля Django
+  сигналите изцяло; известно ограничение, не е бъг. Показва се като втора
+  таблица на пълната History страница (`product_history.html`), филтрирана
+  по същия период като продажби/доставки.
 
 (Добавяй нови правила тук, когато изникнат в разговор с потребителя, за да
 не се преоткриват на всяка сесия.)
