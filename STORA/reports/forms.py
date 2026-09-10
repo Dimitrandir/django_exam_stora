@@ -17,6 +17,10 @@ class ReportPeriodForm(forms.Form):
         queryset=Suppliers.objects.all(),
         required=False,
         empty_label='All suppliers',
+        # Rendered as a plain <select> by default -- deliveries_report.html
+        # swaps this for a search+popup-free picker in JS, same pattern as
+        # the delivery form's own supplier field (see supplier_search).
+        widget=forms.HiddenInput(),
     )
     category = forms.ModelChoiceField(
         label='Category',

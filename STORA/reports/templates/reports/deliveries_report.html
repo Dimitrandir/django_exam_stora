@@ -1,4 +1,9 @@
 {% extends 'base.html' %}
+{% load static cache_bust %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
+{% endblock %}
 
 {% block content %}
 <section class="reports-deliveries">
@@ -29,8 +34,12 @@
                         </div>
 
                         <div class="col-12">
-                            <div class="report-filter__field">
+                            <div class="report-filter__field position-relative" style="max-width: 320px;">
                                 {{ form.supplier.label_tag }}
+                                <input type="text" id="supplier-search-input" class="form-control"
+                                       placeholder="Search supplier by name... (blank = all)" autocomplete="off"
+                                       value="{{ selected_supplier_name }}">
+                                <div id="supplier-search-results" class="global-search-results"></div>
                                 {{ form.supplier }}
                             </div>
                         </div>
@@ -67,41 +76,15 @@
     </section>
 
     <section class="report-section card shadow-sm border-0 rounded-4 mb-4">
-        <div class="card-body p-0">
-            <header class="section-header px-4 pt-4 pb-3">
+        <div class="card-body">
+            <header class="section-header d-flex justify-content-between align-items-center mb-3">
                 <h2 class="h4 mb-0">Deliveries in Period</h2>
+                <button type="button" id="deliveries-export-btn" class="btn btn-outline-secondary btn-sm">Export to Excel</button>
             </header>
 
-            <div class="table-responsive px-4 pb-4">
-                <table class="report-table table table-hover align-middle mb-0">
-                    <thead class="table-dark">
-                        <tr>
-                            <th>ID</th>
-                            <th>Time</th>
-                            <th>Supplier</th>
-                            <th>Receiver</th>
-                            <th>Amount</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for delivery in deliveries %}
-                        <tr>
-                            <td>{{ delivery.id }}</td>
-                            <td>{{ delivery.time_of_delivery }}</td>
-                            <td>{{ delivery.supplier }}</td>
-                            <td>{{ delivery.receiver }}</td>
-                            <td>{{ delivery.total_amount }}</td>
-                        </tr>
-                        {% empty %}
-                        <tr>
-                            <td colspan="5" class="text-center py-4 text-muted">
-                                No deliveries found for the selected period.
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
+            {{ deliveries_data|json_script:"deliveries-table-data" }}
+            <div id="deliveries-table" class="table-sm"></div>
+            <p class="text-muted small mt-2 mb-0">Click a row to open that delivery (edit/delete from there).</p>
         </div>
     </section>
 
@@ -110,4 +93,115 @@
         <a href="{% url 'sales_report' %}" class="btn btn-outline-primary">Sales report</a>
     </footer>
 </section>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'vendor/sheetjs/xlsx.full.min.js' %}"></script>
+<script src="{% static 'vendor/tabulator/tabulator.min.js' %}"></script>
+<script src="{% static_v 'js/data-table.js' %}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    function moneyFormatter(cell) {
+        var v = Number(cell.getValue());
+        return isNaN(v) ? '' : v.toFixed(2) + ' eur';
+    }
+
+    var table = initExcelStyleTable('#deliveries-table', 'deliveries-table-data', [
+        {
+            title: '#', formatter: 'rownum', width: 50, hozAlign: 'center',
+            headerSort: false, headerFilter: false, hideable: false,
+        },
+        {title: 'Date', field: 'time_of_delivery', width: 160},
+        {title: 'Document Type', field: 'document_type', width: 150},
+        {title: 'Document Number', field: 'document_number', width: 150},
+        {title: 'Document Date', field: 'document_date', width: 130},
+        {title: 'Supplier', field: 'supplier', width: 220},
+        {
+            title: 'Total (VAT incl.)', field: 'total_amount', width: 160, hozAlign: 'right',
+            formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
+        },
+        {
+            title: 'Total (no VAT)', field: 'total_amount_without_vat', width: 160, hozAlign: 'right',
+            formatter: moneyFormatter, visible: false, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
+        },
+    ], {placeholder: 'No deliveries found for the selected period.'});
+
+    // Click a row to open that delivery -- same convention as the Products
+    // grid (view/edit/delete live on the detail page, not duplicated here).
+    table.on('rowClick', function (e, row) {
+        if (e.target.closest('.tabulator-header')) return;
+        window.location = row.getData().view_url;
+    });
+
+    document.getElementById('deliveries-export-btn').addEventListener('click', function () {
+        table.download('xlsx', 'deliveries_report.xlsx', {sheetName: 'Deliveries'});
+    });
+
+    // -- Supplier filter: searchable picker instead of a plain <select>,
+    // same debounced-trigram-search pattern as the delivery form's own
+    // supplier field. This is a GET filter (not a data-entry form), so
+    // there's no "+ New supplier" here -- just search, or leave blank for
+    // "All suppliers". --
+    (function () {
+        var searchInput = document.getElementById('supplier-search-input');
+        var resultsBox = document.getElementById('supplier-search-results');
+        var hiddenInput = document.getElementById('id_supplier');
+        var debounceTimer = null;
+        var currentController = null;
+
+        function renderResults(data) {
+            resultsBox.innerHTML = '';
+
+            var allOption = document.createElement('div');
+            allOption.className = 'global-search-result';
+            allOption.textContent = '— All suppliers —';
+            allOption.addEventListener('click', function () {
+                hiddenInput.value = '';
+                searchInput.value = '';
+                resultsBox.classList.remove('is-open');
+            });
+            resultsBox.appendChild(allOption);
+
+            data.results.forEach(function (supplier) {
+                var row = document.createElement('div');
+                row.className = 'global-search-result';
+                row.textContent = supplier.name;
+                row.addEventListener('click', function () {
+                    hiddenInput.value = supplier.id;
+                    searchInput.value = supplier.name;
+                    resultsBox.classList.remove('is-open');
+                });
+                resultsBox.appendChild(row);
+            });
+            resultsBox.classList.add('is-open');
+        }
+
+        function runSearch() {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(function () {
+                if (currentController) currentController.abort();
+                currentController = new AbortController();
+                var params = new URLSearchParams();
+                var q = searchInput.value.trim();
+                if (q) params.set('q', q);
+                fetch('{% url "supplier_search" %}?' + params.toString(), {signal: currentController.signal})
+                    .then(function (r) { return r.json(); })
+                    .then(renderResults)
+                    .catch(function (e) { if (e.name !== 'AbortError') { /* transient network error -- ignore */ } });
+            }, 200);
+        }
+
+        searchInput.addEventListener('input', function () {
+            hiddenInput.value = '';
+            runSearch();
+        });
+        searchInput.addEventListener('focus', runSearch);
+        document.addEventListener('click', function (e) {
+            if (!e.target.closest('#supplier-search-input') && !e.target.closest('#supplier-search-results')) {
+                resultsBox.classList.remove('is-open');
+            }
+        });
+    })();
+});
+</script>
 {% endblock %}
