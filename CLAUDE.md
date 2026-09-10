@@ -118,6 +118,138 @@ Apps: `accounts`, `core`, `products`, `deliveries`, `sales`, `reports`.
   таблица на пълната History страница (`product_history.html`), филтрирана
   по същия период като продажби/доставки.
 
+- **Доставки (`DeliveryItems`) наличността се смята delta-based, огледално
+  на `sales/models.py::SaleItems`.** `save()` лочва продукта с
+  `select_for_update()`, сравнява `self.delivery_quantity` с предишната
+  стойност от базата (ако редът вече съществува) и прилага само РАЗЛИКАТА
+  към `Product.quantity` — НЕ цялото ново количество при всяко save (иначе
+  редакция на съществуващ ред дублира наличността). `post_delete` сигнал
+  връща наличността назад, ако ред/цяла доставка се изтрие (CASCADE-ва през
+  всеки `DeliveryItems`). `DeliveryAttributes.total_amount` се преизчислява
+  автоматично през `post_save` сигнал на `DeliveryItems`
+  (`recalculate_total()`), не ръчно в `save()`.
+- **Типове документи за доставка (`DeliveryAttributes.document_type`) —
+  управляем списък (`DocumentType` модел), не фиксирани Python `choices`.**
+  Същия patтern като Category/TaxGroup — CRUD екран
+  (`deliveries/document-types/`), но **само Manager** може да добавя/редактира
+  (`add_documenttype`/`change_documenttype` НЕ са в Warehouse group-а
+  нарочно — списъкът е кратък и рядко се сменя; Warehouse само избира от
+  него). Няма "+ New document type" shortcut popup от формата за доставка
+  (изрично поискано от потребителя да се маха) — управлява се само през
+  собствената си страница. Мигрирано от старото `CharField(choices=[...])`
+  през add-populate-swap миграционна серия (виж
+  `deliveries/migrations/0004-0008`) — старите `'INVOICE'`/`'DELIVERY_NOTE'`
+  стойности са преместени към `DocumentType` редове с
+  `name='Invoice'`/`'Delivery Note'`.
+- **Таблицата с артикули в доставка (`_delivery_items_table.html`) е
+  Tabulator, не plain HTML table + Django formset rows** — sort, Excel-style
+  филтър, column chooser, export to Excel, ред с пореден номер (`#`,
+  built-in `formatter: 'rownum'`). Визуалната таблица е 100% JS state, с
+  ред за търсене отгоре (reuse на `products.ingredient_search` endpoint —
+  trigram search, вече изключва `is_recipe` продукти, което се оказва точно
+  правилно и за доставки, тъй като рецептурен продукт никога не се доставя
+  directly), с пълна клавиатурна навигация — пишеш, стрелки надолу/нагоре
+  местят маркировката между резултатите (първият е авто-маркиран щом
+  списъкът се появи), Enter добавя маркирания в грида. Ако dropdown-ът е
+  затворен/празен, Enter пада обратно на точен код/баркод match (за скенер
+  convenience, работи и с реален баркод — везнените 13-цифрени баркодове с
+  вградено тегло още НЕ се декодират тук, чака физически скенер за тест, за
+  разлика от Sales екрана, където вече работи). **Капан:** резултатите от
+  `ingredient_search` НЕ носят `sell_price`/`tax_group__rate` (ендпойнтът е
+  правен за recipe picker-а, който не ги ползва) — `addProductRow()` затова
+  винаги си донаписва пълния продукт от `productsById` (страницата's own
+  `products_data` dump) по id, преди да построи реда, вместо да се
+  доверява директно на каквото dropdown/баркод match-ът е подал.
+  **Колоните Qty/Unit Price/Unit Price (no VAT)/Line Total/Sell
+  Price/Markup %/Expiry Date всички са editable**, с автоматичен фокус flow
+  — добавяш продукт → Qty полето влиза в edit режим директно, след
+  въвеждане на количество и Enter автоматично преминава към Unit Price.
+  **Два свързани капана, открити живо от потребителя (изглеждаше
+  фокусирано, но реално не приемаше писане; после Enter презареждаше
+  цялата страница):**
+  1. Голото `cell.edit(true)` рендира `<input>`-а в DOM-а, но не винаги
+     реално го фокусира — особено когато клетката, върху която се вика, е
+     "стара" референция, хваната ПРЕДИ `row.update()` (recalcRow) да е
+     предизвикал Tabulator да я преизрисува, или когато се вика синхронно
+     отвътре в ЧУЖД `cellEdited` handler (Tabulator още не е приключил
+     вътрешния cleanup на предишната клетка). Фикс: `focusCellEditor(row,
+     field)` helper — вика `setTimeout(..., 0)` (изчаква Tabulator да си
+     довърши текущия redraw), после ПРЕСЪздава клетката свежо през
+     `row.getCell(field)` (не разчита на стара `cell` референция), вика
+     `.edit(true)`, после explicit намира `<input>`-а и вика `.focus()` (+
+     `.select()`) върху него ръчно.
+  2. **Вграденият `editor: 'number'` на Tabulator изобщо няма Enter-key
+     логика** (потвърдено срещу vendored build-а — keybinding таблицата му
+     мапва само Tab/Shift-Tab/стрелки, никога Enter/13) — нито commit,
+     нито navigation. Затова Enter в число-поле просто си минава през
+     browser-a необработен и си остава ЕДИНСТВЕНИЯТ handler: браузърният
+     "Enter в поле вътре в `<form>` праща формата" — цялата доставка
+     реално се submit-ва по средата на въвеждане, страницата презарежда.
+     Фикс, на два пласта: (a) delegated `keydown` listener на цялата
+     `.delivery-form__items` секция, `e.preventDefault()` за Enter във
+     всеки `<input>`/`<textarea>` вътре — блокира implicit submit
+     безусловно, като safety net; (b) собствен `numberEditor(cell,
+     onRendered, success, cancel, editorParams)` за ВСИЧКИ число-колони
+     (замества голото `editor: 'number'`) — explicit `keydown` handler
+     вътре в него, Enter вика `success(value)` директно (документираният
+     Tabulator API за коммит на custom editor), Escape вика `cancel()`;
+     вече не разчита на недокументираното вътрешно blur/Enter поведение
+     на вградения editor изобщо. Пет полета са свързани двупосочно през
+     общата
+  `recalcRow(row, source)` функция (JS "source of truth" патърн — кое поле
+  току-що е пипнато решава кои други да се преизчислят, за да няма
+  безкраен цикъл): Unit Price ↔ Unit Price без ДДС (по `Product.tax_group`
+  на реда, ако продуктът няма данъчна група — "без ДДС" просто отразява
+  "с ДДС"), Sell Price ↔ Markup % (спрямо Unit Price), и **Line Total →
+  Unit Price** (въвеждаш общата сума от фактурата за известно количество,
+  системата смята обратно единичната цена — не само Qty×Price→Total в
+  другата посока). Unit Price клетката светва в червено, ако е различна от
+  текущата `Product.delivery_price` в системата (по-скъпо) или зелено
+  (по-евтино) — сравнение спрямо каталожната цена в момента на зареждане на
+  реда, не спрямо предишна доставка. **Sell Price/Markup % се записват
+  веднага в `Product.sell_price`** през същия `product_inline_update`
+  endpoint, който ползва "Enable Edit" в Products грида — независимо дали
+  цялата доставка изобщо ще бъде submit-ната; при грешка от сървъра клетката
+  се връща на старата стойност. `Expiry Date` е custom Tabulator editor
+  (`<input type="date">`, няма вграден "date" editor в тази версия на
+  Tabulator) — пази се на `DeliveryItems.expiry_date` (per ред, не per
+  продукт — една доставка може да съдържа партиди с различен срок).
+
+  `DeliveryItemForm`-ите са изцяло `HiddenInput` полета — нищо от тях не се
+  рендира директно; JS пресъздава `items-<n>-<field>` hidden inputs точно
+  преди истинския form submit (`rebuildHiddenInputs()`), базирано на
+  текущото Tabulator state (`table.getData()`). Само реалните
+  `DeliveryItems` полета минават през този rebuild
+  (`delivery_item`/`delivery_quantity`/`price_at_delivery`/
+  `total_price_row`/`expiry_date`) — Sell Price/Markup %/без-ДДС колоните
+  НЕ са модели полета на `DeliveryItems`, не се пращат тук. Съществуващ ред,
+  който потребителят маха от грида, **не просто се маха** — пази се в
+  `pendingDeletions` и се препраща с `DELETE=on` + непроменените му стари
+  стойности (Django формсет иначе никога не разбира, че трябва да го
+  изтрие, а и валидацията на "delete"-ran форма пак изисква валидни
+  required полета). Нов (никога незапазен) ред при махане просто се
+  премахва напълно — няма нищо за триене в базата.
+- **`delivery_details.html` (страницата "Details for Delivery") показва
+  същите колони като editable грида на Add/Edit, но read-only.**
+  `DeliveryDetailView._item_row()` смята същата без-ДДС/markup математика
+  (по продуктовата `tax_group` на реда), само formatters, без editors —
+  никакъв `numberEditor`/`dateEditor`, никакъв hidden-input rebuild (тази
+  страница не submit-ва форма). **Внимание:** Sell Price/Markup % тук са
+  ЖИВ snapshot на текущата `Product.sell_price` в момента на разглеждане
+  на страницата, не историческата цена от момента на самата доставка —
+  ако продажната цена е сменена след доставката (напр. през Products
+  грида), тази страница показва новата, не старата.
+- **Доставчик на формата за доставка е търсачка (`supplier_search`
+  endpoint в products/views.py), не `<select>`.** Същия trigram-search
+  patтern като ingredient/tax-group picker-ите; скрито поле (`HiddenInput`)
+  пази реалния pk, видимото поле показва името. Попълва се или от
+  `form.instance.supplier.name` (edit), или от сървърно изчислен
+  `selected_supplier_name` (add-страницата, където няма `instance` —
+  трябва explicit `Suppliers.objects.filter(pk=...)` lookup; **пази се** да
+  не подадеш празен string като pk — `.filter(pk='')` хвърля `ValueError`,
+  не връща празен queryset, затова винаги се проверява `if posted_id else
+  None` преди lookup-а).
+
 (Добавяй нови правила тук, когато изникнат в разговор с потребителя, за да
 не се преоткриват на всяка сесия.)
 

@@ -31,15 +31,30 @@ Code напредва — това е живият backlog, за разлика 
       се откри и оправи реален бъг извън обхвата на рецептите:
       `SomeTask.delay(...)` е чупело всяка продажба/запис с 500 грешка, когато
       Redis не тече (виж CLAUDE.md "Технически капани" — `dispatch_task`).
-- [ ] **deliveries** — зарежда склада. Тестовете тук вече са сравнително
-      добри (77 реда) — добра основа за разширяване, не пренаписване от нула.
-      **Нов ред от Fase "products":** `delivery_quantity` вече Decimal
-      (max_digits=10, decimal_places=3) в модела, но формата/темплейта още
-      очакват цяло число визуално (step, placeholder) — трябва UI за
-      теглови доставки (кг) при одита на този app. **Нова задача (отложена
-      от потребителя, "после"):** линк от Deliveries към `product_create`,
-      за да може приемчикът да създава нов продукт направо от екрана за
-      доставка, без да бяга до Products.
+- [x] **deliveries** — одитиран и преработен. Намерени и оправени бъгове:
+      `DeliveryItems.save()` добавяше цялото `delivery_quantity` при ВСЯКО
+      save (вкл. редакция на съществуващ ред) вместо delta, и нищо не
+      връщаше наличността при триене на ред/цяла доставка — сега
+      delta-based + `post_delete` restore, огледално на `sales/models.py`
+      (виж CLAUDE.md "Известни бизнес правила"). Добавени permission checks
+      по всички delivery views (Cashier: view-only, Warehouse: add/change,
+      Manager: всичко) — преди само `@login_required`. Счупен
+      `{% for %}/{% empty %}` в `deliveries_list.html` (висящ `<tr>`, никога
+      не показваше "no deliveries") оправен. `delivery_quantity` в формата
+      мина от `IntegerField` на `DecimalField` (приема тегловни кг
+      количества). **Нови функции по молба на потребителя:** търсим
+      доставчик вместо `<select>` + "+ New supplier" popup; типовете
+      документи станаха управляем списък (`DocumentType`, като
+      Category/TaxGroup, Manager-only, без popup shortcut от формата),
+      вместо фиксиран `choices=[...]`; "+ New product" линк от екрана за
+      доставка; таблицата с артикули е вече Tabulator с пълен feature set
+      — сортиране, Excel-style филтър, column chooser, export to Excel,
+      пореден номер, auto-focus flow (Qty→Price при добавяне), editable
+      Qty/Unit Price/без-ДДС/Line Total/Sell Price/Markup %/Expiry Date,
+      двупосочна връзка между тях (вкл. Line Total→Unit Price backfill),
+      цветово оцветяване при промяна на доставна цена спрямо каталога, и
+      Sell Price/Markup % се записват веднага в `Product.sell_price` —
+      виж CLAUDE.md за пълната архитектура (`_delivery_items_table.html`).
 - [ ] **sales** — вече започнахме: поправени bugs в `models.py` (delta-based
       stock adjustment, restore on delete, atomic locking, signal-based
       total). Остава: `forms.py`, `views.py`, пълен преглед на error
@@ -64,8 +79,12 @@ export to Excel) е готов и е приложен за Products списък
 - [ ] Categories списък (`products/templates/products/category_list.html`)
 - [ ] Employees списък (`accounts/templates/accounts/employee_list.html`)
 - [ ] Sales списък (`sales`)
-- [ ] Deliveries списък (`deliveries`)
-- [ ] Reports таблици (`reports/templates/reports/*.html`)
+- [x] Deliveries списък — вместо самостоятелния `deliveries_list.html`,
+      **`reports/deliveries_report.html` пое тази роля** (Tabulator, период
+      + supplier филтър, клик на ред отваря/редактира/трие) — потребителят
+      реши да не дублира двата екрана. `deliveries_list` remains жив само
+      като route/redirect target, не се навигира до него от менюто повече.
+- [ ] Reports таблици (останалите — `sales_report.html`, `dashboard.html`)
 
 ## Фаза 2 — Редизайн на интерфейса за продажби
 
