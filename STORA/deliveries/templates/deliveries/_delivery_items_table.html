@@ -1,0 +1,623 @@
+{% load static cache_bust %}
+{% comment %}
+Tabulator-driven delivery items grid: searchable add-row (reuses the
+products app's `ingredient_search` endpoint -- same trigram search as the
+recipe ingredient picker, just without the is_recipe exclusion mattering
+here since a recipe product is never itself delivered) plus sortable,
+Excel-style-filterable, inline-editable columns, column chooser and Excel
+export (see CLAUDE.md "Конвенция за таблици").
+
+This partial owns none of Django's per-row form rendering -- the visible
+table is 100% Tabulator, and `delivery-items-hidden-inputs` is rebuilt from
+Tabulator's current data right before the surrounding <form> submits, so a
+normal Django formset POST still arrives on the other end. See
+`deliveries/forms.py::DeliveryItemForm` for why its fields are all hidden.
+
+Only the fields that are real DeliveryItems columns (delivery_item,
+delivery_quantity, price_at_delivery, total_price_row, expiry_date) go
+through that formset rebuild. Sell Price/Markup % live on Product, not
+DeliveryItems -- editing them here saves immediately via the same
+`product_inline_update` endpoint the Products grid's "Enable Edit" mode
+uses, independent of whether this delivery gets submitted at all.
+{% endcomment %}
+
+{{ formset.management_form }}
+<div id="delivery-items-hidden-inputs"></div>
+
+<div class="d-flex justify-content-between align-items-center mb-2">
+    <div class="position-relative flex-grow-1" style="max-width: 420px;">
+        <input type="search" id="delivery-item-search-input" class="form-control form-control-sm"
+               placeholder="Search product by name or code, or scan a barcode..." autocomplete="off">
+        <div id="delivery-item-search-results" class="global-search-results"></div>
+    </div>
+    <button type="button" id="delivery-items-export-btn" class="btn btn-outline-secondary btn-sm ms-2">Export to Excel</button>
+</div>
+
+{{ delivery_items_initial|json_script:"delivery-items-initial-data" }}
+{{ products_data|json_script:"delivery-items-products-data" }}
+{{ barcodes_data|json_script:"delivery-items-barcodes-data" }}
+<!-- No separate "Transaction Total" -- the Line Total column's own
+     bottomCalc sum (with and without VAT) already shows it, right under
+     the numbers it's adding up. -->
+<div id="delivery-items-table" class="table-sm"></div>
+
+<script src="{% static 'vendor/sheetjs/xlsx.full.min.js' %}"></script>
+<script src="{% static 'vendor/tabulator/tabulator.min.js' %}"></script>
+<script src="{% static_v 'js/data-table.js' %}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    // The whole items section (search box + grid) lives inside the
+    // delivery <form>. Pressing Enter in any single-line input inside a
+    // <form> normally submits it -- that's a plain browser behavior, not
+    // something Tabulator's own Enter-to-commit-edit handling opts out of
+    // on its own. Without this guard, committing a Qty/Price edit (or
+    // pressing Enter in the search box with no match) submits the whole
+    // delivery early and reloads the page mid-entry. All the Enter-key
+    // behavior this screen actually wants (select a search result, advance
+    // Qty -> Price, etc.) is handled explicitly elsewhere -- this only
+    // stops the browser's own implicit-submit fallback from firing too.
+    var itemsSection = document.getElementById('delivery-items-table').closest('.delivery-form__items');
+    if (itemsSection) {
+        itemsSection.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) {
+                e.preventDefault();
+            }
+        });
+    }
+
+    var initialRows = JSON.parse(document.getElementById('delivery-items-initial-data').textContent || '[]');
+    var productsById = {};
+    var productByInternalCode = {};
+    JSON.parse(document.getElementById('delivery-items-products-data').textContent || '[]').forEach(function (p) {
+        productsById[String(p.id)] = p;
+        productByInternalCode[p.internal_code] = p;
+    });
+    var productByBarcode = {};
+    JSON.parse(document.getElementById('delivery-items-barcodes-data').textContent || '[]').forEach(function (b) {
+        var product = productsById[String(b.product_id)];
+        if (product) productByBarcode[b.code] = product;
+    });
+
+    function findProductByCode(code) {
+        return productByInternalCode[code] || productByBarcode[code] || null;
+    }
+
+    // '/products/0/inline-update/' -> swap the 0 for a real id at call time.
+    var inlineUpdateUrlTemplate = '{% url "product_inline_update" 0 %}';
+    function inlineUpdateUrl(productId) { return inlineUpdateUrlTemplate.replace('/0/', '/' + productId + '/'); }
+
+    function round2(n) { return Math.round((n + Number.EPSILON) * 100) / 100; }
+    function round1(n) { return Math.round((n + Number.EPSILON) * 10) / 10; }
+
+    function buildRow(product, raw) {
+        var qty = parseFloat(raw.delivery_quantity) || 0;
+        var withVat = parseFloat(raw.price_at_delivery);
+        if (isNaN(withVat)) withVat = parseFloat(product.delivery_price) || 0;
+        var rate = parseFloat(product.tax_group__rate) || 0;
+        var withoutVat = rate ? withVat / (1 + rate / 100) : withVat;
+        var sellPrice = raw.sell_price !== undefined ? parseFloat(raw.sell_price) : parseFloat(product.sell_price);
+        if (isNaN(sellPrice)) sellPrice = 0;
+        var markup = withVat ? (sellPrice - withVat) / withVat * 100 : 0;
+        return {
+            id: raw.id || '',
+            delivery_item: product.id,
+            internal_code: product.internal_code,
+            name: product.name,
+            unit_type: product.unit_type,
+            tax_rate: rate,
+            // Current catalog price at the moment this row was built -- the
+            // Unit Price column highlights when the typed price differs
+            // from this, i.e. the supplier's price changed since last time.
+            original_delivery_price: parseFloat(product.delivery_price) || 0,
+            delivery_quantity: qty,
+            price_at_delivery: round2(withVat),
+            price_without_vat: round2(withoutVat),
+            total_price_row: round2(qty * withVat),
+            total_without_vat: round2(qty * withoutVat),
+            sell_price: round2(sellPrice),
+            markup_percent: round1(markup),
+            expiry_date: raw.expiry_date || '',
+        };
+    }
+
+    var seedRows = initialRows.map(function (raw) {
+        var product = productsById[String(raw.delivery_item)];
+        return product ? buildRow(product, raw) : null;
+    }).filter(Boolean);
+    var seedScript = document.createElement('script');
+    seedScript.type = 'application/json';
+    seedScript.id = 'delivery-items-seed-data';
+    seedScript.textContent = JSON.stringify(seedRows);
+    document.body.appendChild(seedScript);
+
+    // Existing (already-saved) rows the user removed from the grid -- still
+    // need to be POSTed with DELETE=on so Django's formset actually deletes
+    // them, instead of just never hearing about them again. New (unsaved)
+    // rows that get removed are simply dropped -- see the submit handler.
+    var pendingDeletions = [];
+
+    function moneyFormatter(cell) {
+        var v = Number(cell.getValue());
+        return isNaN(v) ? '' : v.toFixed(2) + ' eur';
+    }
+
+    function percentFormatter(cell) {
+        var v = Number(cell.getValue());
+        return isNaN(v) ? '' : v.toFixed(1) + '%';
+    }
+
+    // Highlights the Unit Price cell when it no longer matches the
+    // product's current catalog price -- red if this delivery costs more
+    // than last known, green if less, plain otherwise.
+    function deliveryPriceFormatter(cell) {
+        var data = cell.getData();
+        var v = Number(cell.getValue());
+        var text = isNaN(v) ? '' : v.toFixed(2) + ' eur';
+        var original = Number(data.original_delivery_price);
+        if (!isNaN(original) && Math.abs(v - original) > 0.004) {
+            var color = v > original ? '#c0392b' : '#27ae60';
+            return '<span style="color:' + color + '; font-weight:600;">' + text + '</span>';
+        }
+        return text;
+    }
+
+    function quantityStep(row) {
+        return row.unit_type === 'weight' ? 0.001 : 1;
+    }
+
+    // cell.edit(true) alone renders the editor's <input> into the DOM but
+    // doesn't reliably hand it real keyboard focus -- especially when
+    // called from a Promise .then() (addProductRow) rather than directly
+    // inside a click/keydown handler. Looking the input up right after and
+    // focusing it explicitly is what actually lets the clerk type without
+    // having to click the cell first.
+    // Takes (row, field) rather than an already-looked-up cell -- a cell
+    // reference captured before a `row.update()` (recalcRow) can go stale
+    // once Tabulator redraws that row's cells, so `.edit(true)` on it
+    // silently does nothing. Re-fetching the cell fresh from the row here,
+    // *and* deferring a tick so this runs after Tabulator finishes
+    // whatever redraw/cleanup is already in flight (e.g. from inside
+    // another cell's own `cellEdited` handler -- the Qty -> Price
+    // auto-advance case), is what actually gets the editor to open.
+    function focusCellEditor(row, field) {
+        setTimeout(function () {
+            var cell = row.getCell(field);
+            cell.edit(true);
+            var input = cell.getElement().querySelector('input, textarea');
+            if (input) {
+                input.focus();
+                if (input.select) input.select();
+            }
+        }, 0);
+    }
+
+    // Tabulator's built-in editor:'number' has no Enter-key handling at
+    // all -- no commit, no navigation, nothing (confirmed against the
+    // vendored build: its keybinding table only maps Tab/Shift-Tab/arrows,
+    // never Enter/13). Relying on blur to commit instead turned out
+    // unreliable for chaining straight into the next cell. A custom editor
+    // gives explicit control: Enter calls `success(value)` itself --
+    // Tabulator's own documented commit API for a custom editor -- so it's
+    // not guessing at the built-in editor's undocumented internals.
+    function numberEditor(cell, onRendered, success, cancel, editorParams) {
+        var params = editorParams || {};
+        var input = document.createElement('input');
+        input.type = 'number';
+        if (params.min !== undefined) input.min = params.min;
+        if (params.step !== undefined) input.step = params.step;
+        input.style.padding = '4px';
+        input.style.width = '100%';
+        input.style.boxSizing = 'border-box';
+        input.style.height = '100%';
+        input.value = cell.getValue();
+        onRendered(function () { input.focus(); input.select(); });
+
+        function commit() {
+            var value = input.value === '' ? 0 : parseFloat(input.value);
+            success(value);
+        }
+
+        input.addEventListener('blur', commit);
+        input.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                commit();
+            } else if (e.key === 'Escape') {
+                cancel();
+            }
+        });
+        return input;
+    }
+
+    function dateEditor(cell, onRendered, success) {
+        var input = document.createElement('input');
+        input.type = 'date';
+        input.style.width = '100%';
+        input.style.boxSizing = 'border-box';
+        input.value = cell.getValue() || '';
+        onRendered(function () { input.focus(); });
+        function commit() { success(input.value); }
+        input.addEventListener('change', commit);
+        input.addEventListener('blur', commit);
+        return input;
+    }
+
+    // Recomputes every derived field on a row from whichever field the
+    // user (or addProductRow) just set -- `source` says which one to treat
+    // as the authority for this pass, so editing e.g. "price without VAT"
+    // drives "price with VAT" rather than the other way around.
+    function recalcRow(row, source) {
+        var d = row.getData();
+        var rate = parseFloat(d.tax_rate) || 0;
+        var qty = parseFloat(d.delivery_quantity) || 0;
+
+        var withVat, withoutVat;
+        if (source === 'price_without_vat') {
+            withoutVat = parseFloat(d.price_without_vat) || 0;
+            withVat = withoutVat * (1 + rate / 100);
+        } else if (source === 'total_price_row') {
+            // Backfills the unit price from a typed line total -- e.g. the
+            // supplier's invoice shows "6 pcs, 12.00 total" and the clerk
+            // just wants to type 12.00 rather than do the division by hand.
+            var total = parseFloat(d.total_price_row) || 0;
+            withVat = qty ? total / qty : 0;
+            withoutVat = rate ? withVat / (1 + rate / 100) : withVat;
+        } else {
+            withVat = parseFloat(d.price_at_delivery) || 0;
+            withoutVat = rate ? withVat / (1 + rate / 100) : withVat;
+        }
+
+        var sellPrice, markup;
+        if (source === 'markup_percent') {
+            markup = parseFloat(d.markup_percent) || 0;
+            sellPrice = withVat * (1 + markup / 100);
+        } else {
+            sellPrice = parseFloat(d.sell_price) || 0;
+            markup = withVat ? (sellPrice - withVat) / withVat * 100 : 0;
+        }
+
+        row.update({
+            price_at_delivery: round2(withVat),
+            price_without_vat: round2(withoutVat),
+            sell_price: round2(sellPrice),
+            markup_percent: round1(markup),
+            total_price_row: round2(qty * withVat),
+            total_without_vat: round2(qty * withoutVat),
+        });
+        // Line Total's own bottomCalc (with and without VAT) recalculates
+        // on its own whenever row data changes -- no manual total to keep
+        // in sync here.
+    }
+
+    function getCookie(name) {
+        var match = document.cookie.match('(^|;\\s*)' + name + '=([^;]*)');
+        return match ? decodeURIComponent(match[2]) : '';
+    }
+
+    // Persists Sell Price to the product immediately -- same endpoint/
+    // pattern as the Products grid's "Enable Edit" inline save, independent
+    // of whether this delivery form ever gets submitted. `previousSellPrice`
+    // is what to roll the cell back to if the server rejects it (e.g. a
+    // markup-driven edit that works out to a negative/invalid price).
+    function persistSellPrice(row, previousSellPrice) {
+        var data = row.getData();
+        var body = new URLSearchParams();
+        body.set('field', 'sell_price');
+        body.set('value', String(data.sell_price));
+
+        fetch(inlineUpdateUrl(data.delivery_item), {
+            method: 'POST',
+            headers: {'X-CSRFToken': getCookie('csrftoken')},
+            body: body,
+        })
+            .then(function (r) { return r.json().then(function (body) { return {ok: r.ok, body: body}; }); })
+            .then(function (result) {
+                if (!result.ok) {
+                    alert(result.body.error || 'Could not save the new selling price.');
+                    row.update({sell_price: previousSellPrice});
+                    recalcRow(row, 'price_at_delivery');
+                    return;
+                }
+                var product = productsById[String(data.delivery_item)];
+                if (product) product.sell_price = data.sell_price;
+            })
+            .catch(function () {
+                alert('Could not save the new selling price (network error).');
+                row.update({sell_price: previousSellPrice});
+                recalcRow(row, 'price_at_delivery');
+            });
+    }
+
+    var table = initExcelStyleTable('#delivery-items-table', 'delivery-items-seed-data', [
+        {
+            title: '#', formatter: 'rownum', width: 40, hozAlign: 'center',
+            headerSort: false, headerFilter: false, hideable: false,
+        },
+        {title: 'Code', field: 'internal_code', width: 110},
+        {title: 'Name', field: 'name', width: 220},
+        {
+            title: 'Qty', field: 'delivery_quantity', width: 100, hozAlign: 'right',
+            editor: numberEditor,
+            editorParams: function (cell) { return {min: 0.001, step: quantityStep(cell.getData())}; },
+            bottomCalc: 'sum',
+        },
+        {
+            title: 'Unit Price', field: 'price_at_delivery', width: 130, hozAlign: 'right',
+            editor: numberEditor, editorParams: {min: 0, step: 0.01}, formatter: deliveryPriceFormatter,
+        },
+        {
+            title: 'Unit Price (no VAT)', field: 'price_without_vat', width: 150, hozAlign: 'right',
+            editor: numberEditor, editorParams: {min: 0, step: 0.01}, formatter: moneyFormatter, visible: false,
+        },
+        {
+            // Editable on purpose: typing the invoice's line total for a
+            // known quantity back-fills the unit price (see recalcRow's
+            // 'total_price_row' branch), instead of always going the other
+            // direction.
+            title: 'Line Total', field: 'total_price_row', width: 130, hozAlign: 'right',
+            editor: numberEditor, editorParams: {min: 0, step: 0.01},
+            formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
+        },
+        {
+            title: 'Line Total (no VAT)', field: 'total_without_vat', width: 150, hozAlign: 'right',
+            formatter: moneyFormatter, visible: false, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
+        },
+        {
+            title: 'Sell Price', field: 'sell_price', width: 120, hozAlign: 'right',
+            editor: numberEditor, editorParams: {min: 0, step: 0.01}, formatter: moneyFormatter,
+        },
+        {
+            title: 'Markup %', field: 'markup_percent', width: 110, hozAlign: 'right',
+            editor: numberEditor, editorParams: {step: 0.1}, formatter: percentFormatter,
+        },
+        {
+            title: 'Expiry Date', field: 'expiry_date', width: 130,
+            editor: dateEditor,
+        },
+        {
+            title: 'Remove', field: 'remove', width: 90, hozAlign: 'center', headerFilter: false, hideable: false,
+            formatter: function () { return '<button type="button" class="btn btn-sm btn-outline-danger">Remove</button>'; },
+            cellClick: function (e, cell) {
+                var data = cell.getRow().getData();
+                if (data.id) {
+                    pendingDeletions.push(data);
+                }
+                cell.getRow().delete();
+            },
+        },
+    ], {placeholder: 'No products added to this delivery yet.'});
+
+    table.on('cellEdited', function (cell) {
+        var field = cell.getField();
+        var row = cell.getRow();
+
+        if (field === 'delivery_quantity') {
+            recalcRow(row, 'price_at_delivery');
+            // "type qty, land straight on price" -- same quick-entry flow
+            // as adding a brand new row (see addProductRow below).
+            focusCellEditor(row, 'price_at_delivery');
+            return;
+        }
+
+        if (field === 'sell_price' || field === 'markup_percent') {
+            var previousSellPrice = field === 'sell_price' ? cell.getOldValue() : row.getData().sell_price;
+            recalcRow(row, field);
+            persistSellPrice(row, previousSellPrice);
+            return;
+        }
+
+        if (field === 'price_at_delivery' || field === 'price_without_vat' || field === 'total_price_row') {
+            recalcRow(row, field);
+        }
+    });
+    function addProductRow(product) {
+        // `ingredient_search` results (the dropdown) don't carry sell_price
+        // /tax_group__rate -- it was built for the recipe picker, which
+        // never needed those. `productsById` (this page's own full catalog
+        // dump) always has the complete shape buildRow() expects, so
+        // resolve back to that instead of trusting whatever the caller
+        // passed in (search result, or an exact code/barcode match, both
+        // of which already carry `id`).
+        product = productsById[String(product.id)] || product;
+
+        var existing = table.getRows().find(function (r) { return String(r.getData().delivery_item) === String(product.id); });
+        if (existing) {
+            var newQty = (parseFloat(existing.getData().delivery_quantity) || 0) + 1;
+            existing.update({delivery_quantity: newQty});
+            recalcRow(existing, 'price_at_delivery');
+            focusCellEditor(existing, 'delivery_quantity');
+            return;
+        }
+        table.addRow(buildRow(product, {delivery_quantity: 1})).then(function (row) {
+            // "add a product -> quantity lights up ready to type" per the
+            // receiving clerk's requested quick-entry flow.
+            focusCellEditor(row, 'delivery_quantity');
+        });
+    }
+
+    // -- Search-to-add, same debounced trigram-search pattern as the recipe
+    // ingredient picker (_recipe_formset.html) --
+    var searchInput = document.getElementById('delivery-item-search-input');
+    var resultsBox = document.getElementById('delivery-item-search-results');
+    var debounceTimer = null;
+    var currentController = null;
+    var currentResults = [];
+    var highlightedIndex = -1;
+
+    function highlightResult(index) {
+        var items = resultsBox.querySelectorAll('.global-search-result');
+        items.forEach(function (el) { el.classList.remove('is-highlighted'); });
+        if (index >= 0 && index < items.length) {
+            items[index].classList.add('is-highlighted');
+            items[index].scrollIntoView({block: 'nearest'});
+        }
+        highlightedIndex = index;
+    }
+
+    // Adds the product to the grid and resets the search box -- shared by
+    // mouse click and keyboard (Enter on a highlighted result) selection.
+    function selectProduct(product) {
+        addProductRow(product);
+        resultsBox.classList.remove('is-open');
+        searchInput.value = '';
+        currentResults = [];
+        highlightedIndex = -1;
+        // Not re-focusing searchInput here on purpose -- addProductRow is
+        // about to hand real keyboard focus to the new row's Qty cell
+        // (focusCellEditor), so the clerk can type the quantity right
+        // away without an extra click.
+    }
+
+    function renderResults(data) {
+        resultsBox.innerHTML = '';
+        currentResults = data.results;
+        if (!data.results.length) {
+            var empty = document.createElement('div');
+            empty.className = 'global-search-empty';
+            empty.textContent = 'No matches';
+            resultsBox.appendChild(empty);
+            resultsBox.classList.add('is-open');
+            return;
+        }
+        data.results.forEach(function (product, index) {
+            var row = document.createElement('div');
+            row.className = 'global-search-result';
+            row.textContent = product.internal_code + ' — ' + product.name;
+            row.addEventListener('mouseenter', function () { highlightResult(index); });
+            row.addEventListener('click', function () { selectProduct(product); });
+            resultsBox.appendChild(row);
+        });
+        resultsBox.classList.add('is-open');
+        // First match pre-highlighted -- Enter immediately picks it without
+        // needing an extra arrow-down first, arrow keys move from there.
+        highlightResult(0);
+    }
+
+    function runSearch() {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(function () {
+            if (currentController) currentController.abort();
+            currentController = new AbortController();
+            var params = new URLSearchParams();
+            var q = searchInput.value.trim();
+            if (q) params.set('q', q);
+            fetch('{% url "ingredient_search" %}?' + params.toString(), {signal: currentController.signal})
+                .then(function (r) { return r.json(); })
+                .then(renderResults)
+                .catch(function (e) { if (e.name !== 'AbortError') { /* transient network error -- ignore */ } });
+        }, 200);
+    }
+
+    searchInput.addEventListener('input', runSearch);
+    searchInput.addEventListener('focus', runSearch);
+    document.addEventListener('click', function (e) {
+        if (!e.target.closest('#delivery-item-search-input') && !e.target.closest('#delivery-item-search-results')) {
+            resultsBox.classList.remove('is-open');
+        }
+    });
+
+    searchInput.addEventListener('keydown', function (e) {
+        var hasOpenResults = resultsBox.classList.contains('is-open') && currentResults.length;
+
+        if (e.key === 'ArrowDown') {
+            if (!hasOpenResults) return;
+            e.preventDefault();
+            highlightResult(Math.min(highlightedIndex + 1, currentResults.length - 1));
+            return;
+        }
+        if (e.key === 'ArrowUp') {
+            if (!hasOpenResults) return;
+            e.preventDefault();
+            highlightResult(Math.max(highlightedIndex - 1, 0));
+            return;
+        }
+        if (e.key === 'Escape') {
+            resultsBox.classList.remove('is-open');
+            return;
+        }
+        if (e.key !== 'Enter') return;
+
+        // Type, arrow down to the right match, Enter picks it -- lands the
+        // cursor in Qty next (see addProductRow), ready to type the
+        // quantity and Enter again to move on to Unit Price.
+        if (hasOpenResults) {
+            e.preventDefault();
+            selectProduct(currentResults[highlightedIndex >= 0 ? highlightedIndex : 0]);
+            return;
+        }
+
+        // No dropdown match (or search hasn't caught up yet) -- fall back
+        // to an exact code/barcode match, for a barcode scanner's rapid
+        // type-then-Enter faster than the debounced search above. Note:
+        // exact codes/barcodes only -- the 13-digit "scale" barcodes with
+        // an embedded weight (see CLAUDE.md) aren't decoded here yet, same
+        // as the rest of this screen; deferred until a physical scanner is
+        // on hand to test against, same as Sales already does it.
+        var code = searchInput.value.trim();
+        if (!code) return;
+        var product = findProductByCode(code);
+        if (product) {
+            e.preventDefault();
+            selectProduct(product);
+        }
+    });
+
+    document.getElementById('delivery-items-export-btn').addEventListener('click', function () {
+        table.download('xlsx', 'delivery_items.xlsx', {sheetName: 'Delivery Items'});
+    });
+
+    // -- Sync Tabulator's current data into plain formset hidden inputs
+    // right before the real form submit, since Tabulator manages its own
+    // row data rather than classic bound <input> elements. Only the real
+    // DeliveryItems fields go through here -- sell_price/markup_percent
+    // live on Product and are already saved via persistSellPrice() above. --
+    var deliveryForm = document.getElementById('delivery-items-table').closest('form');
+    var formPrefix = '{{ formset_prefix }}';
+
+    function rebuildHiddenInputs() {
+        var container = document.getElementById('delivery-items-hidden-inputs');
+        container.innerHTML = '';
+        var rows = table.getData().concat(pendingDeletions);
+
+        rows.forEach(function (data, index) {
+            var isDeleted = pendingDeletions.indexOf(data) !== -1;
+            var fields = {
+                id: data.id || '',
+                delivery_item: data.delivery_item,
+                delivery_quantity: data.delivery_quantity,
+                price_at_delivery: data.price_at_delivery,
+                total_price_row: data.total_price_row,
+                expiry_date: data.expiry_date || '',
+                DELETE: isDeleted ? 'on' : '',
+            };
+            Object.keys(fields).forEach(function (name) {
+                var input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = formPrefix + '-' + index + '-' + name;
+                input.value = fields[name];
+                container.appendChild(input);
+            });
+        });
+
+        document.getElementById('id_' + formPrefix + '-TOTAL_FORMS').value = rows.length;
+    }
+
+    if (deliveryForm) {
+        deliveryForm.addEventListener('submit', rebuildHiddenInputs);
+    }
+
+    window.getDeliveryItemsDraftState = function () {
+        return {TOTAL_FORMS: table.getData().length, forms: table.getData().map(function (data) {
+            return {
+                id: data.id || '',
+                delivery_item: data.delivery_item,
+                delivery_quantity: data.delivery_quantity,
+                price_at_delivery: data.price_at_delivery,
+                total_price_row: data.total_price_row,
+                expiry_date: data.expiry_date || '',
+                DELETE: '',
+            };
+        })};
+    };
+});
+</script>

@@ -1,5 +1,12 @@
 {% extends 'base.html' %}
-{% load currency_filters %}
+{% load static cache_bust currency_filters %}
+
+{% block main_class %}main-wide{% endblock %}
+{% block container_class %}container-fluid{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
+{% endblock %}
 
 {% block content %}
 <section class="delivery-details">
@@ -24,43 +31,81 @@
     </section>
 
     <section class="delivery-items">
-        <header class="section-header">
+        <header class="section-header d-flex justify-content-between align-items-center">
             <h2>Delivery Items</h2>
+            {% if delivery_items_data %}
+            <button type="button" id="delivery-details-export-btn" class="btn btn-outline-secondary btn-sm">Export to Excel</button>
+            {% endif %}
         </header>
 
-        <div class="table-wrapper">
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>Product ID</th>
-                        <th>Product Name</th>
-                        <th>Quantity</th>
-                        <th>Price per unit</th>
-                        <th>Total price</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for item in delivered_items %}
-                    <tr>
-                        <td>{{ item.delivery_item.id }}</td>
-                        <td>{{ item.delivery_item.name }}</td>
-                        <td>{{ item.delivery_quantity }}</td>
-                        <td>{{ item.price_at_delivery }}</td>
-                        <td>{{ item.total_price_row }}</td>
-                    </tr>
-                    {% empty %}
-                    <tr>
-                        <td colspan="5">No delivery items found.</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
+        {{ delivery_items_data|json_script:"delivery-details-items-data" }}
+        <div id="delivery-details-items-table" class="table-sm"></div>
     </section>
 
     <footer class="page-actions">
-        <a href="{% url 'delivery_edit' delivery.pk %}" class="button_edit">EDIT</a>
-        <a href="{% url 'delivery_delete' delivery.pk %}" class="button_delete">DELETE</a>
+        {% if perms.deliveries.change_deliveryattributes %}<a href="{% url 'delivery_edit' delivery.pk %}" class="button_edit">EDIT</a>{% endif %}
+        {% if perms.deliveries.delete_deliveryattributes %}<a href="{% url 'delivery_delete' delivery.pk %}" class="button_delete">DELETE</a>{% endif %}
     </footer>
 </section>
 {% endblock content %}
+
+{% block extra_js %}
+<script src="{% static 'vendor/sheetjs/xlsx.full.min.js' %}"></script>
+<script src="{% static 'vendor/tabulator/tabulator.min.js' %}"></script>
+<script src="{% static_v 'js/data-table.js' %}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    function moneyFormatter(cell) {
+        var v = Number(cell.getValue());
+        return isNaN(v) ? '' : v.toFixed(2) + ' eur';
+    }
+    function percentFormatter(cell) {
+        var v = Number(cell.getValue());
+        return isNaN(v) ? '' : v.toFixed(1) + '%';
+    }
+
+    // Read-only mirror of the editable items grid on Add/Edit -- same
+    // columns (minus editors), so a receiver who only has view rights still
+    // sees the full breakdown (VAT-exclusive price, current Sell Price/
+    // Markup %, expiry date), not just the bare 5 columns it used to show.
+    var table = initExcelStyleTable('#delivery-details-items-table', 'delivery-details-items-data', [
+        {
+            title: '#', formatter: 'rownum', width: 40, hozAlign: 'center',
+            headerSort: false, headerFilter: false, hideable: false,
+        },
+        {title: 'Code', field: 'internal_code', width: 110},
+        {title: 'Name', field: 'name', width: 220},
+        {title: 'Qty', field: 'delivery_quantity', width: 90, hozAlign: 'right'},
+        {
+            title: 'Unit Price', field: 'price_at_delivery', width: 120, hozAlign: 'right',
+            formatter: moneyFormatter,
+        },
+        {
+            title: 'Unit Price (no VAT)', field: 'price_without_vat', width: 150, hozAlign: 'right',
+            formatter: moneyFormatter, visible: false,
+        },
+        {
+            title: 'Line Total', field: 'total_price_row', width: 120, hozAlign: 'right',
+            formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
+        },
+        {
+            title: 'Line Total (no VAT)', field: 'total_without_vat', width: 150, hozAlign: 'right',
+            formatter: moneyFormatter, visible: false, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
+        },
+        {
+            title: 'Sell Price', field: 'sell_price', width: 110, hozAlign: 'right',
+            formatter: moneyFormatter,
+        },
+        {title: 'Markup %', field: 'markup_percent', width: 100, hozAlign: 'right', formatter: percentFormatter},
+        {title: 'Expiry Date', field: 'expiry_date', width: 120},
+    ], {placeholder: 'No delivery items found.'});
+
+    var exportBtn = document.getElementById('delivery-details-export-btn');
+    if (exportBtn) {
+        exportBtn.addEventListener('click', function () {
+            table.download('xlsx', 'delivery_{{ delivery.pk }}_items.xlsx', {sheetName: 'Delivery Items'});
+        });
+    }
+});
+</script>
+{% endblock %}

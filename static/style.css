@@ -153,8 +153,33 @@ input[type="text"], input[type="number"], input[type="email"], select, textarea 
     flex-wrap: wrap;
 }
 
+/* Django's {{ form.errors }} output on its own is just plain unstyled
+   text -- easy to miss entirely at the top of a long form. Styled to read
+   as an unmissable "something's wrong" banner, not blend into the page. */
 .form-errors {
     margin-bottom: 1rem;
+    padding: 0.9rem 1.1rem;
+    background-color: #fdecea;
+    border: 1px solid var(--danger-color);
+    border-radius: 0.5rem;
+    color: #7a1f14;
+}
+
+.form-errors::before {
+    content: "⚠ Please fix the following:";
+    display: block;
+    font-weight: 700;
+    margin-bottom: 0.4rem;
+    color: var(--danger-color);
+}
+
+.form-errors ul {
+    margin: 0;
+    padding-left: 1.2rem;
+}
+
+.form-errors li {
+    font-weight: 600;
 }
 
 .sale-form,
@@ -348,7 +373,8 @@ input[type="text"], input[type="number"], input[type="email"], select, textarea 
     text-decoration: none;
 }
 
-.global-search-result:hover {
+.global-search-result:hover,
+.global-search-result.is-highlighted {
     background-color: var(--light-bg);
     color: var(--accent-color);
 }

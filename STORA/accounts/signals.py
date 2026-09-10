@@ -8,7 +8,7 @@ from STORA.accounts.models import Employee
 
 @receiver(post_migrate)
 def create_default_groups(sender, **kwargs):
-    if sender.name not in {'STORA.accounts', 'STORA.products', 'STORA.sales'}:
+    if sender.name not in {'STORA.accounts', 'STORA.products', 'STORA.sales', 'STORA.deliveries'}:
         return
 
     managers_group, _ = Group.objects.get_or_create(name='Managers')
@@ -22,10 +22,14 @@ def create_default_groups(sender, **kwargs):
     )
     # Cashiers also need read-only access to products/categories/suppliers to
     # look up prices and stock while ringing up a sale -- editing stays
-    # Manager/Warehouse only.
+    # Manager/Warehouse only. Deliveries view access lets them check whether
+    # stock has actually arrived without being able to add/edit one.
     cashier_view_permissions = Permission.objects.filter(
         content_type__app_label='products',
         codename__in=['view_product', 'view_category', 'view_suppliers'],
+    ) | Permission.objects.filter(
+        content_type__app_label='deliveries',
+        codename='view_deliveryattributes',
     )
     cashiers_group.permissions.set(list(sale_permissions) + list(cashier_view_permissions))
 
@@ -46,7 +50,22 @@ def create_default_groups(sender, **kwargs):
             'change_taxgroup',
         ]
     )
-    warehouse_group.permissions.set(product_permissions)
+    # Warehouse receives deliveries day-to-day (add/change) but deleting one
+    # -- which also reverses the stock it added -- stays Manager-only, same
+    # as product delete. Document types are a short, rarely-changed
+    # reference list (Invoice, Delivery Note, ...) -- Warehouse can pick
+    # from it when logging a delivery, but only Manager can add/rename
+    # entries, same as it's the only role with unrestricted access overall.
+    delivery_permissions = Permission.objects.filter(
+        content_type__app_label='deliveries',
+        codename__in=[
+            'view_deliveryattributes',
+            'add_deliveryattributes',
+            'change_deliveryattributes',
+            'view_documenttype',
+        ]
+    )
+    warehouse_group.permissions.set(list(product_permissions) + list(delivery_permissions))
 
 
 ROLE_TO_GROUP = {

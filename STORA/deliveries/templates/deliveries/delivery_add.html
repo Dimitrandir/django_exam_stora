@@ -1,4 +1,12 @@
 {% extends 'base.html' %}
+{% load static cache_bust %}
+
+{% block main_class %}main-wide{% endblock %}
+{% block container_class %}container-fluid{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
+{% endblock %}
 
 {% block content %}
 <section class="delivery-form">
@@ -35,10 +43,17 @@
                     {{ form.time_of_delivery.label_tag }}
                     {{ form.time_of_delivery }}
                 </p>
-                <p>
+                <div class="mb-3">
                     {{ form.supplier.label_tag }}
+                    <div class="position-relative" style="max-width: 320px;">
+                        <input type="text" id="supplier-search-input" class="form-control form-control-sm"
+                               placeholder="Search supplier by name..." autocomplete="off"
+                               value="{{ selected_supplier_name }}">
+                        <div id="supplier-search-results" class="global-search-results"></div>
+                    </div>
                     {{ form.supplier }}
-                </p>
+                    <a href="{% url 'suppliers_create' %}?popup=1" target="_blank">+ New supplier</a>
+                </div>
                 <p>
                     {{ form.document_type.label_tag }}
                     {{ form.document_type }}
@@ -57,159 +72,92 @@
         <section class="delivery-form__items">
             <header class="section-header">
                 <h2>Products</h2>
+                <a href="{% url 'product_create' %}?popup=1" target="_blank">+ New product</a>
             </header>
 
-            {{ formset.management_form }}
-
-            <div class="table-wrapper">
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th>Code / Barcode</th>
-                            <th>Product Name</th>
-                            <th>Qty</th>
-                            <th>Unit Price</th>
-                            <th>Line Total</th>
-                            <th>Remove</th>
-                        </tr>
-                    </thead>
-                    <tbody id="delivery-items-body">
-                        {% for s_form in formset %}
-                            <tr class="delivery-row">
-                                <td>
-                                    {{ s_form.product_code }}
-                                    {{ s_form.delivery_item }}
-                                    {{ s_form.id }}
-                                </td>
-                                <td>{{ s_form.product_name }}</td>
-                                <td>{{ s_form.delivery_quantity }}</td>
-                                <td>{{ s_form.delivery_price }}</td>
-                                <td>{{ s_form.line_total }}</td>
-                                <td>{{ s_form.DELETE }}</td>
-                                {{ s_form.price_at_delivery }}
-                                {{ s_form.total_price_row }}
-                            </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-
-            <template id="empty-form-template">
-                <tr class="delivery-row">
-                    <td>
-                        {{ formset.empty_form.product_code }}
-                        {{ formset.empty_form.delivery_item }}
-                        {{ formset.empty_form.id }}
-                    </td>
-                    <td>{{ formset.empty_form.product_name }}</td>
-                    <td>{{ formset.empty_form.delivery_quantity }}</td>
-                    <td>{{ formset.empty_form.delivery_price }}</td>
-                    <td>{{ formset.empty_form.line_total }}</td>
-                    <td>{{ formset.empty_form.DELETE }}</td>
-                    {{ formset.empty_form.price_at_delivery }}
-                    {{ formset.empty_form.total_price_row }}
-                </tr>
-            </template>
-        </section>
-
-        <section class="delivery-form__total">
-            <strong>Transaction Total:</strong>
-            <span id="transaction-total">0.00 eur</span>
+            {% include 'deliveries/_delivery_items_table.html' %}
         </section>
 
         <footer class="page-actions">
-            <button type="button" id="add-row-btn">+ Add row</button>
             <button type="submit" class="button-save">Complete Delivery</button>
             <a href="{% url 'clear_cashier_operation' %}" class="button-cancel">Cancel</a>
         </footer>
     </form>
 
-    {{ products_data|json_script:"products-data" }}
-    {{ barcodes_data|json_script:"barcodes-data" }}
     {{ delivery_draft|json_script:"delivery-draft" }}
 
     <script>
-        const productsData = JSON.parse(document.getElementById('products-data').textContent);
-        const barcodesData = JSON.parse(document.getElementById('barcodes-data').textContent);
         const deliveryDraftElement = document.getElementById('delivery-draft');
         const deliveryDraft = deliveryDraftElement ? JSON.parse(deliveryDraftElement.textContent || 'null') : null;
-        const formPrefix = "{{ formset_prefix }}";
 
-        function findProductByCode(code) {
-            const cleanCode = code.trim();
+        // -- Supplier: searchable picker + "+ New supplier" popup, same
+        // debounced-trigram-search pattern as the product/ingredient and
+        // document-type pickers on this page. --
+        (function () {
+            var searchInput = document.getElementById('supplier-search-input');
+            var resultsBox = document.getElementById('supplier-search-results');
+            var hiddenInput = document.getElementById('id_supplier');
+            var debounceTimer = null;
+            var currentController = null;
 
-            const byInternalCode = productsData.find(p => p.internal_code === cleanCode);
-            if (byInternalCode) return byInternalCode;
-
-            const barcodeMatch = barcodesData.find(b => b.code === cleanCode);
-            if (barcodeMatch) {
-                return productsData.find(p => String(p.id) === String(barcodeMatch.product_id));
+            function renderResults(data) {
+                resultsBox.innerHTML = '';
+                if (!data.results.length) {
+                    var empty = document.createElement('div');
+                    empty.className = 'global-search-empty';
+                    empty.textContent = 'No matches';
+                    resultsBox.appendChild(empty);
+                    resultsBox.classList.add('is-open');
+                    return;
+                }
+                data.results.forEach(function (supplier) {
+                    var row = document.createElement('div');
+                    row.className = 'global-search-result';
+                    row.textContent = supplier.name;
+                    row.addEventListener('click', function () {
+                        hiddenInput.value = supplier.id;
+                        searchInput.value = supplier.name;
+                        resultsBox.classList.remove('is-open');
+                    });
+                    resultsBox.appendChild(row);
+                });
+                resultsBox.classList.add('is-open');
             }
-            return null;
-        }
 
-        function updateTransactionTotal() {
-            let total = 0;
+            function runSearch() {
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(function () {
+                    if (currentController) currentController.abort();
+                    currentController = new AbortController();
+                    var params = new URLSearchParams();
+                    var q = searchInput.value.trim();
+                    if (q) params.set('q', q);
+                    fetch('{% url "supplier_search" %}?' + params.toString(), {signal: currentController.signal})
+                        .then(function (r) { return r.json(); })
+                        .then(renderResults)
+                        .catch(function (e) { if (e.name !== 'AbortError') { /* transient network error -- ignore */ } });
+                }, 200);
+            }
 
-            document.querySelectorAll('.delivery-row').forEach(row => {
-                if (row.style.display !== 'none') {
-                    const lineTotalInput = row.querySelector('.line-total-input');
-                    total += parseFloat(lineTotalInput.value || 0);
+            searchInput.addEventListener('input', function () {
+                hiddenInput.value = '';
+                runSearch();
+            });
+            searchInput.addEventListener('focus', runSearch);
+            document.addEventListener('click', function (e) {
+                if (!e.target.closest('#supplier-search-input') && !e.target.closest('#supplier-search-results')) {
+                    resultsBox.classList.remove('is-open');
                 }
             });
 
-            document.getElementById('transaction-total').textContent = total.toFixed(2) + " eur";
-        }
-
-        function recalculateRow(row) {
-            const qtyInput = row.querySelector('.quantity-input');
-            const unitPriceInput = row.querySelector('.unit-price-input');
-            const lineTotalInput = row.querySelector('.line-total-input');
-            const priceHidden = row.querySelector('input[name$="-price_at_delivery"]');
-            const totalHidden = row.querySelector('input[name$="-total_price_row"]');
-
-            const qty = parseFloat(qtyInput.value || 0);
-            const price = parseFloat(unitPriceInput.value || 0);
-            const total = qty * price;
-
-            lineTotalInput.value = total.toFixed(2);
-            priceHidden.value = price.toFixed(2);
-            totalHidden.value = total.toFixed(2);
-            updateTransactionTotal();
-        }
-
-        function collectDraftState() {
-            const rows = Array.from(document.querySelectorAll('.delivery-row'));
-
-            return {
-                formset_data: {
-                    TOTAL_FORMS: rows.length,
-                    forms: rows.map(row => {
-                        const productCodeInput = row.querySelector('.product-code-input');
-                        const deliveryItemInput = row.querySelector('input[name$="-delivery_item"]');
-                        const qtyInput = row.querySelector('.quantity-input');
-                        const nameInput = row.querySelector('.product-name-input');
-                        const unitPriceInput = row.querySelector('.unit-price-input');
-                        const lineTotalInput = row.querySelector('.line-total-input');
-                        const priceHidden = row.querySelector('input[name$="-price_at_delivery"]');
-                        const totalHidden = row.querySelector('input[name$="-total_price_row"]');
-                        const deleteCheckbox = row.querySelector('input[type="checkbox"][name$="-DELETE"]');
-
-                        return {
-                            product_code: productCodeInput ? productCodeInput.value : '',
-                            delivery_item: deliveryItemInput ? deliveryItemInput.value : '',
-                            delivery_quantity: qtyInput ? qtyInput.value : '',
-                            product_name: nameInput ? nameInput.value : '',
-                            delivery_price: unitPriceInput ? unitPriceInput.value : '',
-                            line_total: lineTotalInput ? lineTotalInput.value : '',
-                            price_at_delivery: priceHidden ? priceHidden.value : '',
-                            total_price_row: totalHidden ? totalHidden.value : '',
-                            DELETE: deleteCheckbox && deleteCheckbox.checked ? 'on' : '',
-                        };
-                    })
+            window.addEventListener('message', function (e) {
+                if (e.origin !== window.location.origin || !e.data) return;
+                if (e.data.type === 'supplier-created') {
+                    hiddenInput.value = e.data.id;
+                    searchInput.value = e.data.name;
                 }
-            };
-        }
+            });
+        })();
 
         async function saveDraft() {
             try {
@@ -222,13 +170,13 @@
                     body: JSON.stringify({
                         form_data: {
                             receiver: "{{ user.pk }}",
-                            supplier: document.querySelector('[name$="-supplier"]') ? document.querySelector('[name$="-supplier"]').value : '',
-                            time_of_delivery: document.querySelector('[name$="-time_of_delivery"]') ? document.querySelector('[name$="-time_of_delivery"]').value : '',
-                            document_type: document.querySelector('[name$="-document_type"]') ? document.querySelector('[name$="-document_type"]').value : '',
-                            document_number: document.querySelector('[name$="-document_number"]') ? document.querySelector('[name$="-document_number"]').value : '',
-                            document_date: document.querySelector('[name$="-document_date"]') ? document.querySelector('[name$="-document_date"]').value : ''
+                            supplier: document.getElementById('id_supplier').value,
+                            time_of_delivery: document.querySelector('[name="time_of_delivery"]') ? document.querySelector('[name="time_of_delivery"]').value : '',
+                            document_type: document.getElementById('id_document_type') ? document.getElementById('id_document_type').value : '',
+                            document_number: document.querySelector('[name="document_number"]') ? document.querySelector('[name="document_number"]').value : '',
+                            document_date: document.querySelector('[name="document_date"]') ? document.querySelector('[name="document_date"]').value : ''
                         },
-                        formset_data: collectDraftState().formset_data
+                        formset_data: window.getDeliveryItemsDraftState ? window.getDeliveryItemsDraftState() : {TOTAL_FORMS: 0, forms: []}
                     })
                 });
             } catch (error) {
@@ -236,140 +184,11 @@
             }
         }
 
-        function fillRowFromProduct(row, product, quantity = 1) {
-            const codeInput = row.querySelector('.product-code-input');
-            const qtyInput = row.querySelector('.quantity-input');
-            const itemInput = row.querySelector('input[name$="-delivery_item"]');
-            const nameInput = row.querySelector('.product-name-input');
-            const priceInput = row.querySelector('.unit-price-input');
-
-            codeInput.value = product.internal_code;
-            itemInput.value = product.id;
-            nameInput.value = product.name;
-            priceInput.value = product.delivery_price;
-            qtyInput.value = quantity;
-
-            recalculateRow(row);
-        }
-
-        function bindRow(row) {
-            const codeInput = row.querySelector('.product-code-input');
-            const qtyInput = row.querySelector('.quantity-input');
-            const itemInput = row.querySelector('input[name$="-delivery_item"]');
-            const nameInput = row.querySelector('.product-name-input');
-            const priceInput = row.querySelector('.unit-price-input');
-
-            codeInput.addEventListener('change', async () => {
-                const product = findProductByCode(codeInput.value);
-
-                if (!product) {
-                    alert('Product not found');
-                    return;
-                }
-
-                itemInput.value = product.id;
-                nameInput.value = product.name;
-                priceInput.value = product.delivery_price;
-                recalculateRow(row);
-                await saveDraft();
-            });
-
-            qtyInput.addEventListener('input', async () => {
-                recalculateRow(row);
-                await saveDraft();
-            });
-
-            priceInput.addEventListener('input', async () => {
-                recalculateRow(row);
-                await saveDraft();
-            });
-
-            const deleteCheckbox = row.querySelector('input[type="checkbox"][name$="-DELETE"]');
-            if (deleteCheckbox) {
-                deleteCheckbox.addEventListener('change', async () => {
-                    row.style.display = deleteCheckbox.checked ? 'none' : '';
-                    updateTransactionTotal();
-                    await saveDraft();
-                });
-            }
-        }
-
-        function populateDraftIfNeeded() {
-            if (!deliveryDraft || !deliveryDraft.formset_data || !deliveryDraft.formset_data.forms) {
-                return;
-            }
-
-            const rows = document.querySelectorAll('.delivery-row');
-            const draftForms = deliveryDraft.formset_data.forms;
-
-            draftForms.forEach((draftRow, index) => {
-                if (!rows[index]) return;
-
-                const row = rows[index];
-                const codeInput = row.querySelector('.product-code-input');
-                const qtyInput = row.querySelector('.quantity-input');
-                const deliveryItemInput = row.querySelector('input[name$="-delivery_item"]');
-                const nameInput = row.querySelector('.product-name-input');
-                const unitPriceInput = row.querySelector('.unit-price-input');
-                const lineTotalInput = row.querySelector('.line-total-input');
-                const priceHidden = row.querySelector('input[name$="-price_at_delivery"]');
-                const totalHidden = row.querySelector('input[name$="-total_price_row"]');
-
-                const product = draftRow.delivery_item
-                    ? productsData.find(p => String(p.id) === String(draftRow.delivery_item))
-                    : findProductByCode(draftRow.product_code);
-
-                if (product) {
-                    codeInput.value = product.internal_code;
-                    deliveryItemInput.value = product.id;
-                    nameInput.value = product.name;
-                    unitPriceInput.value = product.delivery_price;
-                } else {
-                    codeInput.value = draftRow.product_code || '';
-                    deliveryItemInput.value = draftRow.delivery_item || '';
-                    nameInput.value = draftRow.product_name || '';
-                    unitPriceInput.value = draftRow.delivery_price || '';
-                }
-
-                qtyInput.value = draftRow.delivery_quantity || 1;
-                lineTotalInput.value = draftRow.line_total || '';
-                priceHidden.value = draftRow.price_at_delivery || '';
-                totalHidden.value = draftRow.total_price_row || '';
-
-                if (product && (!lineTotalInput.value || !priceHidden.value || !totalHidden.value)) {
-                    recalculateRow(row);
-                }
-            });
-
-            const totalFormsInput = document.getElementById(`id_${formPrefix}-TOTAL_FORMS`);
-            if (totalFormsInput) {
-                totalFormsInput.value = rows.length;
-            }
-
-            updateTransactionTotal();
-        }
-
-        document.querySelectorAll('.delivery-row').forEach(bindRow);
-        populateDraftIfNeeded();
-        updateTransactionTotal();
-
-        document.getElementById('add-row-btn').addEventListener('click', async () => {
-            await saveDraft();
-
-            const body = document.getElementById('delivery-items-body');
-            const totalFormsInput = document.getElementById(`id_${formPrefix}-TOTAL_FORMS`);
-            const formCount = parseInt(totalFormsInput.value);
-
-            const template = document.getElementById('empty-form-template').innerHTML;
-            const newRowHtml = template.replaceAll('__prefix__', formCount);
-
-            body.insertAdjacentHTML('beforeend', newRowHtml);
-            totalFormsInput.value = formCount + 1;
-
-            const newRow = body.lastElementChild;
-            bindRow(newRow);
-            updateTransactionTotal();
-            await saveDraft();
+        document.getElementById('delivery-items-table').addEventListener('click', function () {
+            setTimeout(saveDraft, 0);
+        });
+        document.querySelector('.delivery-form__form').addEventListener('change', function (e) {
+            if (e.target.closest('#delivery-items-table')) setTimeout(saveDraft, 0);
         });
     </script>
 </section>

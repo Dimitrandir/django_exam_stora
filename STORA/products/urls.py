@@ -4,6 +4,7 @@ from .api_views import ProductListAPI
 from .views import (
     ProductListView, ProductCreateView, ProductDeleteView, ProductUpdateView, ProductDetailView,
     ProductHistoryView, ProductInlineUpdateView, ProductBulkActionView, IngredientSearchView,
+    SupplierSearchView,
     CategoryListView, CategoryCreateView, CategoryDeleteView, CategoryUpdateView,
     SuppliersListView, SupplierCreateView, SupplierUpdateView, SupplierDeleteView,
     TaxGroupListView, TaxGroupCreateView, TaxGroupUpdateView, TaxGroupDeleteView,
@@ -13,6 +14,7 @@ urlpatterns = [
     path('', ProductListView.as_view(), name='product_list'),
     path('create/', ProductCreateView.as_view(), name='product_create'),
     path('ingredient-search/', IngredientSearchView.as_view(), name='ingredient_search'),
+    path('supplier-search/', SupplierSearchView.as_view(), name='supplier_search'),
     path('bulk-action/', ProductBulkActionView.as_view(), name='product_bulk_action'),
     path('<int:pk>/', ProductDetailView.as_view(), name='product_details'),
     path('<int:pk>/history/', ProductHistoryView.as_view(), name='product_history'),

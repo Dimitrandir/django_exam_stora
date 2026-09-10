@@ -1,4 +1,12 @@
 {% extends 'base.html' %}
+{% load static cache_bust %}
+
+{% block main_class %}main-wide{% endblock %}
+{% block container_class %}container-fluid{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
+{% endblock %}
 
 {% block content %}
 <section class="delivery-form">
@@ -35,10 +43,17 @@
                     {{ form.time_of_delivery.label_tag }}
                     {{ form.time_of_delivery }}
                 </p>
-                <p>
+                <div class="mb-3">
                     {{ form.supplier.label_tag }}
+                    <div class="position-relative" style="max-width: 320px;">
+                        <input type="text" id="supplier-search-input" class="form-control form-control-sm"
+                               placeholder="Search supplier by name..." autocomplete="off"
+                               value="{{ form.instance.supplier.name|default:'' }}">
+                        <div id="supplier-search-results" class="global-search-results"></div>
+                    </div>
                     {{ form.supplier }}
-                </p>
+                    <a href="{% url 'suppliers_create' %}?popup=1" target="_blank">+ New supplier</a>
+                </div>
                 <p>
                     {{ form.document_type.label_tag }}
                     {{ form.document_type }}
@@ -57,180 +72,86 @@
         <section class="delivery-form__items">
             <header class="section-header">
                 <h2>Products</h2>
+                <a href="{% url 'product_create' %}?popup=1" target="_blank">+ New product</a>
             </header>
 
-            {{ formset.management_form }}
-
-            <div class="table-wrapper">
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th>Code / Barcode</th>
-                            <th>Product Name</th>
-                            <th>Qty</th>
-                            <th>Unit Price</th>
-                            <th>Line Total</th>
-                            <th>Remove</th>
-                        </tr>
-                    </thead>
-                    <tbody id="delivery-items-body">
-                        {% for s_form in formset %}
-                            <tr class="delivery-row">
-                                <td>
-                                    {{ s_form.product_code }}
-                                    {{ s_form.delivery_item }}
-                                    {{ s_form.id }}
-                                </td>
-                                <td>{{ s_form.product_name }}</td>
-                                <td>{{ s_form.delivery_quantity }}</td>
-                                <td>{{ s_form.delivery_price }}</td>
-                                <td>{{ s_form.line_total }}</td>
-                                <td>{{ s_form.DELETE }}</td>
-                                {{ s_form.price_at_delivery }}
-                                {{ s_form.total_price_row }}
-                            </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-
-            <template id="empty-form-template">
-                <tr class="delivery-row">
-                    <td>
-                        {{ formset.empty_form.product_code }}
-                        {{ formset.empty_form.delivery_item }}
-                        {{ formset.empty_form.id }}
-                    </td>
-                    <td>{{ formset.empty_form.product_name }}</td>
-                    <td>{{ formset.empty_form.delivery_quantity }}</td>
-                    <td>{{ formset.empty_form.delivery_price }}</td>
-                    <td>{{ formset.empty_form.line_total }}</td>
-                    <td>{{ formset.empty_form.DELETE }}</td>
-                    {{ formset.empty_form.price_at_delivery }}
-                    {{ formset.empty_form.total_price_row }}
-                </tr>
-            </template>
-        </section>
-
-        <section class="delivery-form__total">
-            <strong>Transaction Total:</strong>
-            <span id="transaction-total">0.00 eur</span>
+            {% include 'deliveries/_delivery_items_table.html' %}
         </section>
 
         <footer class="page-actions">
-            <button type="button" id="add-row-btn">+ Add row</button>
             <button type="submit" class="button-save">Save Changes</button>
             <a href="{% url 'delivery_details' delivery.pk %}" class="button-cancel">Cancel</a>
         </footer>
     </form>
 
-    {{ products_data|json_script:"products-data" }}
-    {{ barcodes_data|json_script:"barcodes-data" }}
-
     <script>
-        const productsData = JSON.parse(document.getElementById('products-data').textContent);
-        const barcodesData = JSON.parse(document.getElementById('barcodes-data').textContent);
-        const formPrefix = "{{ formset_prefix }}";
+        // -- Supplier: searchable picker + "+ New supplier" popup -- same
+        // pattern as delivery_add.html.
+        (function () {
+            var searchInput = document.getElementById('supplier-search-input');
+            var resultsBox = document.getElementById('supplier-search-results');
+            var hiddenInput = document.getElementById('id_supplier');
+            var debounceTimer = null;
+            var currentController = null;
 
-        function findProductByCode(code) {
-            const cleanCode = code.trim();
-
-            const byInternalCode = productsData.find(p => p.internal_code === cleanCode);
-            if (byInternalCode) return byInternalCode;
-
-            const barcodeMatch = barcodesData.find(b => b.code === cleanCode);
-            if (barcodeMatch) {
-                return productsData.find(p => String(p.id) === String(barcodeMatch.product_id));
-            }
-            return null;
-        }
-
-        function updateTransactionTotal() {
-            let total = 0;
-
-            document.querySelectorAll('.delivery-row').forEach(row => {
-                if (row.style.display !== 'none') {
-                    const lineTotalInput = row.querySelector('.line-total-input');
-                    total += parseFloat(lineTotalInput.value || 0);
-                }
-            });
-
-            document.getElementById('transaction-total').textContent = total.toFixed(2) + " eur";
-        }
-
-        function recalculateRow(row) {
-            const qtyInput = row.querySelector('.quantity-input');
-            const unitPriceInput = row.querySelector('.unit-price-input');
-            const lineTotalInput = row.querySelector('.line-total-input');
-            const priceHidden = row.querySelector('input[name$="-price_at_delivery"]');
-            const totalHidden = row.querySelector('input[name$="-total_price_row"]');
-
-            const qty = parseFloat(qtyInput.value || 0);
-            const price = parseFloat(unitPriceInput.value || 0);
-            const total = qty * price;
-
-            lineTotalInput.value = total.toFixed(2);
-            priceHidden.value = price.toFixed(2);
-            totalHidden.value = total.toFixed(2);
-            updateTransactionTotal();
-        }
-
-        function bindRow(row) {
-            const codeInput = row.querySelector('.product-code-input');
-            const qtyInput = row.querySelector('.quantity-input');
-            const itemInput = row.querySelector('input[name$="-delivery_item"]');
-            const nameInput = row.querySelector('.product-name-input');
-            const priceInput = row.querySelector('.unit-price-input');
-
-            codeInput.addEventListener('change', () => {
-                const product = findProductByCode(codeInput.value);
-
-                if (!product) {
-                    alert('Product not found');
+            function renderResults(data) {
+                resultsBox.innerHTML = '';
+                if (!data.results.length) {
+                    var empty = document.createElement('div');
+                    empty.className = 'global-search-empty';
+                    empty.textContent = 'No matches';
+                    resultsBox.appendChild(empty);
+                    resultsBox.classList.add('is-open');
                     return;
                 }
-
-                itemInput.value = product.id;
-                nameInput.value = product.name;
-                priceInput.value = product.delivery_price;
-                recalculateRow(row);
-            });
-
-            qtyInput.addEventListener('input', () => {
-                recalculateRow(row);
-            });
-
-            priceInput.addEventListener('input', () => {
-                recalculateRow(row);
-            });
-
-            const deleteCheckbox = row.querySelector('input[type="checkbox"][name$="-DELETE"]');
-            if (deleteCheckbox) {
-                deleteCheckbox.addEventListener('change', () => {
-                    row.style.display = deleteCheckbox.checked ? 'none' : '';
-                    updateTransactionTotal();
+                data.results.forEach(function (supplier) {
+                    var row = document.createElement('div');
+                    row.className = 'global-search-result';
+                    row.textContent = supplier.name;
+                    row.addEventListener('click', function () {
+                        hiddenInput.value = supplier.id;
+                        searchInput.value = supplier.name;
+                        resultsBox.classList.remove('is-open');
+                    });
+                    resultsBox.appendChild(row);
                 });
+                resultsBox.classList.add('is-open');
             }
-        }
 
-        document.querySelectorAll('.delivery-row').forEach(bindRow);
-        updateTransactionTotal();
+            function runSearch() {
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(function () {
+                    if (currentController) currentController.abort();
+                    currentController = new AbortController();
+                    var params = new URLSearchParams();
+                    var q = searchInput.value.trim();
+                    if (q) params.set('q', q);
+                    fetch('{% url "supplier_search" %}?' + params.toString(), {signal: currentController.signal})
+                        .then(function (r) { return r.json(); })
+                        .then(renderResults)
+                        .catch(function (e) { if (e.name !== 'AbortError') { /* transient network error -- ignore */ } });
+                }, 200);
+            }
 
-        document.getElementById('add-row-btn').addEventListener('click', () => {
-            const body = document.getElementById('delivery-items-body');
-            const totalFormsInput = document.getElementById(`id_${formPrefix}-TOTAL_FORMS`);
-            const formCount = parseInt(totalFormsInput.value);
+            searchInput.addEventListener('input', function () {
+                hiddenInput.value = '';
+                runSearch();
+            });
+            searchInput.addEventListener('focus', runSearch);
+            document.addEventListener('click', function (e) {
+                if (!e.target.closest('#supplier-search-input') && !e.target.closest('#supplier-search-results')) {
+                    resultsBox.classList.remove('is-open');
+                }
+            });
 
-            const template = document.getElementById('empty-form-template').innerHTML;
-            const newRowHtml = template.replaceAll('__prefix__', formCount);
-
-            body.insertAdjacentHTML('beforeend', newRowHtml);
-            totalFormsInput.value = formCount + 1;
-
-            const newRow = body.lastElementChild;
-            bindRow(newRow);
-            updateTransactionTotal();
-        });
+            window.addEventListener('message', function (e) {
+                if (e.origin !== window.location.origin || !e.data) return;
+                if (e.data.type === 'supplier-created') {
+                    hiddenInput.value = e.data.id;
+                    searchInput.value = e.data.name;
+                }
+            });
+        })();
     </script>
 </section>
 {% endblock %}

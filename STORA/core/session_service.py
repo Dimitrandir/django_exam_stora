@@ -21,6 +21,8 @@ def extract_formset_state(post_data, prefix: str) -> dict:
 
     for index in range(total_forms):
         forms.append({
+            'id': post_data.get(f'{prefix}-{index}-id', ''),
+            'expiry_date': post_data.get(f'{prefix}-{index}-expiry_date', ''),
             'delivery_item': post_data.get(f'{prefix}-{index}-delivery_item', ''),
             'sale_item': post_data.get(f'{prefix}-{index}-sale_item', ''),
             'product_code': post_data.get(f'{prefix}-{index}-product_code', ''),

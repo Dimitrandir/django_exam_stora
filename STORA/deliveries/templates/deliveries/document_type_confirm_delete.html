@@ -1,0 +1,13 @@
+{% extends 'base.html' %}
+
+{% block content %}
+
+<h1>Are you sure you want to delete document type: "{{ document_type.name }}"?</h1>
+
+<form method="POST">
+    {% csrf_token %}
+    <button type="submit" class="delete_button">YES</button>
+    <a href="{% url 'document_type_list' %}" class="button_cancel">NO</a>
+</form>
+
+{% endblock %}

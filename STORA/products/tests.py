@@ -10,7 +10,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from STORA.accounts.models import Employee
-from STORA.deliveries.models import DeliveryAttributes, DeliveryItems
+from STORA.deliveries.models import DeliveryAttributes, DeliveryItems, DocumentType
 from STORA.products.forms import ProductForms, RecipeIngredientForm, TaxGroupForm
 from STORA.products.models import (
     Product, Barcode, Category, Suppliers, ProductSupplier, RecipeIngredient, TaxGroup, ProductChangeLog,
@@ -300,8 +300,9 @@ class ProductDetailViewTests(TestCase):
 
         sale = SaleAttributes.objects.create(cashier=self.manager)
         SaleItems.objects.create(sale=sale, sale_item=product, sale_quantity=2)
+        invoice_type, _ = DocumentType.objects.get_or_create(name='Invoice')
         delivery = DeliveryAttributes.objects.create(
-            receiver=self.manager, supplier=supplier, document_type='INVOICE',
+            receiver=self.manager, supplier=supplier, document_type=invoice_type,
             document_date=timezone.localdate(),
         )
         DeliveryItems.objects.create(delivery=delivery, delivery_item=product, delivery_quantity=5, price_at_delivery=1)
@@ -339,10 +340,11 @@ class ProductHistoryViewTests(TestCase):
         sale = SaleAttributes.objects.create(cashier=self.manager)
         SaleItems.objects.create(sale=sale, sale_item=self.product, sale_quantity=3)
 
+        invoice_type, _ = DocumentType.objects.get_or_create(name='Invoice')
         delivery = DeliveryAttributes.objects.create(
             receiver=self.manager,
             supplier=self.supplier,
-            document_type='INVOICE',
+            document_type=invoice_type,
             document_date=self.today,
         )
         DeliveryItems.objects.create(
@@ -1014,6 +1016,36 @@ class IngredientSearchViewTests(TestCase):
         response = self.client.get(reverse('ingredient_search'), {'q': 'Milk'})
         result = next(r for r in response.json()['results'] if r['id'] == self.milk.pk)
         self.assertEqual(result['delivery_price'], 1.80)
+
+
+class SupplierSearchViewTests(TestCase):
+    """Backs the searchable supplier picker on the delivery form -- same
+    reasoning as IngredientSearchViewTests above."""
+
+    def setUp(self):
+        self.manager = Employee.objects.create_user(
+            username='manager16', password='pass12345', role=Employee.MANAGER
+        )
+        self.mitko = Suppliers.objects.create(name='Mitko OOD', bulstat='111111111')
+        self.ivan = Suppliers.objects.create(name='Ivan EOOD', bulstat='222222222')
+
+    def test_requires_login(self):
+        response = self.client.get(reverse('supplier_search'))
+        self.assertEqual(response.status_code, 302)
+
+    def test_search_by_name(self):
+        self.client.force_login(self.manager)
+        response = self.client.get(reverse('supplier_search'), {'q': 'Mitko'})
+        ids = [r['id'] for r in response.json()['results']]
+        self.assertIn(self.mitko.pk, ids)
+        self.assertNotIn(self.ivan.pk, ids)
+
+    def test_no_query_returns_all_suppliers(self):
+        self.client.force_login(self.manager)
+        response = self.client.get(reverse('supplier_search'))
+        ids = [r['id'] for r in response.json()['results']]
+        self.assertIn(self.mitko.pk, ids)
+        self.assertIn(self.ivan.pk, ids)
 
 
 class CategoryCreatePopupTests(TestCase):

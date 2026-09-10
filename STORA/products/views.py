@@ -376,6 +376,37 @@ class IngredientSearchView(LoginRequiredMixin, StaffPermissionRequiredMixin, Vie
         ]})
 
 
+class SupplierSearchView(LoginRequiredMixin, StaffPermissionRequiredMixin, View):
+    """Backs the searchable supplier picker on the delivery create/edit
+    pages -- same reasoning as IngredientSearchView: a plain `<select>` with
+    every supplier as an `<option>` doesn't scale, so the JS queries this
+    endpoint instead of rendering the full queryset into the page."""
+
+    permission_required = 'products.view_suppliers'
+    RESULTS_LIMIT = 30
+
+    def get(self, request):
+        query = request.GET.get('q', '').strip()
+        suppliers = Suppliers.objects.all()
+
+        if query:
+            suppliers = (
+                suppliers
+                .filter(Q(name__icontains=query) | Q(bulstat__icontains=query))
+                .annotate(similarity=TrigramSimilarity('name', query))
+                .order_by('-similarity', 'name')
+            )
+        else:
+            suppliers = suppliers.order_by('name')
+
+        suppliers = suppliers[:self.RESULTS_LIMIT]
+
+        return JsonResponse({'results': [
+            {'id': supplier.pk, 'name': supplier.name, 'bulstat': supplier.bulstat}
+            for supplier in suppliers
+        ]})
+
+
 class ProductCreateView(LoginRequiredMixin, StaffPermissionRequiredMixin, CreateView):
     permission_required = 'products.add_product'
     model = Product
