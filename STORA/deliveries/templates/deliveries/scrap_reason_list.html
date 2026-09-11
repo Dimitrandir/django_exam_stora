@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+
+{% block content %}
+
+<h1>Scrap Reasons</h1>
+
+<table>
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>{% if perms.deliveries.add_scrapreason %}<a href="{% url 'scrap_reason_create' %}" class="add-btn-table" title="Add a new scrap reason">+</a>{% endif %}</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for scrap_reason in scrap_reasons %}
+        <tr>
+            <td>{{ scrap_reason.name }}</td>
+            <td>
+                {% if perms.deliveries.change_scrapreason %}<a href="{% url 'scrap_reason_edit' scrap_reason.pk %}">Edit</a>{% endif %}
+                {% if perms.deliveries.change_scrapreason and perms.deliveries.delete_scrapreason %}|{% endif %}
+                {% if perms.deliveries.delete_scrapreason %}<a href="{% url 'scrap_reason_delete' scrap_reason.pk %}">Delete</a>{% endif %}
+            </td>
+        </tr>
+        {% empty %}
+        <tr>
+            <td colspan="2">No scrap reasons found.</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+{% endblock %}

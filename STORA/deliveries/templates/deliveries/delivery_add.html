@@ -9,9 +9,9 @@
 {% endblock %}
 
 {% block content %}
-<section class="delivery-form">
+<section class="delivery-form{% if is_write_off or is_scrap %} delivery-form--writeoff{% endif %}">
     <header class="page-header">
-        <h1>New Delivery</h1>
+        <h1>{% if is_write_off %}New Write-off{% elif is_scrap %}New Scrap{% else %}New Delivery{% endif %}</h1>
     </header>
 
     {% if form.errors %}
@@ -43,6 +43,7 @@
                     {{ form.time_of_delivery.label_tag }}
                     {{ form.time_of_delivery }}
                 </p>
+                {% if not is_scrap %}
                 <div class="mb-3">
                     {{ form.supplier.label_tag }}
                     <div class="position-relative" style="max-width: 320px;">
@@ -52,12 +53,17 @@
                         <div id="supplier-search-results" class="global-search-results"></div>
                     </div>
                     {{ form.supplier }}
+                    {% if not is_write_off %}
                     <a href="{% url 'suppliers_create' %}?popup=1" target="_blank">+ New supplier</a>
+                    {% endif %}
                 </div>
+                {% endif %}
+                {% if form.document_type %}
                 <p>
                     {{ form.document_type.label_tag }}
                     {{ form.document_type }}
                 </p>
+                {% endif %}
                 <p>
                     {{ form.document_number.label_tag }}
                     {{ form.document_number }}
@@ -72,14 +78,16 @@
         <section class="delivery-form__items">
             <header class="section-header">
                 <h2>Products</h2>
+                {% if movement_type == 'DELIVERY' %}
                 <a href="{% url 'product_create' %}?popup=1" target="_blank">+ New product</a>
+                {% endif %}
             </header>
 
             {% include 'deliveries/_delivery_items_table.html' %}
         </section>
 
         <footer class="page-actions">
-            <button type="submit" class="button-save">Complete Delivery</button>
+            <button type="submit" class="button-save">{% if is_write_off %}Complete Write-off{% elif is_scrap %}Complete Scrap{% else %}Complete Delivery{% endif %}</button>
             <a href="{% url 'clear_cashier_operation' %}" class="button-cancel">Cancel</a>
         </footer>
     </form>
@@ -92,7 +100,10 @@
 
         // -- Supplier: searchable picker + "+ New supplier" popup, same
         // debounced-trigram-search pattern as the product/ingredient and
-        // document-type pickers on this page. --
+        // document-type pickers on this page. Scrap has no supplier field
+        // at all (see form.supplier guard above), so this whole block is
+        // skipped there -- nothing in the DOM for it to attach to. --
+        {% if not is_scrap %}
         (function () {
             var searchInput = document.getElementById('supplier-search-input');
             var resultsBox = document.getElementById('supplier-search-results');
@@ -158,6 +169,7 @@
                 }
             });
         })();
+        {% endif %}
 
         async function saveDraft() {
             try {
@@ -168,9 +180,10 @@
                         "X-CSRFToken": document.querySelector('[name=csrfmiddlewaretoken]').value
                     },
                     body: JSON.stringify({
+                        path: window.location.pathname,
                         form_data: {
                             receiver: "{{ user.pk }}",
-                            supplier: document.getElementById('id_supplier').value,
+                            supplier: document.getElementById('id_supplier') ? document.getElementById('id_supplier').value : '',
                             time_of_delivery: document.querySelector('[name="time_of_delivery"]') ? document.querySelector('[name="time_of_delivery"]').value : '',
                             document_type: document.getElementById('id_document_type') ? document.getElementById('id_document_type').value : '',
                             document_number: document.querySelector('[name="document_number"]') ? document.querySelector('[name="document_number"]').value : '',

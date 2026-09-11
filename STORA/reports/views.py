@@ -51,6 +51,7 @@ class ReportsDashboardView(ReportsBaseView):
             time_of_sale__date__range=(start_date, end_date)
         )
         deliveries = DeliveryAttributes.objects.filter(
+            movement_type=DeliveryAttributes.MOVEMENT_DELIVERY,
             time_of_delivery__date__range=(start_date, end_date)
         )
 
@@ -114,6 +115,7 @@ class DeliveriesReportView(ReportsBaseView):
         form, start_date, end_date = self.get_period(request)
 
         deliveries = DeliveryAttributes.objects.filter(
+            movement_type=DeliveryAttributes.MOVEMENT_DELIVERY,
             time_of_delivery__date__range=(start_date, end_date)
         ).select_related('supplier', 'document_type').prefetch_related(
             'items__delivery_item__tax_group'

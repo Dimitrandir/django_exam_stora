@@ -33,9 +33,23 @@ uses, independent of whether this delivery gets submitted at all.
     <button type="button" id="delivery-items-export-btn" class="btn btn-outline-secondary btn-sm ms-2">Export to Excel</button>
 </div>
 
+{% if is_scrap %}
+<!-- Scrap variant 1: pick a specific delivered batch (product + expiry
+     date) to scrap, for traceability back to the original delivery. The
+     plain product search above still works too (variant 2: free entry,
+     e.g. scrapping something before its tracked expiry) -- both add rows
+     to the same grid, this one just also stamps source_item. -->
+<div class="position-relative mb-2" style="max-width: 420px;">
+    <input type="search" id="delivery-batch-search-input" class="form-control form-control-sm"
+           placeholder="Or search a delivered batch by product (expiry-tracked)..." autocomplete="off">
+    <div id="delivery-batch-search-results" class="global-search-results"></div>
+</div>
+{% endif %}
+
 {{ delivery_items_initial|json_script:"delivery-items-initial-data" }}
 {{ products_data|json_script:"delivery-items-products-data" }}
 {{ barcodes_data|json_script:"delivery-items-barcodes-data" }}
+{{ scrap_reasons_data|json_script:"delivery-items-scrap-reasons-data" }}
 <!-- No separate "Transaction Total" -- the Line Total column's own
      bottomCalc sum (with and without VAT) already shows it, right under
      the numbers it's adding up. -->
@@ -78,6 +92,21 @@ document.addEventListener('DOMContentLoaded', function () {
         if (product) productByBarcode[b.code] = product;
     });
 
+    // Scrap Reason column (only rendered at all when is_scrap, see the
+    // columns array below) -- Tabulator's 'list' editor stores/returns
+    // whichever key is selected from `scrapReasonValues`, so the cell value
+    // is the reason's id directly, matching DeliveryItems.scrap_reason_id.
+    var scrapReasonsById = {};
+    var scrapReasonValues = {};
+    JSON.parse(document.getElementById('delivery-items-scrap-reasons-data').textContent || '[]').forEach(function (r) {
+        scrapReasonsById[String(r.id)] = r.name;
+        scrapReasonValues[r.id] = r.name;
+    });
+    function scrapReasonFormatter(cell) {
+        var v = cell.getValue();
+        return v ? (scrapReasonsById[String(v)] || '') : '';
+    }
+
     function findProductByCode(code) {
         return productByInternalCode[code] || productByBarcode[code] || null;
     }
@@ -117,6 +146,8 @@ document.addEventListener('DOMContentLoaded', function () {
             sell_price: round2(sellPrice),
             markup_percent: round1(markup),
             expiry_date: raw.expiry_date || '',
+            source_item: raw.source_item || '',
+            scrap_reason: raw.scrap_reason || '',
         };
     }
 
@@ -136,9 +167,32 @@ document.addEventListener('DOMContentLoaded', function () {
     // rows that get removed are simply dropped -- see the submit handler.
     var pendingDeletions = [];
 
+    // Write-off and scrap rows both move stock OUT -- QUANTITY and LINE
+    // TOTAL (the amounts actually leaving stock) show a leading "-" in red
+    // for either. Unit Price and Sell Price are still per-unit catalog
+    // prices, not amounts being subtracted, so they stay plain (see
+    // quantityFormatter/movementMoneyFormatter vs. the untouched
+    // moneyFormatter used for those two below).
+    var isScrap = {{ is_scrap|yesno:"true,false" }};
+    var isOutgoing = {{ is_write_off|yesno:"true,false" }} || isScrap;
+
     function moneyFormatter(cell) {
         var v = Number(cell.getValue());
         return isNaN(v) ? '' : v.toFixed(2) + ' eur';
+    }
+
+    function movementMoneyFormatter(cell) {
+        var v = Number(cell.getValue());
+        if (isNaN(v)) return '';
+        var text = v.toFixed(2) + ' eur';
+        return isOutgoing && v !== 0 ? '<span class="qty-negative">-' + text + '</span>' : text;
+    }
+
+    function quantityFormatter(cell) {
+        var v = Number(cell.getValue());
+        if (isNaN(v)) return '';
+        var text = String(v);
+        return isOutgoing && v !== 0 ? '<span class="qty-negative">-' + text + '</span>' : text;
     }
 
     function percentFormatter(cell) {
@@ -222,6 +276,14 @@ document.addEventListener('DOMContentLoaded', function () {
             if (e.key === 'Enter') {
                 e.preventDefault();
                 commit();
+                // Enter always advances, even if the value didn't change --
+                // Tabulator's own 'cellEdited' event (used below for recalc/
+                // persist side effects) only fires on an actual value
+                // change, so a bare "leave this as-is, move on" Enter press
+                // (the clerk doesn't have this price on the invoice, skips
+                // straight to the field they DO have) has to be driven from
+                // here, not from cellEdited.
+                advanceToNext(cell);
             } else if (e.key === 'Escape') {
                 cancel();
             }
@@ -239,6 +301,13 @@ document.addEventListener('DOMContentLoaded', function () {
         function commit() { success(input.value); }
         input.addEventListener('change', commit);
         input.addEventListener('blur', commit);
+        input.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                commit();
+                advanceToNext(cell);
+            }
+        });
         return input;
     }
 
@@ -339,7 +408,9 @@ document.addEventListener('DOMContentLoaded', function () {
             title: 'Qty', field: 'delivery_quantity', width: 100, hozAlign: 'right',
             editor: numberEditor,
             editorParams: function (cell) { return {min: 0.001, step: quantityStep(cell.getData())}; },
+            formatter: quantityFormatter,
             bottomCalc: 'sum',
+            bottomCalcFormatter: quantityFormatter,
         },
         {
             title: 'Unit Price', field: 'price_at_delivery', width: 130, hozAlign: 'right',
@@ -356,11 +427,11 @@ document.addEventListener('DOMContentLoaded', function () {
             // direction.
             title: 'Line Total', field: 'total_price_row', width: 130, hozAlign: 'right',
             editor: numberEditor, editorParams: {min: 0, step: 0.01},
-            formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
+            formatter: movementMoneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: movementMoneyFormatter,
         },
         {
             title: 'Line Total (no VAT)', field: 'total_without_vat', width: 150, hozAlign: 'right',
-            formatter: moneyFormatter, visible: false, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
+            formatter: movementMoneyFormatter, visible: false, bottomCalc: 'sum', bottomCalcFormatter: movementMoneyFormatter,
         },
         {
             title: 'Sell Price', field: 'sell_price', width: 120, hozAlign: 'right',
@@ -374,6 +445,13 @@ document.addEventListener('DOMContentLoaded', function () {
             title: 'Expiry Date', field: 'expiry_date', width: 130,
             editor: dateEditor,
         },
+        {% if is_scrap %}
+        {
+            title: 'Scrap Reason', field: 'scrap_reason', width: 150,
+            editor: 'list', editorParams: {values: scrapReasonValues, clearable: true},
+            formatter: scrapReasonFormatter,
+        },
+        {% endif %}
         {
             title: 'Remove', field: 'remove', width: 90, hozAlign: 'center', headerFilter: false, hideable: false,
             formatter: function () { return '<button type="button" class="btn btn-sm btn-outline-danger">Remove</button>'; },
@@ -387,27 +465,49 @@ document.addEventListener('DOMContentLoaded', function () {
         },
     ], {placeholder: 'No products added to this delivery yet.'});
 
+    // Pressing Enter in any editable cell jumps straight to the NEXT
+    // editable cell in the row -- not just Qty -> Price, all the way to the
+    // end (Expiry Date, or Scrap Reason on a scrap). Walks the table's own
+    // current column order (table.getColumns()), so it follows whatever
+    // order the columns are ACTUALLY in right now -- both a column the
+    // clerk dragged elsewhere (movableColumns) and a column they hid via
+    // "Columns ▾" are respected automatically, no separate list to keep in
+    // sync by hand.
+    function nextVisibleField(currentField) {
+        var columns = table.getColumns();
+        var idx = columns.findIndex(function (c) { return c.getField() === currentField; });
+        if (idx === -1) return null;
+        for (var i = idx + 1; i < columns.length; i++) {
+            var col = columns[i];
+            if (col.getDefinition().editor && col.isVisible()) return col.getField();
+        }
+        return null;
+    }
+
+    // Called directly from each editor's own Enter-key handler (numberEditor/
+    // dateEditor above), NOT from 'cellEdited' below -- Tabulator only fires
+    // 'cellEdited' when the committed value actually differs from before, so
+    // an Enter press that leaves a field unchanged (the clerk doesn't have
+    // that particular price on the invoice, just wants to skip past it) would
+    // silently do nothing if this lived there instead.
+    function advanceToNext(cell) {
+        var next = nextVisibleField(cell.getField());
+        if (next) focusCellEditor(cell.getRow(), next);
+    }
+
+    // Recalc/persist side effects only -- advancing focus to the next field
+    // is handled directly in each editor's Enter-key handler (advanceToNext
+    // above), not here, since this only fires on an actual value change.
     table.on('cellEdited', function (cell) {
         var field = cell.getField();
         var row = cell.getRow();
 
-        if (field === 'delivery_quantity') {
-            recalcRow(row, 'price_at_delivery');
-            // "type qty, land straight on price" -- same quick-entry flow
-            // as adding a brand new row (see addProductRow below).
-            focusCellEditor(row, 'price_at_delivery');
-            return;
-        }
-
-        if (field === 'sell_price' || field === 'markup_percent') {
+        if (field === 'delivery_quantity' || field === 'price_at_delivery' || field === 'price_without_vat' || field === 'total_price_row') {
+            recalcRow(row, field);
+        } else if (field === 'sell_price' || field === 'markup_percent') {
             var previousSellPrice = field === 'sell_price' ? cell.getOldValue() : row.getData().sell_price;
             recalcRow(row, field);
             persistSellPrice(row, previousSellPrice);
-            return;
-        }
-
-        if (field === 'price_at_delivery' || field === 'price_without_vat' || field === 'total_price_row') {
-            recalcRow(row, field);
         }
     });
     function addProductRow(product) {
@@ -562,6 +662,89 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
+    {% if is_scrap %}
+    // -- Scrap variant 1: search a delivered batch (product + expiry date)
+    // and add it with source_item set, for traceability back to the
+    // original delivery row. Simpler than the product search above (no
+    // arrow-key highlighting) since it's the secondary/optional path --
+    // variant 2 (the product search box, already wired above) is the main
+    // one when there's no specific batch to reference. --
+    (function () {
+        var batchSearchInput = document.getElementById('delivery-batch-search-input');
+        var batchResultsBox = document.getElementById('delivery-batch-search-results');
+        var batchDebounceTimer = null;
+        var batchController = null;
+        var currentBatchResults = [];
+
+        function selectBatch(batch) {
+            var product = productsById[String(batch.product_id)];
+            if (!product) return;
+            table.addRow(buildRow(product, {
+                delivery_quantity: 1,
+                expiry_date: batch.expiry_date,
+                source_item: batch.id,
+            })).then(function (row) {
+                focusCellEditor(row, 'delivery_quantity');
+            });
+            batchResultsBox.classList.remove('is-open');
+            batchSearchInput.value = '';
+            currentBatchResults = [];
+        }
+
+        function renderBatchResults(data) {
+            batchResultsBox.innerHTML = '';
+            currentBatchResults = data.results;
+            if (!data.results.length) {
+                var empty = document.createElement('div');
+                empty.className = 'global-search-empty';
+                empty.textContent = 'No matches';
+                batchResultsBox.appendChild(empty);
+                batchResultsBox.classList.add('is-open');
+                return;
+            }
+            data.results.forEach(function (batch) {
+                var row = document.createElement('div');
+                row.className = 'global-search-result';
+                row.textContent = batch.internal_code + ' — ' + batch.name + ' (exp. ' + batch.expiry_date + ', qty ' + batch.delivery_quantity + ')';
+                row.addEventListener('click', function () { selectBatch(batch); });
+                batchResultsBox.appendChild(row);
+            });
+            batchResultsBox.classList.add('is-open');
+        }
+
+        function runBatchSearch() {
+            clearTimeout(batchDebounceTimer);
+            batchDebounceTimer = setTimeout(function () {
+                if (batchController) batchController.abort();
+                batchController = new AbortController();
+                var params = new URLSearchParams();
+                var q = batchSearchInput.value.trim();
+                if (q) params.set('q', q);
+                fetch('{% url "batch_search" %}?' + params.toString(), {signal: batchController.signal})
+                    .then(function (r) { return r.json(); })
+                    .then(renderBatchResults)
+                    .catch(function (e) { if (e.name !== 'AbortError') { /* transient network error -- ignore */ } });
+            }, 200);
+        }
+
+        batchSearchInput.addEventListener('input', runBatchSearch);
+        batchSearchInput.addEventListener('focus', runBatchSearch);
+        batchSearchInput.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' && currentBatchResults.length) {
+                e.preventDefault();
+                selectBatch(currentBatchResults[0]);
+            } else if (e.key === 'Escape') {
+                batchResultsBox.classList.remove('is-open');
+            }
+        });
+        document.addEventListener('click', function (e) {
+            if (!e.target.closest('#delivery-batch-search-input') && !e.target.closest('#delivery-batch-search-results')) {
+                batchResultsBox.classList.remove('is-open');
+            }
+        });
+    })();
+    {% endif %}
+
     document.getElementById('delivery-items-export-btn').addEventListener('click', function () {
         table.download('xlsx', 'delivery_items.xlsx', {sheetName: 'Delivery Items'});
     });
@@ -588,6 +771,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 price_at_delivery: data.price_at_delivery,
                 total_price_row: data.total_price_row,
                 expiry_date: data.expiry_date || '',
+                source_item: data.source_item || '',
+                scrap_reason: data.scrap_reason || '',
                 DELETE: isDeleted ? 'on' : '',
             };
             Object.keys(fields).forEach(function (name) {
@@ -615,6 +800,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 price_at_delivery: data.price_at_delivery,
                 total_price_row: data.total_price_row,
                 expiry_date: data.expiry_date || '',
+                source_item: data.source_item || '',
+                scrap_reason: data.scrap_reason || '',
                 DELETE: '',
             };
         })};

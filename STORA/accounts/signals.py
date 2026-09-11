@@ -63,6 +63,10 @@ def create_default_groups(sender, **kwargs):
             'add_deliveryattributes',
             'change_deliveryattributes',
             'view_documenttype',
+            # Scrap Reasons is the same short, rarely-changed reference-list
+            # pattern as Document Types -- Warehouse picks a reason when
+            # logging a scrap, only Manager adds/renames entries.
+            'view_scrapreason',
         ]
     )
     warehouse_group.permissions.set(list(product_permissions) + list(delivery_permissions))

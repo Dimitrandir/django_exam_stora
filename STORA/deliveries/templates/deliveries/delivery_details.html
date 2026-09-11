@@ -9,17 +9,23 @@
 {% endblock %}
 
 {% block content %}
-<section class="delivery-details">
+<section class="delivery-details{% if delivery.movement_type == 'WRITE_OFF' or delivery.movement_type == 'SCRAP' %} delivery-form--writeoff{% endif %}">
     <header class="page-header">
-        <h1>Details for Delivery ID: {{ delivery.id }}</h1>
+        <h1>
+            {% if delivery.movement_type == 'WRITE_OFF' %}Details for Write-off ID: {{ delivery.id }}
+            {% elif delivery.movement_type == 'SCRAP' %}Details for Scrap ID: {{ delivery.id }}
+            {% else %}Details for Delivery ID: {{ delivery.id }}{% endif %}
+        </h1>
         <p class="page-subtitle">{{ delivery.time_of_delivery|date:"d.m.Y H:i" }}</p>
     </header>
 
     <section class="delivery-summary">
+        {% if delivery.supplier %}
         <div class="summary-item">
             <strong>Supplier:</strong>
             <span>{{ delivery.supplier }}</span>
         </div>
+        {% endif %}
         <div class="summary-item">
             <strong>Receiver:</strong>
             <span>{{ delivery.receiver }}</span>
@@ -55,9 +61,26 @@
 <script src="{% static_v 'js/data-table.js' %}"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+    var isOutgoing = '{{ delivery.movement_type }}' === 'WRITE_OFF' || '{{ delivery.movement_type }}' === 'SCRAP';
+
     function moneyFormatter(cell) {
         var v = Number(cell.getValue());
         return isNaN(v) ? '' : v.toFixed(2) + ' eur';
+    }
+    // Only Qty and Line Total represent amounts actually leaving stock on a
+    // write-off -- Unit Price/Sell Price are still per-unit catalog prices,
+    // so they keep the plain moneyFormatter above (same split as the
+    // editable grid's moneyFormatter vs. movementMoneyFormatter).
+    function movementMoneyFormatter(cell) {
+        var v = Number(cell.getValue());
+        if (isNaN(v)) return '';
+        var text = v.toFixed(2) + ' eur';
+        return isOutgoing && v !== 0 ? '<span class="qty-negative">-' + text + '</span>' : text;
+    }
+    function quantityFormatter(cell) {
+        var v = Number(cell.getValue());
+        if (isNaN(v)) return '';
+        return isOutgoing && v !== 0 ? '<span class="qty-negative">-' + v + '</span>' : String(v);
     }
     function percentFormatter(cell) {
         var v = Number(cell.getValue());
@@ -75,7 +98,7 @@ document.addEventListener('DOMContentLoaded', function () {
         },
         {title: 'Code', field: 'internal_code', width: 110},
         {title: 'Name', field: 'name', width: 220},
-        {title: 'Qty', field: 'delivery_quantity', width: 90, hozAlign: 'right'},
+        {title: 'Qty', field: 'delivery_quantity', width: 90, hozAlign: 'right', formatter: quantityFormatter, bottomCalc: 'sum', bottomCalcFormatter: quantityFormatter},
         {
             title: 'Unit Price', field: 'price_at_delivery', width: 120, hozAlign: 'right',
             formatter: moneyFormatter,
@@ -86,11 +109,11 @@ document.addEventListener('DOMContentLoaded', function () {
         },
         {
             title: 'Line Total', field: 'total_price_row', width: 120, hozAlign: 'right',
-            formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
+            formatter: movementMoneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: movementMoneyFormatter,
         },
         {
             title: 'Line Total (no VAT)', field: 'total_without_vat', width: 150, hozAlign: 'right',
-            formatter: moneyFormatter, visible: false, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
+            formatter: movementMoneyFormatter, visible: false, bottomCalc: 'sum', bottomCalcFormatter: movementMoneyFormatter,
         },
         {
             title: 'Sell Price', field: 'sell_price', width: 110, hozAlign: 'right',
@@ -98,6 +121,9 @@ document.addEventListener('DOMContentLoaded', function () {
         },
         {title: 'Markup %', field: 'markup_percent', width: 100, hozAlign: 'right', formatter: percentFormatter},
         {title: 'Expiry Date', field: 'expiry_date', width: 120},
+        {% if delivery.movement_type == 'SCRAP' %}
+        {title: 'Scrap Reason', field: 'scrap_reason_name', width: 150},
+        {% endif %}
     ], {placeholder: 'No delivery items found.'});
 
     var exportBtn = document.getElementById('delivery-details-export-btn');

@@ -9,9 +9,9 @@
 {% endblock %}
 
 {% block content %}
-<section class="delivery-form">
+<section class="delivery-form{% if is_write_off or is_scrap %} delivery-form--writeoff{% endif %}">
     <header class="page-header">
-        <h1>Edit Delivery</h1>
+        <h1>{% if is_write_off %}Edit Write-off{% elif is_scrap %}Edit Scrap{% else %}Edit Delivery{% endif %}</h1>
     </header>
 
     {% if form.errors %}
@@ -43,6 +43,7 @@
                     {{ form.time_of_delivery.label_tag }}
                     {{ form.time_of_delivery }}
                 </p>
+                {% if not is_scrap %}
                 <div class="mb-3">
                     {{ form.supplier.label_tag }}
                     <div class="position-relative" style="max-width: 320px;">
@@ -52,12 +53,17 @@
                         <div id="supplier-search-results" class="global-search-results"></div>
                     </div>
                     {{ form.supplier }}
+                    {% if not is_write_off %}
                     <a href="{% url 'suppliers_create' %}?popup=1" target="_blank">+ New supplier</a>
+                    {% endif %}
                 </div>
+                {% endif %}
+                {% if form.document_type %}
                 <p>
                     {{ form.document_type.label_tag }}
                     {{ form.document_type }}
                 </p>
+                {% endif %}
                 <p>
                     {{ form.document_number.label_tag }}
                     {{ form.document_number }}
@@ -72,7 +78,9 @@
         <section class="delivery-form__items">
             <header class="section-header">
                 <h2>Products</h2>
+                {% if movement_type == 'DELIVERY' %}
                 <a href="{% url 'product_create' %}?popup=1" target="_blank">+ New product</a>
+                {% endif %}
             </header>
 
             {% include 'deliveries/_delivery_items_table.html' %}
@@ -86,7 +94,8 @@
 
     <script>
         // -- Supplier: searchable picker + "+ New supplier" popup -- same
-        // pattern as delivery_add.html.
+        // pattern as delivery_add.html. Scrap has no supplier field.
+        {% if not is_scrap %}
         (function () {
             var searchInput = document.getElementById('supplier-search-input');
             var resultsBox = document.getElementById('supplier-search-results');
@@ -152,6 +161,7 @@
                 }
             });
         })();
+        {% endif %}
     </script>
 </section>
 {% endblock %}

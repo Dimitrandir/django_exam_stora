@@ -49,11 +49,15 @@
 
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
-                        Deliveries
+                        Stock Movements
                     </a>
                     <ul class="dropdown-menu">
-                        <li><a class="dropdown-item" href="{% url 'delivery_add' %}">New delivery</a></li>
+                        <li><a class="dropdown-item" href="{% url 'delivery_add' %}">Delivery</a></li>
+                        <li><a class="dropdown-item" href="{% url 'writeoff_add' %}">Write-off</a></li>
+                        <li><a class="dropdown-item" href="{% url 'scrap_add' %}">Scrap</a></li>
+                        <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item" href="{% url 'document_type_list' %}">Document Types</a></li>
+                        <li><a class="dropdown-item" href="{% url 'scrap_reason_list' %}">Scrap Reasons</a></li>
                         <li><a class="dropdown-item" href="{% url 'deliveries_report' %}">Deliveries report</a></li>
                     </ul>
                 </li>
@@ -98,7 +102,7 @@
             <div class="alert alert-info shadow-sm d-flex justify-content-between align-items-center rounded-4 mb-4">
                 <div>
                     <strong>Open operation:</strong>
-                    {{ cashier_operation.type|title }}
+                    {{ cashier_operation.type|cut:"_"|title }}
                     <span class="text-muted">is saved in draft</span>
                 </div>
                 <a href="{% url 'clear_cashier_operation' %}" class="btn btn-sm btn-outline-primary">

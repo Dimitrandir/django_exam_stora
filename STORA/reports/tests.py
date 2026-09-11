@@ -120,3 +120,33 @@ class DeliveriesReportViewTests(TestCase):
         response = self._get()
         self.assertEqual(response.context['total_deliveries_count'], 1)
         self.assertEqual(response.context['total_deliveries_amount'], Decimal('29.00'))
+
+    def test_write_offs_do_not_appear_in_deliveries_report(self):
+        # Write-offs share DeliveryAttributes with deliveries now -- without
+        # an explicit movement_type filter they'd leak into this report
+        # (and document_type.name would crash, since write-offs have none).
+        write_off = DeliveryAttributes.objects.create(
+            movement_type=DeliveryAttributes.MOVEMENT_WRITE_OFF,
+            receiver=self.manager, supplier=self.supplier_a,
+            document_date=timezone.localdate(), time_of_delivery=timezone.now(),
+        )
+        DeliveryItems.objects.create(
+            delivery=write_off, delivery_item=self.product_taxed,
+            delivery_quantity=Decimal('1.000'), price_at_delivery=Decimal('12.00'),
+        )
+        response = self._get()
+        ids = [d['id'] for d in response.context['deliveries_data']]
+        self.assertNotIn(write_off.pk, ids)
+
+    def test_scrap_does_not_appear_in_deliveries_report(self):
+        scrap = DeliveryAttributes.objects.create(
+            movement_type=DeliveryAttributes.MOVEMENT_SCRAP,
+            receiver=self.manager, document_date=timezone.localdate(), time_of_delivery=timezone.now(),
+        )
+        DeliveryItems.objects.create(
+            delivery=scrap, delivery_item=self.product_taxed,
+            delivery_quantity=Decimal('1.000'), price_at_delivery=Decimal('12.00'),
+        )
+        response = self._get()
+        ids = [d['id'] for d in response.context['deliveries_data']]
+        self.assertNotIn(scrap.pk, ids)

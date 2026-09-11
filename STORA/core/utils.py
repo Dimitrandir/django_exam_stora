@@ -24,6 +24,12 @@ def get_cashier_operation_type(path: str) -> str | None:
     if path == '/deliveries/add/':
         return 'delivery'
 
+    if path == '/deliveries/write-off/add/':
+        return 'write_off'
+
+    if path == '/deliveries/scrap/add/':
+        return 'scrap'
+
     return None
 
 def get_cashier_operation_session_key() -> str:

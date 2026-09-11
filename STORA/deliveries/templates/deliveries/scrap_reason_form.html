@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+
+{% block content %}
+
+    {% if scrap_reason %}
+        <h1>Edit scrap reason: {{ scrap_reason.name }}</h1>
+    {% else %}
+        <h1>Add new scrap reason</h1>
+    {% endif %}
+
+    <form method="post">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <button type="submit">Save</button>
+    </form>
+
+    <hr>
+
+    <a href="{% url 'scrap_reason_list' %}">Cancel</a>
+
+{% endblock %}

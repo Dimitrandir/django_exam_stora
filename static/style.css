@@ -190,6 +190,25 @@ input[type="text"], input[type="number"], input[type="email"], select, textarea 
     box-shadow: 0 0.5rem 1rem rgba(0,0,0,.05);
 }
 
+/* Write-off is the same screen/grid as a delivery, just moving stock the
+   other way -- a red accent border and negative-styled numbers (see
+   .qty-negative) keep it from being mistaken for an ordinary delivery at a
+   glance. */
+.delivery-form--writeoff {
+    border-left: 4px solid var(--danger-color);
+}
+
+.delivery-form--writeoff .page-header h1::before {
+    content: "− ";
+    color: var(--danger-color);
+    font-weight: 700;
+}
+
+.qty-negative {
+    color: var(--danger-color);
+    font-weight: 600;
+}
+
 .reports-dashboard,
 .reports-sales,
 .reports-deliveries {

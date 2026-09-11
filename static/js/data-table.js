@@ -263,6 +263,12 @@
             layout: 'fitColumns',
             columns: columns,
             placeholder: options.placeholder || 'No data found.',
+            // Drag a header left/right to reorder columns -- applies to
+            // every table built through this helper (see CLAUDE.md table
+            // convention). Tabulator keeps track of the new order itself
+            // (table.getColumns() reflects it afterwards); nothing here
+            // needs to persist it.
+            movableColumns: true,
         });
 
         if (options.columnChooser !== false) {

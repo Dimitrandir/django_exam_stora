@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
 
-from STORA.deliveries.models import DeliveryAttributes, DeliveryItems, DocumentType, Suppliers
+from STORA.deliveries.models import DeliveryAttributes, DeliveryItems, DocumentType, ScrapReason, Suppliers
 from STORA.products.models import Product, TaxGroup
 
 
@@ -506,3 +506,422 @@ class DeliveryDetailViewItemsDataTests(TestCase):
         row = next(r for r in response.context['delivery_items_data'] if r['internal_code'] == 'DET002')
         self.assertEqual(row['price_without_vat'], 5.0)
         self.assertEqual(row['expiry_date'], '')
+
+
+class WriteOffStockAdjustmentTests(TestCase):
+    """movement_type=WRITE_OFF runs the exact same DeliveryItems.save()/
+    post_delete machinery as a delivery, just with the sign flipped --
+    these mirror DeliveryStockAdjustmentTests but assert stock going DOWN
+    (and back up on delete), not up."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username='writeoff-receiver', password='pass12345')
+        self.supplier = Suppliers.objects.create(name='Write-off Supplier', bulstat='222222222')
+        self.product = Product.objects.create(
+            internal_code='WO0001', name='Spoiled Yogurt', delivery_price=Decimal('1.00'),
+            sell_price=Decimal('2.00'), quantity=Decimal('20.000'),
+        )
+        self.write_off = DeliveryAttributes.objects.create(
+            movement_type=DeliveryAttributes.MOVEMENT_WRITE_OFF,
+            receiver=self.user, supplier=self.supplier, document_date='2026-04-20',
+        )
+
+    def test_creating_item_decreases_stock(self):
+        DeliveryItems.objects.create(
+            delivery=self.write_off, delivery_item=self.product,
+            delivery_quantity=Decimal('5.000'), price_at_delivery=Decimal('1.00'),
+        )
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.quantity, Decimal('15.000'))
+
+    def test_editing_quantity_applies_only_the_delta(self):
+        item = DeliveryItems.objects.create(
+            delivery=self.write_off, delivery_item=self.product,
+            delivery_quantity=Decimal('5.000'), price_at_delivery=Decimal('1.00'),
+        )
+        item.delivery_quantity = Decimal('8.000')
+        item.save()
+        self.product.refresh_from_db()
+        # 20 - 5 - (8-5) = 12, not 20 - 5 - 8.
+        self.assertEqual(self.product.quantity, Decimal('12.000'))
+
+    def test_deleting_item_restores_stock(self):
+        item = DeliveryItems.objects.create(
+            delivery=self.write_off, delivery_item=self.product,
+            delivery_quantity=Decimal('5.000'), price_at_delivery=Decimal('1.00'),
+        )
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.quantity, Decimal('15.000'))
+        item.delete()
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.quantity, Decimal('20.000'))
+
+    def test_negative_stock_is_allowed(self):
+        # Business rule (CLAUDE.md): negative stock is intentional, a
+        # signal to the manager, not something write-off validation blocks.
+        DeliveryItems.objects.create(
+            delivery=self.write_off, delivery_item=self.product,
+            delivery_quantity=Decimal('50.000'), price_at_delivery=Decimal('1.00'),
+        )
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.quantity, Decimal('-30.000'))
+
+
+class WriteOffDocumentNumberTests(TestCase):
+    """document_number is optional on a write-off -- if left blank,
+    DeliveryAttributes.save() auto-generates an internal one so several
+    same-day write-offs to the same supplier can still be told apart."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username='writeoff-receiver2', password='pass12345')
+        self.supplier = Suppliers.objects.create(name='Auto Number Supplier', bulstat='444444444')
+
+    def test_blank_document_number_is_auto_generated(self):
+        write_off = DeliveryAttributes.objects.create(
+            movement_type=DeliveryAttributes.MOVEMENT_WRITE_OFF,
+            receiver=self.user, supplier=self.supplier, document_date='2026-04-20',
+        )
+        self.assertEqual(write_off.document_number, 'WO-20260420-001')
+
+    def test_second_same_day_write_off_gets_next_sequence_number(self):
+        DeliveryAttributes.objects.create(
+            movement_type=DeliveryAttributes.MOVEMENT_WRITE_OFF,
+            receiver=self.user, supplier=self.supplier, document_date='2026-04-20',
+        )
+        second = DeliveryAttributes.objects.create(
+            movement_type=DeliveryAttributes.MOVEMENT_WRITE_OFF,
+            receiver=self.user, supplier=self.supplier, document_date='2026-04-20',
+        )
+        self.assertEqual(second.document_number, 'WO-20260420-002')
+
+    def test_explicit_document_number_is_not_overwritten(self):
+        write_off = DeliveryAttributes.objects.create(
+            movement_type=DeliveryAttributes.MOVEMENT_WRITE_OFF,
+            receiver=self.user, supplier=self.supplier, document_date='2026-04-20',
+            document_number='CUSTOM-1',
+        )
+        self.assertEqual(write_off.document_number, 'CUSTOM-1')
+
+    def test_ordinary_delivery_document_number_stays_blank_if_not_given(self):
+        # Auto-numbering is a write-off/scrap convenience only -- a real
+        # delivery always has an actual supplier invoice/delivery-note
+        # number, so nothing should be invented for it.
+        invoice_type, _ = DocumentType.objects.get_or_create(name='Invoice')
+        delivery = DeliveryAttributes.objects.create(
+            receiver=self.user, supplier=self.supplier, document_type=invoice_type,
+            document_date='2026-04-20',
+        )
+        self.assertIsNone(delivery.document_number)
+
+
+class WriteOffViewTests(TestCase):
+    """End-to-end coverage for the write-off add screen -- same permission
+    model as deliveries (Warehouse: add/change, Cashier: view-only), reuses
+    DeliveryItemFormSet untouched, and redirects straight to the new
+    record's details page (there's no write-off-specific list screen)."""
+
+    def setUp(self):
+        self.warehouse = User.objects.create_user(username='wo-warehouse', password='pass12345', role=User.WAREHOUSE)
+        self.cashier = User.objects.create_user(username='wo-cashier', password='pass12345', role=User.CASHIER)
+        self.supplier = Suppliers.objects.create(name='WO View Supplier', bulstat='888888888')
+        self.product = Product.objects.create(
+            internal_code='WOV001', name='Expired Milk', delivery_price=Decimal('1.20'),
+            sell_price=Decimal('2.00'), quantity=Decimal('10.000'),
+        )
+
+    def test_write_off_add_page_loads_for_warehouse(self):
+        self.client.force_login(self.warehouse)
+        response = self.client.get(reverse('writeoff_add'))
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, 'deliveries/delivery_add.html')
+
+    def test_cashier_cannot_add_write_off(self):
+        self.client.force_login(self.cashier)
+        response = self.client.get(reverse('writeoff_add'))
+        self.assertEqual(response.status_code, 403)
+
+    def test_creating_write_off_via_rebuilt_hidden_inputs(self):
+        self.client.force_login(self.warehouse)
+        data = {
+            'supplier': self.supplier.pk,
+            'time_of_delivery': '2026-04-20 10:00:00',
+            'document_number': '',
+            'document_date': '2026-04-20',
+            'items-TOTAL_FORMS': '1',
+            'items-INITIAL_FORMS': '0',
+            'items-MIN_NUM_FORMS': '0',
+            'items-MAX_NUM_FORMS': '1000',
+            'items-0-id': '',
+            'items-0-delivery_item': self.product.pk,
+            'items-0-delivery_quantity': '3.000',
+            'items-0-price_at_delivery': '1.20',
+            'items-0-total_price_row': '3.60',
+            'items-0-DELETE': '',
+        }
+        response = self.client.post(reverse('writeoff_add'), data)
+        write_off = DeliveryAttributes.objects.get(movement_type=DeliveryAttributes.MOVEMENT_WRITE_OFF)
+        self.assertRedirects(response, reverse('delivery_details', args=[write_off.pk]))
+
+        self.assertEqual(write_off.document_number, 'WO-20260420-001')
+        self.assertIsNone(write_off.document_type)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.quantity, Decimal('7.000'))
+
+
+class ScrapStockAdjustmentTests(TestCase):
+    """movement_type=SCRAP decreases stock same as WRITE_OFF -- covered by
+    DeliveryAttributes.OUTGOING_MOVEMENT_TYPES rather than a one-off check,
+    these pin that down directly for SCRAP specifically."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username='scrap-receiver', password='pass12345')
+        self.product = Product.objects.create(
+            internal_code='SCR0001', name='Expired Cheese', delivery_price=Decimal('4.00'),
+            sell_price=Decimal('6.00'), quantity=Decimal('10.000'),
+        )
+        self.scrap = DeliveryAttributes.objects.create(
+            movement_type=DeliveryAttributes.MOVEMENT_SCRAP,
+            receiver=self.user, document_date='2026-04-20',
+        )
+
+    def test_scrap_has_no_supplier(self):
+        self.assertIsNone(self.scrap.supplier)
+
+    def test_creating_item_decreases_stock(self):
+        DeliveryItems.objects.create(
+            delivery=self.scrap, delivery_item=self.product,
+            delivery_quantity=Decimal('3.000'), price_at_delivery=Decimal('4.00'),
+        )
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.quantity, Decimal('7.000'))
+
+    def test_deleting_item_restores_stock(self):
+        item = DeliveryItems.objects.create(
+            delivery=self.scrap, delivery_item=self.product,
+            delivery_quantity=Decimal('3.000'), price_at_delivery=Decimal('4.00'),
+        )
+        item.delete()
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.quantity, Decimal('10.000'))
+
+    def test_document_number_auto_generated_with_scrap_prefix(self):
+        self.assertEqual(self.scrap.document_number, 'SCRAP-20260420-001')
+
+
+class ScrapBatchTraceabilityTests(TestCase):
+    """Scrap variant 1 (pick an existing delivered batch) stamps
+    `source_item` back at the original DELIVERY row; variant 2 (free entry)
+    leaves it blank -- both must coexist on the same scrap."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username='scrap-receiver2', password='pass12345')
+        self.supplier = Suppliers.objects.create(name='Batch Supplier', bulstat='999999991')
+        self.invoice_type, _ = DocumentType.objects.get_or_create(name='Invoice')
+        self.product = Product.objects.create(
+            internal_code='SCR0002', name='Yoghurt Batch', delivery_price=Decimal('2.00'),
+            sell_price=Decimal('3.00'), quantity=Decimal('0.000'),
+        )
+        self.delivery = DeliveryAttributes.objects.create(
+            receiver=self.user, supplier=self.supplier, document_type=self.invoice_type,
+            document_number='INV-BATCH-1', document_date='2026-04-01',
+        )
+        self.batch_item = DeliveryItems.objects.create(
+            delivery=self.delivery, delivery_item=self.product,
+            delivery_quantity=Decimal('10.000'), price_at_delivery=Decimal('2.00'),
+            expiry_date='2026-05-01',
+        )
+        self.reason, _ = ScrapReason.objects.get_or_create(name='Expired')
+        self.scrap = DeliveryAttributes.objects.create(
+            movement_type=DeliveryAttributes.MOVEMENT_SCRAP,
+            receiver=self.user, document_date='2026-05-02',
+        )
+
+    def test_variant_1_links_back_to_source_batch(self):
+        scrap_item = DeliveryItems.objects.create(
+            delivery=self.scrap, delivery_item=self.product,
+            delivery_quantity=Decimal('4.000'), price_at_delivery=Decimal('2.00'),
+            expiry_date=self.batch_item.expiry_date, source_item=self.batch_item,
+            scrap_reason=self.reason,
+        )
+        self.assertEqual(scrap_item.source_item_id, self.batch_item.pk)
+        self.assertIn(scrap_item, self.batch_item.scrapped_as.all())
+
+    def test_variant_2_free_entry_has_no_source_item(self):
+        scrap_item = DeliveryItems.objects.create(
+            delivery=self.scrap, delivery_item=self.product,
+            delivery_quantity=Decimal('1.000'), price_at_delivery=Decimal('2.00'),
+            scrap_reason=self.reason,
+        )
+        self.assertIsNone(scrap_item.source_item)
+
+    def test_deleting_source_delivery_item_does_not_delete_scrap_history(self):
+        scrap_item = DeliveryItems.objects.create(
+            delivery=self.scrap, delivery_item=self.product,
+            delivery_quantity=Decimal('4.000'), price_at_delivery=Decimal('2.00'),
+            source_item=self.batch_item,
+        )
+        self.batch_item.delete()
+        scrap_item.refresh_from_db()
+        self.assertIsNone(scrap_item.source_item)
+
+
+class ScrapReasonCRUDTests(TestCase):
+    def setUp(self):
+        self.manager = User.objects.create_user(username='scrap-manager', password='pass12345', role=User.MANAGER)
+        self.warehouse = User.objects.create_user(username='scrap-warehouse', password='pass12345', role=User.WAREHOUSE)
+
+    def test_manager_can_list_and_create(self):
+        self.client.force_login(self.manager)
+        self.assertEqual(self.client.get(reverse('scrap_reason_list')).status_code, 200)
+        response = self.client.post(reverse('scrap_reason_create'), {'name': 'Damaged'})
+        self.assertTrue(ScrapReason.objects.filter(name='Damaged').exists())
+        self.assertRedirects(response, reverse('scrap_reason_list'))
+
+    def test_warehouse_can_view_but_not_create(self):
+        self.client.force_login(self.warehouse)
+        self.assertEqual(self.client.get(reverse('scrap_reason_list')).status_code, 200)
+        response = self.client.post(reverse('scrap_reason_create'), {'name': 'Damaged'})
+        self.assertEqual(response.status_code, 403)
+
+
+class BatchSearchViewTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='batch-search-user', password='pass12345')
+        self.client.force_login(self.user)
+        self.supplier = Suppliers.objects.create(name='Batch Search Supplier', bulstat='999999992')
+        self.invoice_type, _ = DocumentType.objects.get_or_create(name='Invoice')
+        self.product = Product.objects.create(
+            internal_code='BS0001', name='Yogurt', delivery_price=Decimal('1.00'),
+            sell_price=Decimal('2.00'), quantity=Decimal('5.000'),
+        )
+        self.delivery = DeliveryAttributes.objects.create(
+            receiver=self.user, supplier=self.supplier, document_type=self.invoice_type,
+            document_number='INV-BS-1', document_date='2026-04-01',
+        )
+        self.with_expiry = DeliveryItems.objects.create(
+            delivery=self.delivery, delivery_item=self.product,
+            delivery_quantity=Decimal('5.000'), price_at_delivery=Decimal('1.00'),
+            expiry_date='2026-05-01',
+        )
+        self.without_expiry = DeliveryItems.objects.create(
+            delivery=self.delivery, delivery_item=self.product,
+            delivery_quantity=Decimal('2.000'), price_at_delivery=Decimal('1.00'),
+        )
+
+    def test_only_items_with_expiry_date_are_returned(self):
+        response = self.client.get(reverse('batch_search'))
+        ids = [r['id'] for r in response.json()['results']]
+        self.assertIn(self.with_expiry.pk, ids)
+        self.assertNotIn(self.without_expiry.pk, ids)
+
+    def test_write_off_and_scrap_batches_are_excluded(self):
+        write_off = DeliveryAttributes.objects.create(
+            movement_type=DeliveryAttributes.MOVEMENT_WRITE_OFF,
+            receiver=self.user, supplier=self.supplier, document_date='2026-04-20',
+        )
+        excluded = DeliveryItems.objects.create(
+            delivery=write_off, delivery_item=self.product,
+            delivery_quantity=Decimal('1.000'), price_at_delivery=Decimal('1.00'),
+            expiry_date='2026-06-01',
+        )
+        response = self.client.get(reverse('batch_search'))
+        ids = [r['id'] for r in response.json()['results']]
+        self.assertNotIn(excluded.pk, ids)
+
+
+class ScrapViewTests(TestCase):
+    """End-to-end coverage for the scrap add screen, both entry variants."""
+
+    def setUp(self):
+        self.warehouse = User.objects.create_user(username='scrap-view-warehouse', password='pass12345', role=User.WAREHOUSE)
+        self.cashier = User.objects.create_user(username='scrap-view-cashier', password='pass12345', role=User.CASHIER)
+        self.supplier = Suppliers.objects.create(name='Scrap View Supplier', bulstat='999999993')
+        self.invoice_type, _ = DocumentType.objects.get_or_create(name='Invoice')
+        self.product = Product.objects.create(
+            internal_code='SCV001', name='Old Yogurt', delivery_price=Decimal('1.50'),
+            sell_price=Decimal('2.50'), quantity=Decimal('10.000'),
+        )
+        self.reason, _ = ScrapReason.objects.get_or_create(name='Expired')
+
+    def test_scrap_add_page_loads_for_warehouse(self):
+        self.client.force_login(self.warehouse)
+        response = self.client.get(reverse('scrap_add'))
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, 'deliveries/delivery_add.html')
+
+    def test_cashier_cannot_add_scrap(self):
+        self.client.force_login(self.cashier)
+        response = self.client.get(reverse('scrap_add'))
+        self.assertEqual(response.status_code, 403)
+
+    def test_creating_scrap_with_batch_reference_and_reason(self):
+        self.client.force_login(self.warehouse)
+        delivery = DeliveryAttributes.objects.create(
+            receiver=self.warehouse, supplier=self.supplier, document_type=self.invoice_type,
+            document_number='INV-SCV-1', document_date='2026-04-01',
+        )
+        batch_item = DeliveryItems.objects.create(
+            delivery=delivery, delivery_item=self.product,
+            delivery_quantity=Decimal('10.000'), price_at_delivery=Decimal('1.50'),
+            expiry_date='2026-05-01',
+        )
+        data = {
+            'receiver': self.warehouse.pk,
+            'time_of_delivery': '2026-05-02 10:00:00',
+            'document_number': '',
+            'document_date': '2026-05-02',
+            'items-TOTAL_FORMS': '1',
+            'items-INITIAL_FORMS': '0',
+            'items-MIN_NUM_FORMS': '0',
+            'items-MAX_NUM_FORMS': '1000',
+            'items-0-id': '',
+            'items-0-delivery_item': self.product.pk,
+            'items-0-delivery_quantity': '4.000',
+            'items-0-price_at_delivery': '1.50',
+            'items-0-total_price_row': '6.00',
+            'items-0-source_item': batch_item.pk,
+            'items-0-scrap_reason': self.reason.pk,
+            'items-0-DELETE': '',
+        }
+        response = self.client.post(reverse('scrap_add'), data)
+        scrap = DeliveryAttributes.objects.get(movement_type=DeliveryAttributes.MOVEMENT_SCRAP)
+        self.assertRedirects(response, reverse('delivery_details', args=[scrap.pk]))
+
+        scrap_item = scrap.items.get()
+        self.assertEqual(scrap_item.source_item_id, batch_item.pk)
+        self.assertEqual(scrap_item.scrap_reason_id, self.reason.pk)
+        self.assertIsNone(scrap.supplier)
+        self.assertEqual(scrap.document_number, 'SCRAP-20260502-001')
+        self.product.refresh_from_db()
+        # setUp starts the product at 10.000; the batch delivery created in
+        # this test adds another +10.000, then scrapping 4.000 subtracts it.
+        self.assertEqual(self.product.quantity, Decimal('16.000'))
+
+    def test_creating_scrap_free_entry_without_batch_reference(self):
+        self.client.force_login(self.warehouse)
+        data = {
+            'receiver': self.warehouse.pk,
+            'time_of_delivery': '2026-05-02 10:00:00',
+            'document_number': '',
+            'document_date': '2026-05-02',
+            'items-TOTAL_FORMS': '1',
+            'items-INITIAL_FORMS': '0',
+            'items-MIN_NUM_FORMS': '0',
+            'items-MAX_NUM_FORMS': '1000',
+            'items-0-id': '',
+            'items-0-delivery_item': self.product.pk,
+            'items-0-delivery_quantity': '2.000',
+            'items-0-price_at_delivery': '1.50',
+            'items-0-total_price_row': '3.00',
+            'items-0-source_item': '',
+            'items-0-scrap_reason': self.reason.pk,
+            'items-0-DELETE': '',
+        }
+        response = self.client.post(reverse('scrap_add'), data)
+        scrap = DeliveryAttributes.objects.get(movement_type=DeliveryAttributes.MOVEMENT_SCRAP)
+        self.assertRedirects(response, reverse('delivery_details', args=[scrap.pk]))
+
+        scrap_item = scrap.items.get()
+        self.assertIsNone(scrap_item.source_item)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.quantity, Decimal('8.000'))

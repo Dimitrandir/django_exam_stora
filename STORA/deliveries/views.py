@@ -2,9 +2,12 @@ from decimal import Decimal
 
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.db.models import Q
+from django.contrib.postgres.search import TrigramSimilarity
 from django.http import JsonResponse
 from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse_lazy
+from django.views import View
 from django.views.generic import ListView, DetailView, CreateView, UpdateView, DeleteView
 from django.views.decorators.http import require_POST
 
@@ -17,9 +20,11 @@ from STORA.core.session_service import (
     get_cashier_operation_state,
     set_cashier_operation_state,
 )
-from STORA.core.utils import build_cashier_operation_state, build_restore_formset_data
-from STORA.deliveries.forms import DeliveryForms, DeliveryItemFormSet, DocumentTypeForm
-from STORA.deliveries.models import DeliveryAttributes, DocumentType
+from STORA.core.utils import build_cashier_operation_state, build_restore_formset_data, get_cashier_operation_type
+from STORA.deliveries.forms import (
+    DeliveryForms, DeliveryItemFormSet, DocumentTypeForm, WriteOffForm, ScrapForm, ScrapReasonForm,
+)
+from STORA.deliveries.models import DeliveryAttributes, DeliveryItems, DocumentType, ScrapReason
 from STORA.products.models import Product, Barcode, Suppliers
 
 
@@ -38,6 +43,8 @@ def _items_initial_from_rows(rows):
             'price_at_delivery': row.get('price_at_delivery') or '',
             'total_price_row': row.get('total_price_row') or '',
             'expiry_date': row.get('expiry_date') or '',
+            'source_item': row.get('source_item') or '',
+            'scrap_reason': row.get('scrap_reason') or '',
         }
         for row in rows
         if row.get('delivery_item')
@@ -53,6 +60,8 @@ def _items_initial_from_instance(delivery):
             'price_at_delivery': item.price_at_delivery,
             'total_price_row': item.total_price_row,
             'expiry_date': item.expiry_date.isoformat() if item.expiry_date else '',
+            'source_item': item.source_item_id or '',
+            'scrap_reason': item.scrap_reason_id or '',
         }
         for item in delivery.items.all()
     ])
@@ -60,11 +69,22 @@ def _items_initial_from_instance(delivery):
 
 @login_required
 @permission_required('deliveries.add_deliveryattributes', raise_exception=True)
-def deliveries_add(request):
+def deliveries_add(request, movement_type=DeliveryAttributes.MOVEMENT_DELIVERY):
+    is_write_off = movement_type == DeliveryAttributes.MOVEMENT_WRITE_OFF
+    is_scrap = movement_type == DeliveryAttributes.MOVEMENT_SCRAP
+    if is_scrap:
+        form_class = ScrapForm
+    elif is_write_off:
+        form_class = WriteOffForm
+    else:
+        form_class = DeliveryForms
+
     products_data = list(Product.objects.values('id', 'internal_code', 'name', 'delivery_price', 'sell_price', 'unit_type', 'tax_group__rate'))
     barcodes_data = list(Barcode.objects.values('code', 'product_id'))
+    scrap_reasons_data = list(ScrapReason.objects.values('id', 'name')) if is_scrap else []
 
     formset_prefix = 'items'
+    operation_type = get_cashier_operation_type(request.path)
     state = get_cashier_operation_state(request)
     delivery_draft = None
     formset_initial = []
@@ -72,18 +92,21 @@ def deliveries_add(request):
     selected_supplier_name = ''
 
     if request.method == "POST":
-        form = DeliveryForms(request.POST, current_user=request.user)
+        form = form_class(request.POST, current_user=request.user)
         formset = DeliveryItemFormSet(request.POST, prefix=formset_prefix)
 
         if form.is_valid() and formset.is_valid():
             delivery = form.save(commit=False)
             delivery.receiver = request.user
+            delivery.movement_type = movement_type
             delivery.save()
 
             formset.instance = delivery
             formset.save()
 
             clear_cashier_operation_state(request)
+            if movement_type != DeliveryAttributes.MOVEMENT_DELIVERY:
+                return redirect('delivery_details', pk=delivery.pk)
             return redirect('deliveries_list')
 
         extracted_state = extract_formset_state(request.POST, formset_prefix)
@@ -92,7 +115,7 @@ def deliveries_add(request):
         selected_supplier = Suppliers.objects.filter(pk=posted_supplier_id).first() if posted_supplier_id else None
         selected_supplier_name = selected_supplier.name if selected_supplier else ''
         delivery_draft = build_cashier_operation_state(
-            operation_type='delivery',
+            operation_type=operation_type,
             path=request.path,
             data={
                 'receiver': request.POST.get('receiver', ''),
@@ -107,7 +130,7 @@ def deliveries_add(request):
         )
         set_cashier_operation_state(request, delivery_draft)
 
-        form = DeliveryForms(request.POST, current_user=request.user)
+        form = form_class(request.POST, current_user=request.user)
         formset_initial = extracted_state.get('forms', [])
         formset = DeliveryItemFormSet(
             request.POST,
@@ -115,8 +138,8 @@ def deliveries_add(request):
             initial=formset_initial,
         )
     else:
-        if state and state.get('type') == 'delivery' and state.get('active'):
-            form = DeliveryForms(initial=state.get('data', {}), current_user=request.user)
+        if state and state.get('type') == operation_type and state.get('active'):
+            form = form_class(initial=state.get('data', {}), current_user=request.user)
             formset_initial = state.get('formset_data', {}).get('forms', []) or [{}]
             restore_post_data = build_restore_formset_data(formset_prefix, formset_initial)
             delivery_items_initial = _items_initial_from_rows(formset_initial)
@@ -130,7 +153,7 @@ def deliveries_add(request):
             )
             delivery_draft = state
         else:
-            form = DeliveryForms(current_user=request.user)
+            form = form_class(current_user=request.user)
             formset = DeliveryItemFormSet(prefix=formset_prefix)
 
     context = {
@@ -143,6 +166,10 @@ def deliveries_add(request):
         'delivery_formset_initial_count': len(formset_initial) if formset_initial else 0,
         'delivery_items_initial': delivery_items_initial,
         'selected_supplier_name': selected_supplier_name,
+        'movement_type': movement_type,
+        'is_write_off': is_write_off,
+        'is_scrap': is_scrap,
+        'scrap_reasons_data': scrap_reasons_data,
     }
     return render(request, 'deliveries/delivery_add.html', context)
 
@@ -153,10 +180,15 @@ def delivery_draft_save(request):
     payload = json.loads(request.body.decode('utf-8'))
     form_data = payload.get('form_data', {})
     formset_data = payload.get('formset_data', {})
+    # The same draft-save endpoint is shared by the delivery and write-off
+    # add screens -- the caller tells us which page it was on so the draft
+    # is tagged with the right operation_type, otherwise a write-off draft
+    # would get saved (and later resumed) as a delivery.
+    path = payload.get('path') or '/deliveries/add/'
 
     draft = build_cashier_operation_state(
-        operation_type='delivery',
-        path='/deliveries/add/',
+        operation_type=get_cashier_operation_type(path) or 'delivery',
+        path=path,
         data=form_data,
         formset_data=formset_data,
         active=True,
@@ -173,7 +205,9 @@ class DeliveryDetailView(LoginRequiredMixin, StaffPermissionRequiredMixin, Detai
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        items = self.object.items.select_related('delivery_item', 'delivery_item__tax_group').all()
+        items = self.object.items.select_related(
+            'delivery_item', 'delivery_item__tax_group', 'scrap_reason',
+        ).all()
         context['delivered_items'] = items
         context['delivery_items_data'] = [self._item_row(item) for item in items]
         return context
@@ -202,6 +236,7 @@ class DeliveryDetailView(LoginRequiredMixin, StaffPermissionRequiredMixin, Detai
             'sell_price': float(sell_price),
             'markup_percent': float(markup.quantize(Decimal('0.1'))),
             'expiry_date': item.expiry_date.isoformat() if item.expiry_date else '',
+            'scrap_reason_name': item.scrap_reason.name if item.scrap_reason else '',
         }
 
 
@@ -211,19 +246,34 @@ class DeliveryListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListVie
     template_name = 'deliveries/deliveries_list.html'
     context_object_name = 'deliveries'
 
+    def get_queryset(self):
+        # Deliveries only -- write-offs live in the same table now but
+        # don't belong on this (deprecated, kept alive only as a redirect
+        # target -- see ROADMAP.md) list.
+        return super().get_queryset().filter(movement_type=DeliveryAttributes.MOVEMENT_DELIVERY)
+
 
 @login_required
 @permission_required('deliveries.change_deliveryattributes', raise_exception=True)
 def delivery_edit(request, pk):
     delivery = get_object_or_404(DeliveryAttributes, pk=pk)
+    is_write_off = delivery.movement_type == DeliveryAttributes.MOVEMENT_WRITE_OFF
+    is_scrap = delivery.movement_type == DeliveryAttributes.MOVEMENT_SCRAP
+    if is_scrap:
+        form_class = ScrapForm
+    elif is_write_off:
+        form_class = WriteOffForm
+    else:
+        form_class = DeliveryForms
 
     products_data = list(Product.objects.values('id', 'internal_code', 'name', 'delivery_price', 'sell_price', 'unit_type', 'tax_group__rate'))
     barcodes_data = list(Barcode.objects.values('code', 'product_id'))
+    scrap_reasons_data = list(ScrapReason.objects.values('id', 'name')) if is_scrap else []
 
     formset_prefix = 'items'
 
     if request.method == "POST":
-        form = DeliveryForms(request.POST, instance=delivery)
+        form = form_class(request.POST, instance=delivery)
         formset = DeliveryItemFormSet(request.POST, instance=delivery, prefix=formset_prefix)
 
         if form.is_valid() and formset.is_valid():
@@ -234,7 +284,7 @@ def delivery_edit(request, pk):
         extracted_state = extract_formset_state(request.POST, formset_prefix)
         delivery_items_initial = _items_initial_from_rows(extracted_state.get('forms', []))
     else:
-        form = DeliveryForms(instance=delivery)
+        form = form_class(instance=delivery)
         formset = DeliveryItemFormSet(instance=delivery, prefix=formset_prefix)
         delivery_items_initial = _items_initial_from_instance(delivery)
 
@@ -246,6 +296,10 @@ def delivery_edit(request, pk):
         'products_data': products_data,
         'barcodes_data': barcodes_data,
         'delivery_items_initial': delivery_items_initial,
+        'movement_type': delivery.movement_type,
+        'is_write_off': is_write_off,
+        'is_scrap': is_scrap,
+        'scrap_reasons_data': scrap_reasons_data,
     }
     return render(request, 'deliveries/delivery_edit.html', context)
 
@@ -292,3 +346,81 @@ class DocumentTypeDeleteView(LoginRequiredMixin, StaffPermissionRequiredMixin, D
     template_name = 'deliveries/document_type_confirm_delete.html'
     context_object_name = 'document_type'
     success_url = reverse_lazy('document_type_list')
+
+
+class ScrapReasonListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListView):
+    permission_required = 'deliveries.view_scrapreason'
+    model = ScrapReason
+    template_name = 'deliveries/scrap_reason_list.html'
+    context_object_name = 'scrap_reasons'
+
+
+class ScrapReasonCreateView(LoginRequiredMixin, StaffPermissionRequiredMixin, CreateView):
+    # Manager-only, same reasoning as DocumentTypeCreateView -- no shortcut
+    # popup from the scrap form, always a full page visit from the
+    # dedicated Scrap Reasons screen.
+    permission_required = 'deliveries.add_scrapreason'
+    model = ScrapReason
+    form_class = ScrapReasonForm
+    template_name = 'deliveries/scrap_reason_form.html'
+    success_url = reverse_lazy('scrap_reason_list')
+
+
+class ScrapReasonUpdateView(LoginRequiredMixin, StaffPermissionRequiredMixin, UpdateView):
+    permission_required = 'deliveries.change_scrapreason'
+    model = ScrapReason
+    form_class = ScrapReasonForm
+    template_name = 'deliveries/scrap_reason_form.html'
+    context_object_name = 'scrap_reason'
+    success_url = reverse_lazy('scrap_reason_list')
+
+
+class ScrapReasonDeleteView(LoginRequiredMixin, StaffPermissionRequiredMixin, DeleteView):
+    permission_required = 'deliveries.delete_scrapreason'
+    model = ScrapReason
+    template_name = 'deliveries/scrap_reason_confirm_delete.html'
+    context_object_name = 'scrap_reason'
+    success_url = reverse_lazy('scrap_reason_list')
+
+
+class BatchSearchView(LoginRequiredMixin, StaffPermissionRequiredMixin, View):
+    """Backs the "pick a delivered batch to scrap" search on the scrap add/
+    edit screen (scrap variant 1) -- searches DELIVERY items that have an
+    expiry_date, i.e. an actual received batch, not write-off/scrap rows
+    (which would make scrapping a scrap meaningless) and not deliveries
+    that never recorded an expiry (nothing to "pick" there, see variant 2:
+    free entry on the same screen for that case)."""
+
+    permission_required = 'deliveries.view_deliveryattributes'
+    RESULTS_LIMIT = 30
+
+    def get(self, request):
+        query = request.GET.get('q', '').strip()
+        batches = DeliveryItems.objects.filter(
+            delivery__movement_type=DeliveryAttributes.MOVEMENT_DELIVERY,
+            expiry_date__isnull=False,
+        ).select_related('delivery_item')
+
+        if query:
+            batches = (
+                batches
+                .filter(Q(delivery_item__name__icontains=query) | Q(delivery_item__internal_code__icontains=query))
+                .annotate(similarity=TrigramSimilarity('delivery_item__name', query))
+                .order_by('-similarity', 'expiry_date')
+            )
+        else:
+            batches = batches.order_by('expiry_date')
+
+        batches = batches[:self.RESULTS_LIMIT]
+
+        return JsonResponse({'results': [
+            {
+                'id': batch.pk,
+                'product_id': batch.delivery_item_id,
+                'internal_code': batch.delivery_item.internal_code,
+                'name': batch.delivery_item.name,
+                'expiry_date': batch.expiry_date.isoformat(),
+                'delivery_quantity': float(batch.delivery_quantity),
+            }
+            for batch in batches
+        ]})
