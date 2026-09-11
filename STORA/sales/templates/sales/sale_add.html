@@ -126,10 +126,43 @@
 
         <footer class="page-actions">
             <button type="button" id="add-row-btn">+ Add row</button>
-            <button type="submit" class="button-save">Complete Sale</button>
+            <button type="button" id="complete-sale-btn" class="button-save">Complete Sale</button>
             <a href="{% url 'clear_cashier_operation' %}" class="button-cancel">Cancel</a>
         </footer>
     </form>
+
+    {% comment %}
+    Checkout modal -- opened by "Complete Sale" instead of submitting
+    directly. Confirm fills in the real form's hidden payment fields, then
+    submits that form programmatically. Not a <form> itself (can't nest
+    inside the real one anyway) -- just plain controls.
+    {% endcomment %}
+    <div class="modal fade" id="checkoutModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Complete Sale</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="payment-method-buttons mb-3">
+                        <button type="button" class="payment-method-btn" data-method="CASH">Cash</button>
+                        <button type="button" class="payment-method-btn" data-method="CARD">Card</button>
+                    </div>
+                    <p class="checkout-total-row"><strong>Total:</strong> <span id="checkout-total">0.00</span></p>
+                    <div class="mb-3" id="checkout-paid-row">
+                        <label for="checkout-paid-input" class="form-label">Paid</label>
+                        <input type="number" id="checkout-paid-input" class="form-control" step="0.01" min="0">
+                    </div>
+                    <p><strong>Change:</strong> <span id="checkout-change">0.00</span></p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-success" id="checkout-confirm-btn">Complete</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     {{ products_data|json_script:"products-data" }}
     {{ barcodes_data|json_script:"barcodes-data" }}
@@ -568,6 +601,84 @@
             });
 
             render();
+        })();
+
+        // -- Checkout modal: payment method (Cash/Card) + Paid/Change
+        // calculator. Bootstrap's Modal JS is loaded at the bottom of
+        // base.html, AFTER this inline script -- only referencing
+        // `bootstrap.*` lazily inside event handlers (not at parse time)
+        // avoids a ReferenceError from that ordering. --
+        (function () {
+            const modalEl = document.getElementById('checkoutModal');
+            const completeSaleBtn = document.getElementById('complete-sale-btn');
+            const methodButtons = Array.from(document.querySelectorAll('.payment-method-btn'));
+            const totalEl = document.getElementById('checkout-total');
+            const paidInput = document.getElementById('checkout-paid-input');
+            const paidRow = document.getElementById('checkout-paid-row');
+            const changeEl = document.getElementById('checkout-change');
+            const confirmBtn = document.getElementById('checkout-confirm-btn');
+            let selectedMethod = null;
+
+            function currentTotal() {
+                return parseFloat(document.getElementById('transaction-total').textContent) || 0;
+            }
+
+            function updateChange() {
+                const total = currentTotal();
+                const paid = parseFloat(paidInput.value || 0);
+                changeEl.textContent = (selectedMethod === 'CASH' ? Math.max(paid - total, 0) : 0).toFixed(2);
+            }
+
+            function selectMethod(method) {
+                selectedMethod = method;
+                methodButtons.forEach(b => b.classList.toggle('is-selected', b.dataset.method === method));
+                if (method === 'CASH') {
+                    paidRow.style.display = '';
+                    paidInput.disabled = false;
+                } else {
+                    // Card always pays exactly the total -- no change concept.
+                    paidRow.style.display = 'none';
+                    paidInput.value = currentTotal().toFixed(2);
+                }
+                updateChange();
+            }
+
+            methodButtons.forEach(btn => btn.addEventListener('click', () => selectMethod(btn.dataset.method)));
+            paidInput.addEventListener('input', updateChange);
+
+            completeSaleBtn.addEventListener('click', () => {
+                const hasItem = Array.from(document.querySelectorAll('.sale-row')).some(row => {
+                    const saleItemInput = row.querySelector('input[name$="-sale_item"]');
+                    return saleItemInput && saleItemInput.value;
+                });
+                if (!hasItem) {
+                    alert('Add at least one product before completing the sale.');
+                    return;
+                }
+                totalEl.textContent = currentTotal().toFixed(2);
+                selectMethod('CASH');
+                paidInput.value = currentTotal().toFixed(2);
+                updateChange();
+                bootstrap.Modal.getOrCreateInstance(modalEl).show();
+            });
+
+            confirmBtn.addEventListener('click', () => {
+                if (!selectedMethod) {
+                    alert('Choose a payment method.');
+                    return;
+                }
+                const total = currentTotal();
+                const paid = parseFloat(paidInput.value || 0);
+                if (selectedMethod === 'CASH' && paid < total) {
+                    alert('Paid amount is less than the total.');
+                    return;
+                }
+                document.getElementById('id_payment_method').value = selectedMethod;
+                document.getElementById('id_amount_paid').value = paid.toFixed(2);
+                document.getElementById('id_change_due').value = (selectedMethod === 'CASH' ? paid - total : 0).toFixed(2);
+                bootstrap.Modal.getInstance(modalEl).hide();
+                document.querySelector('.sale-form__form').requestSubmit();
+            });
         })();
     </script>
 </section>

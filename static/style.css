@@ -266,6 +266,30 @@ input[type="text"], input[type="number"], input[type="email"], select, textarea 
     background: #e9ecef;
 }
 
+.payment-method-buttons {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.payment-method-btn {
+    flex: 1;
+    padding: 0.75rem;
+    border: 2px solid #ced4da;
+    border-radius: 0.6rem;
+    background: #f8f9fa;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.payment-method-btn.is-selected {
+    border-color: #198754;
+    background: #d1e7dd;
+}
+
+.checkout-total-row {
+    font-size: 1.2rem;
+}
+
 /* Write-off is the same screen/grid as a delivery, just moving stock the
    other way -- a red accent border and negative-styled numbers (see
    .qty-negative) keep it from being mistaken for an ordinary delivery at a

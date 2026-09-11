@@ -168,6 +168,33 @@ class SalesFormSubmissionTests(TestCase):
         self.product.refresh_from_db()
         self.assertEqual(self.product.quantity, Decimal('16.000'))
 
+    def test_creating_sale_with_checkout_payment_fields(self):
+        # What the checkout modal (Фаза 2 step 3) actually posts -- the
+        # hidden payment_method/amount_paid/change_due fields it fills in
+        # right before calling requestSubmit().
+        data = {
+            'cashier': self.cashier.pk,
+            'payment_method': SaleAttributes.CASH,
+            'amount_paid': '20.00',
+            'change_due': '10.00',
+            'items-TOTAL_FORMS': '1',
+            'items-INITIAL_FORMS': '0',
+            'items-MIN_NUM_FORMS': '0',
+            'items-MAX_NUM_FORMS': '1000',
+            'items-0-sale_item': self.product.pk,
+            'items-0-sale_quantity': '4',
+            'items-0-price_at_sale': '2.50',
+            'items-0-total_price_row': '10.00',
+            'items-0-DELETE': '',
+        }
+        response = self.client.post(reverse('sale_add'), data)
+        self.assertRedirects(response, reverse('sales_list'))
+
+        sale = SaleAttributes.objects.get(cashier=self.cashier)
+        self.assertEqual(sale.payment_method, SaleAttributes.CASH)
+        self.assertEqual(sale.amount_paid, Decimal('20.00'))
+        self.assertEqual(sale.change_due, Decimal('10.00'))
+
 
 class SalePaymentFieldsTests(TestCase):
     """SaleAttributes.payment_method/amount_paid/change_due (Фаза 2 step 1,
