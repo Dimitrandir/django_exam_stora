@@ -194,8 +194,29 @@ Apps: `accounts`, `core`, `products`, `deliveries`, `sales`, `reports`.
      вътре в него, Enter вика `success(value)` директно (документираният
      Tabulator API за коммит на custom editor), Escape вика `cancel()`;
      вече не разчита на недокументираното вътрешно blur/Enter поведение
-     на вградения editor изобщо. Пет полета са свързани двупосочно през
-     общата
+     на вградения editor изобщо.
+  3. **Enter напредва по ЦЕЛИЯ ред до края, не само Qty→Unit Price**
+     (добавено по изрична молба — складовият няма цената с ДДС на
+     фактурата, само без ДДС, и иска Enter да го прекара направо до
+     следващото поле, което МУ трябва, прескачайки скритите междинни
+     колони). `nextVisibleField(currentField)` обхожда `table.getColumns()`
+     (текущия визуален ред на колоните — вижда drag-преместване и
+     Columns ▾ show/hide автоматично, без отделен списък за
+     поддържане) и връща следващото поле, което има `editor` И е
+     `isVisible()`. **Капан, открит на живо:** логиката първоначално
+     живееше в `table.on('cellEdited', ...)` — изглеждаше да работи за
+     Qty→Price (стойността там винаги реално се сменя), но Tabulator
+     **изобщо не гърми `cellEdited`, ако commit-натата стойност е същата
+     като преди** (напр. Enter върху Unit Price без да го пипнеш, защото
+     искаш направо да отидеш на полето без ДДС) — Enter в такъв случай
+     тихо не правеше нищо. Фикс: `advanceToNext(cell)` се вика директно
+     от Enter-handler-а на `numberEditor`/`dateEditor` (след `commit()`),
+     не от `cellEdited` — `cellEdited` пазим само за recalc/persist
+     страничните ефекти (`recalcRow`/`persistSellPrice`), които реално
+     имат смисъл само при истинска промяна. Вграденият Tabulator `'list'`
+     editor (Scrap Reason) не минава през тази верига — приема се, защото
+     той е последна колона в реда навсякъде, където се използва.
+  Пет полета са свързани двупосочно през общата
   `recalcRow(row, source)` функция (JS "source of truth" патърн — кое поле
   току-що е пипнато решава кои други да се преизчислят, за да няма
   безкраен цикъл): Unit Price ↔ Unit Price без ДДС (по `Product.tax_group`
@@ -249,6 +270,93 @@ Apps: `accounts`, `core`, `products`, `deliveries`, `sales`, `reports`.
   не подадеш празен string като pk — `.filter(pk='')` хвърля `ValueError`,
   не връща празен queryset, затова винаги се проверява `if posted_id else
   None` преди lookup-а).
+
+- **"Stock Movements" (менюто е на английски, за консистентност с
+  останалия UI — само тук в чата пазим решението защо) —
+  `DeliveryAttributes.movement_type` (DELIVERY / WRITE_OFF / SCRAP) вместо
+  отделен app.** Изписването е същият модел/таблица като доставка, само
+  посоката на наличността е
+  обратна — не е предефинирана `DocumentType`-подобна управляема стойност,
+  а фиксирани Python choices, защото директно определя знака в
+  `DeliveryItems.save()`/`_restore_stock_on_delete` (нов `movement_type`
+  би изисквал код промяна и без друго). Продавачът/складовият винаги
+  въвежда ПОЛОЖИТЕЛНО количество в грида — знакът се решава само вътрешно
+  според `self.delivery.movement_type`, никога не се пита потребителя за
+  отрицателно число. `document_type` вече е nullable (изписването няма
+  входящ документ за класифициране), `document_number` е разширено на 20
+  символа и по избор — ако е празно при WRITE_OFF/SCRAP,
+  `DeliveryAttributes.save()` генерира вътрешен номер сам
+  (`_generate_internal_document_number`, формат `WO-20260910-001`,
+  поредност по `movement_type`+`document_date` за деня; не е защитено от
+  race condition при две едновременни изписвания — приемливо за чисто
+  показен вътрешен номер). Отделна `WriteOffForm` (без `document_type`,
+  `document_number` optional, `document_date` auto = днес) вместо да се
+  претоварва `DeliveryForms` с условна логика. Add-екранът е един и същ
+  view (`deliveries_add(request, movement_type=...)`) с два URL-а
+  (`delivery_add`/`writeoff_add`), избран чрез `path()`-extra-kwargs, а не
+  два отделни view-а — Edit пък изобщо няма нужда от втори URL, защото
+  `delivery.movement_type` вече е на инстанцията, само формата се сменя.
+  Draft-резюмето (session key `cashier_last_operation`) е СПОДЕЛЕН слот
+  между sale/delivery/write_off (`get_cashier_operation_type(path)` в
+  `core/utils.py`) — само ЕДНА незавършена операция наведнъж, нарочно
+  (складов/касиер работи по една операция) — `delivery_draft_save`
+  затова взима `path` от JS payload-а (`window.location.pathname`), не
+  го хардкоди, иначе чернова от екрана за изписване би се записала като
+  тип "delivery". Визуално разграничение (по молба на потребителя, за да
+  не се бърка с доставка): `.delivery-form--writeoff` CSS клас (червена
+  лява рамка + "−" пред заглавието), плюс Qty/Line Total колоните в грида
+  (и в `_delivery_items_table.html`, и в read-only `delivery_details.html`)
+  се показват с червен "-" префикс — **но НЕ Unit Price/Unit Price без
+  ДДС/Sell Price** (`moneyFormatter` е плейн, отделна
+  `movementMoneyFormatter` носи минуса) — те са цена за бройка/каталожна
+  цена, не сума, която се изважда, знакът там би бил подвеждащ. Справките
+  (`DeliveriesReportView`, `ReportsDashboardView`, `DeliveryListView`)
+  всички explicit филтрират `movement_type=DELIVERY` — иначе изписване би
+  се появило в справка за доставки (и `document_type.name` би гръмнало,
+  защото е `None` за изписване). Справка конкретно за изписвания е
+  отложена по молба на потребителя ("после"), не е имплементирана.
+  `DeliveryAttributes.OUTGOING_MOVEMENT_TYPES = (WRITE_OFF, SCRAP)` е
+  споделената константа, която `DeliveryItems.save()`/
+  `_restore_stock_on_delete` и JS-ът (`isOutgoing` в
+  `_delivery_items_table.html`/`delivery_details.html`) ползват вместо да
+  проверяват WRITE_OFF изрично — добавяш нов "излизащ" тип движение само
+  на едно място.
+  **Нито изписване, нито брак показват "+ New supplier"/"+ New product"**
+  шорткътите от формата (по изрична молба на потребителя: "не може да
+  изписваш нещо което вече го няма") — и двете движения само СМЪКВАТ
+  наличност от вече съществуващи продукти/доставчици, никога не създават
+  нов ресурс в движение. `+ New supplier` е скрит за WRITE_OFF (`{% if not
+  is_write_off %}` около линка, не около цялото supplier поле — самото
+  търсене на съществуващ доставчик си остава); SCRAP изобщо няма supplier
+  поле, така че въпросът не стои. `+ New product` е скрит и за WRITE_OFF,
+  и за SCRAP (`{% if movement_type == 'DELIVERY' %}`) — видим само при
+  истинска доставка.
+  **Брак (`MOVEMENT_SCRAP`) — трети movement_type, без доставчик
+  (`supplier` вече nullable), управляем списък причини `ScrapReason`
+  (Manager-only add/change, като DocumentType).** Document number auto-gen
+  (`_generate_internal_document_number`) вече поддържа и `SCRAP-...`
+  префикс (общата логика е преизползвана, само `prefix` клонът). Два
+  начина да добавиш ред в грида, вместо един:
+  1. **Вариант 1 — избор на конкретна партида.** Отделна търсачка над
+     таблицата (`#delivery-batch-search-input`, видима само когато
+     `is_scrap`), ползва нов `BatchSearchView`/`batch_search` endpoint —
+     търси в `DeliveryItems` с `delivery__movement_type=DELIVERY` И
+     `expiry_date__isnull=False` (написано, все още неизтекли доставки с
+     партида, не изписвания/други бракове — бракуване на брак няма смисъл).
+     Избор попълва `source_item` (self-FK на `DeliveryItems`, `SET_NULL`)
+     сочещ назад към оригиналния delivery ред, плюс `expiry_date` копирано
+     от там — `DeliveryItems.scrapped_as` е reverse accessor-ът
+     (`related_name`).
+  2. **Вариант 2 — свободно въвеждане.** Същата продуктова търсачка
+     (`ingredient_search`) като при доставка/изписване — за брак преди
+     изтичане на срок, когато няма смисъл/желание да се сочи конкретна
+     партида. `source_item` остава празно.
+  И двата варианта водят в един и същ Tabulator ред; `Scrap Reason`
+  е допълнителна колона (само при `is_scrap`), Tabulator `editor: 'list'`
+  с `values: scrapReasonValues` ({id: name}) — клетъчната стойност е pk-то
+  директно (за разлика от Category inline-edit patтern-а, който е по
+  ИМЕ — тук не е нужно, защото `scrap_reason` отива направо в
+  `DeliveryItemForm`, не през отделен product-inline-update endpoint).
 
 (Добавяй нови правила тук, когато изникнат в разговор с потребителя, за да
 не се преоткриват на всяка сесия.)
@@ -330,6 +438,12 @@ debounce fetch + групиран dropdown) — важи за всяка стр�
   списъци — вградено в `excelStyleFilterEditor`, автоматично за всяка
   колона, нищо допълнително не се пише на ниво темплейт).
 - Бутон "Export to Excel".
+- Влачене на header, за да разместиш реда на колоните (`movableColumns:
+  true` в `initExcelStyleTable`, важи за всички таблици наведнъж, няма
+  отделен опция-флаг на ниво темплейт). Tabulator пази новия ред сам в
+  паметта за текущата сесия на страницата (не persist-ва между reload) —
+  ако някой поиска да се помни между визити, трябва `localStorage`/backend
+  persist, не е направено.
 
 Реализирано е с **Tabulator** (чист JS, без jQuery), свален локално в
 `static/vendor/tabulator/` (+ `static/vendor/sheetjs/` за Excel export) —

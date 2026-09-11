@@ -10,8 +10,10 @@
 
 ## 2026-09-10
 
-**Статус:** Некомитнато — одитът и преработката на `deliveries` (виж по-долу).
-Tabulator filter фикса от предната сесия вече е комитнат.
+**Статус:** Одитът/преработката на `deliveries` (кръгове 1-8 по-долу) е
+комитната (3 комита). Девети-единадесети кръг ("Stock Movements" +
+Write-off + Scrap + Enter-верига/movable columns, най-долу в тази секция)
+е НЕкомитнат.
 
 **Какво стана тази сесия:**
 - Кратко обсъждане (без код) за бъдеща AI интеграция: constrained
@@ -196,6 +198,42 @@ Tabulator filter фикса от предната сесия вече е ком�
   main-wide + container-fluid добавени и тук. 2 нови теста (с/без
   tax_group на продукта). 172/172 общо. Проверено на живо с реални данни.
 
+- Девети кръг (нова задача, след комит на горното) — "Движение на стоки":
+  потребителят иска `deliveries` да покрие и изписване (към доставчик,
+  намалява наличност) и по-късно брак (без доставчик, за изтекъл срок).
+  Тази сесия имплементира ИЗПИСВАНЕТО; брак е отложен за следваща стъпка
+  (виж ROADMAP.md).
+  - `DeliveryAttributes.movement_type` (DELIVERY/WRITE_OFF, фиксирани
+    choices, не управляем списък) — изписването е СЪЩИЯТ модел/таблица,
+    само знакът на наличността се обръща в `DeliveryItems.save()`/
+    `_restore_stock_on_delete`. Потребителят винаги въвежда положително
+    количество, знакът е чисто вътрешна логика.
+  - `document_type` вече nullable (изписване няма входящ документ),
+    `document_number` разширен на 20 символа и опционален за изписване —
+    ако е празен, автогенерира се вътрешен номер
+    (`WO-20260910-001`, поредност по ден+тип).
+  - Нова `WriteOffForm` (без document_type), споделен `deliveries_add`
+    view през `movement_type` kwarg на два URL-а (`delivery_add`/
+    `writeoff_add`); Edit е един и същ URL за двата типа (формата се
+    избира от `delivery.movement_type` на инстанцията).
+  - Nav менюто вече "Движение на стоки" с отделни "Доставка"/"Изписване"
+    линкове (по изрична молба на потребителя).
+  - Визуално разграничение: червена лява рамка + "−" пред заглавието
+    (`.delivery-form--writeoff`), Qty/Line Total колоните в грида (и в
+    add/edit, и в read-only delivery_details) с червен "-" префикс —
+    НЕ Unit Price/Sell Price (те са цена за бройка, не сума за изваждане;
+    хванат и оправен реален бъг по време на тестване, където първата
+    версия грешно негираше и Sell Price).
+  - `DeliveriesReportView`/`ReportsDashboardView`/`DeliveryListView`
+    всички вече explicit филтрират `movement_type=DELIVERY` — иначе
+    изписвания биха изтекли в справката за доставки (и биха гръмнали на
+    `document_type.name`, който е `None` при изписване).
+  - Миграция `0011_deliveryattributes_movement_type_and_more` приложена
+    (потвърдено с потребителя преди `migrate`) — добавя поле с default,
+    разширява/nullable-ва съществуващи полета, нищо не трие.
+  - Справка конкретно за изписвания — отложена изрично от потребителя
+    ("после"), не е имплементирана.
+
 **Тествано:**
 - Автоматични тестове: 164/164 (`python manage.py test STORA`) — нови
   тестове за stock delta/restore, permissions (вкл. новото Manager-only
@@ -220,6 +258,90 @@ Tabulator filter фикса от предната сесия вече е ком�
   Хванат и оправен на живо реален бъг в процеса: `Suppliers.objects.filter
   (pk='')` хвърля `ValueError` вместо празен queryset, чупило е
   draft-restore/invalid-resubmit пътя с празен supplier — виж CLAUDE.md.
+- Девети кръг (изписване): автоматични тестове 184/184 (`python manage.py
+  test`) — нови класове `WriteOffStockAdjustmentTests` (наличност пада,
+  restore при триене, delta при edit, отрицателна наличност позволена),
+  `WriteOffDocumentNumberTests` (авто-номер, поредност, explicit номер не
+  се презаписва, обикновена доставка не получава изфабрикуван номер),
+  `WriteOffViewTests` (permission, пълен POST cycle), плюс регресионен
+  тест в `reports/tests.py` че изписване не се показва в
+  `deliveries_report`. На живо в браузъра (през `_qa_temp_manager_wo`,
+  изтрит след теста, плюс тестов продукт/доставчик, изтрити накрая): пълен
+  keyboard flow (търсене→Enter→Qty→Enter→Unit Price→Enter→submit),
+  наличност 20→15 в базата, `document_number` автогенериран коректно,
+  "Details for Write-off ID" + "Edit Write-off" хедъри, червена рамка +
+  "−" визуализация потвърдени през computed styles, Deliveries Report
+  потвърдено НЕ показва изписването. Хванат и оправен на живо реален бъг:
+  първата версия на minus-форматера негираше и Sell Price (трябва да
+  остане каталожна положителна цена) — разделено на `moneyFormatter`
+  (плейн) vs `movementMoneyFormatter` (само Qty/Line Total).
+
+- Десети кръг (Брак + консистентност): потребителят поиска менюто да е на
+  английски (за консистентност с останалия UI, който вече е изцяло
+  английски) и Брак да се добави по плана. Направено:
+  - Меню: "Движение на стоки"/"Доставка"/"Изписване" → "Stock
+    Movements"/"Delivery"/"Write-off", плюс нов "Scrap" + "Scrap Reasons".
+  - `MOVEMENT_SCRAP` трети movement_type, `supplier` вече nullable (брак
+    няма доставчик), нов `ScrapReason` модел (управляем списък, Manager-only,
+    като DocumentType). Нови полета на `DeliveryItems`: `source_item`
+    (self-FK, `SET_NULL`, за проследимост назад към оригинала доставка) и
+    `scrap_reason` (FK).
+  - Два варианта въвеждане на един екран: (1) търсачка за конкретна
+    заредена партида по продукт (`BatchSearchView`/`batch_search`, само
+    `DELIVERY` редове с `expiry_date`) → попълва `source_item`+`expiry_date`
+    автоматично; (2) свободно продукт+количество+причина (същата
+    `ingredient_search` търсачка), без `source_item`. Нова колона "Scrap
+    Reason" в грида (Tabulator `list` editor), само при `is_scrap`.
+  - `DeliveryAttributes.OUTGOING_MOVEMENT_TYPES = (WRITE_OFF, SCRAP)` —
+    сменено WRITE_OFF-специфичните проверки в `DeliveryItems.save()`/
+    `_restore_stock_on_delete`/JS (`isOutgoing`) да ползват тази обща
+    константа вместо да проверяват WRITE_OFF изрично.
+  - Веднага след показването: потребителят поиска "+ New supplier"/
+    "+ New product" шорткътите да ги няма на изписване/брак ("не може да
+    изписваш нещо което вече го няма") — `+ New supplier` скрит само за
+    WRITE_OFF (SCRAP няма supplier поле въобще), `+ New product` скрит и
+    за WRITE_OFF, и за SCRAP.
+  - Тествано: 200/200 автоматични теста (нови класове
+    `ScrapStockAdjustmentTests`, `ScrapBatchTraceabilityTests`,
+    `ScrapReasonCRUDTests`, `BatchSearchViewTests`, `ScrapViewTests` — и
+    двата варианта end-to-end, плюс регресия в `reports/tests.py`). На
+    живо в браузъра (през `_qa_temp_manager_scrap`, изтрит след теста):
+    batch picker намира партида по продукт, избор попълва expiry + source
+    batch автоматично, Scrap Reason dropdown (Tabulator `list` editor —
+    отвори се само след explicit mousedown+focus dispatch, не само
+    `.click()` на клетката), пълен submit → "Details for Scrap ID"
+    хедър, `SCRAP-20260910-001` авто-номер, наличност коректно намалена,
+    Edit Scrap презарежда съществуващия ред с source_item/reason, обикновена
+    доставка/изписване непроменени (регресия проверена визуално).
+- Единадесети кръг — две допълнителни молби по грида:
+  1. **Enter да напредва по ЦЕЛИЯ ред до края**, не само Qty→Unit Price —
+     случай от реалната работа: складовият няма цената с ДДС на
+     фактурата (само без ДДС), иска Enter от Qty да кацне на Unit Price,
+     после БЕЗ да го пипа пак Enter да го прехвърли на полето без ДДС,
+     попълва го, после Enter директно на Expiry Date (ако Line
+     Total/Sell Price/Markup % са скрити през Columns ▾). Hairy бъг,
+     открит по време на тестване: първоначалната имплементация окачи
+     advance-логиката на Tabulator-ското `cellEdited` събитие — работеше
+     за Qty→Price (стойността там реално се сменя), но Tabulator **не
+     гърми `cellEdited`, ако commit-натата стойност е същата като преди**
+     — точно случаят "Enter без да пипаш полето", т.е. именно сценарият
+     който потребителят описа. Фикс: `advanceToNext(cell)` се вика
+     директно от Enter keydown handler-а на `numberEditor`/`dateEditor`
+     (не от `cellEdited`), `nextVisibleField()` обхожда
+     `table.getColumns()` (текущ визуален ред + видимост), прескача
+     скрити и нередактируеми колони (`total_without_vat` няма editor,
+     винаги се прескача). Тествано на живо стъпка по стъпка с реални
+     Enter dispatch-и (не `setValue()`) — пълната верига Qty→Price→Line
+     Total→Sell Price→Markup%→Expiry Date потвърдена, плюс конкретния
+     "скрий Line Total/Sell Price/Markup%, покажи без-ДДС" сценарий на
+     потребителя потвърден дума по дума.
+  2. **Местене на колони чрез влачене** (`movableColumns: true` в
+     `initExcelStyleTable`, `static/js/data-table.js`) — важи за всички
+     таблици в проекта наведнъж (споделен helper), не само за deliveries
+     грида. Не persist-ва между reload (само текущата сесия на
+     страницата).
+  200/200 автоматични теста (без промяна — тази задача е чисто JS, не
+  пипа Python/модели).
 
 **Отворени въпроси / чака потребителя:**
 - "+ New product" от доставката не auto-инжектира новия продукт обратно в
@@ -233,8 +355,10 @@ Tabulator filter фикса от предната сесия вече е ком�
   отделно от днешната работа.
 
 **Следваща стъпка (предложение):**
-- Комит на днешната работа, после `sales` одит (следващ неотметнат app във
-  Фаза 1 на ROADMAP).
+- Комит на Stock Movements (изписване + брак, девети+десети кръг), после
+  `sales` одит (следващ неотметнат app във Фаза 1 на ROADMAP). Потребителят
+  попита и как работи expiry tracker-ът — обяснено в чата, няма код промяна
+  от това (виж CLAUDE.md ако питане се повтори).
 
 ---
 
