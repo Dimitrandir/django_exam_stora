@@ -37,6 +37,11 @@ class Suppliers(models.Model):
 class Category(models.Model):
     name = models.CharField(max_length=30, unique=True, null=True)
     description = models.CharField(max_length=120, blank=True, null=True)
+    # SET_NULL, not CASCADE -- mirrors Product.category below: deleting a
+    # parent category just un-parents its subcategories (they become
+    # top-level), it doesn't take them down with it.
+    parent = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True,
+                               related_name='subcategories', verbose_name='Parent Category')
 
     class Meta:
         indexes = [
@@ -45,6 +50,17 @@ class Category(models.Model):
 
     def __str__(self):
         return f"{self.name}"
+
+    def get_descendant_ids(self):
+        """Every subcategory id below this one, at any depth -- used to
+        keep the parent picker (CategoryForm) from offering a cycle (a
+        category becoming its own descendant's child)."""
+        descendant_ids = []
+        frontier = [self.pk]
+        while frontier:
+            frontier = list(Category.objects.filter(parent_id__in=frontier).values_list('pk', flat=True))
+            descendant_ids.extend(frontier)
+        return descendant_ids
 
 class TaxGroup(models.Model):
     """A VAT rate a product can be assigned to (e.g. "Standard 20%",

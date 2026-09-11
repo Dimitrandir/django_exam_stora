@@ -8,6 +8,7 @@
     <thead>
         <tr>
             <th>Name</th>
+            <th>Parent</th>
             <th>Description</th>
             <th>{% if perms.products.add_category %}<a href="{% url 'category_create' %}" class="add-btn-table" title="Add a new category">+</a>{% endif %}</th>
         </tr>
@@ -16,6 +17,7 @@
         {% for category in categories %}
         <tr>
             <td>{{ category.name }}</td>
+            <td>{{ category.parent.name|default:"—" }}</td>
             <td>{{ category.description }}</td>
             <td>
                 {% if perms.products.change_category %}<a href="{% url 'category_edit' category.pk %}">Edit</a>{% endif %}
@@ -25,7 +27,7 @@
         </tr>
         {% empty %}
         <tr>
-            <td colspan="3">No categories found.</td>
+            <td colspan="4">No categories found.</td>
         </tr>
         {% endfor %}
     </tbody>

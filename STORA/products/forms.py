@@ -68,9 +68,19 @@ class ProductInlineEditForm(forms.ModelForm):
 class CategoryForm(forms.ModelForm):
     class Meta:
         model = Category
-        fields = '__all__'
+        fields = ['name', 'description', 'parent']
 
-        labels = {'name': 'Category Name', 'description': 'Description'}
+        labels = {'name': 'Category Name', 'description': 'Description', 'parent': 'Parent Category'}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance.pk:
+            # Excluding self + every descendant from the choices is enough
+            # on its own to block a cycle -- an invalid value just fails
+            # Django's normal ModelChoiceField "not a valid choice" check,
+            # no separate clean_parent needed.
+            excluded_ids = [self.instance.pk] + self.instance.get_descendant_ids()
+            self.fields['parent'].queryset = Category.objects.exclude(pk__in=excluded_ids)
 
 
 class TaxGroupForm(forms.ModelForm):

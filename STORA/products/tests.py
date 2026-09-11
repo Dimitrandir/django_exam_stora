@@ -1074,6 +1074,68 @@ class CategoryCreatePopupTests(TestCase):
         self.assertContains(response, str(category.pk))
 
 
+class CategorySubcategoryTests(TestCase):
+    """Category.parent (self-FK) -- a category can optionally belong under
+    another one. SET_NULL on delete (mirrors Product.category) and cycle
+    prevention in CategoryForm (can't become your own descendant's child)."""
+
+    def setUp(self):
+        self.manager = Employee.objects.create_user(
+            username='manager-subcat', password='pass12345', role=Employee.MANAGER
+        )
+        self.drinks = Category.objects.create(name='Drinks')
+        self.sodas = Category.objects.create(name='Sodas', parent=self.drinks)
+
+    def test_subcategory_relationship(self):
+        self.assertEqual(self.sodas.parent, self.drinks)
+        self.assertIn(self.sodas, self.drinks.subcategories.all())
+
+    def test_get_descendant_ids_includes_grandchildren(self):
+        cola = Category.objects.create(name='Cola', parent=self.sodas)
+        self.assertCountEqual(self.drinks.get_descendant_ids(), [self.sodas.pk, cola.pk])
+
+    def test_deleting_parent_unparents_subcategory_instead_of_deleting_it(self):
+        self.drinks.delete()
+        self.sodas.refresh_from_db()
+        self.assertIsNone(self.sodas.parent)
+
+    def test_form_rejects_category_as_its_own_parent(self):
+        self.client.force_login(self.manager)
+        response = self.client.post(reverse('category_edit', args=[self.drinks.pk]), {
+            'name': 'Drinks', 'parent': self.drinks.pk,
+        })
+        self.assertEqual(response.status_code, 200)  # re-rendered with errors, not redirected
+        self.drinks.refresh_from_db()
+        self.assertIsNone(self.drinks.parent)
+
+    def test_form_rejects_descendant_as_parent(self):
+        # Drinks -> Sodas already exists; making Drinks a child of Sodas
+        # would create a cycle.
+        self.client.force_login(self.manager)
+        response = self.client.post(reverse('category_edit', args=[self.drinks.pk]), {
+            'name': 'Drinks', 'parent': self.sodas.pk,
+        })
+        self.assertEqual(response.status_code, 200)
+        self.drinks.refresh_from_db()
+        self.assertIsNone(self.drinks.parent)
+
+    def test_form_allows_reparenting_to_an_unrelated_category(self):
+        self.client.force_login(self.manager)
+        snacks = Category.objects.create(name='Snacks')
+        response = self.client.post(reverse('category_edit', args=[self.sodas.pk]), {
+            'name': 'Sodas', 'parent': snacks.pk,
+        })
+        self.assertRedirects(response, reverse('category_list'))
+        self.sodas.refresh_from_db()
+        self.assertEqual(self.sodas.parent, snacks)
+
+    def test_list_page_shows_parent_name(self):
+        self.client.force_login(self.manager)
+        response = self.client.get(reverse('category_list'))
+        self.assertContains(response, 'Sodas')
+        self.assertContains(response, 'Drinks')
+
+
 class SupplierCreatePopupTests(TestCase):
     """Same "+ New X" popup pattern as categories (see CategoryCreatePopupTests),
     applied to "+ New supplier" on the product form's supplier formset."""

@@ -539,6 +539,9 @@ class CategoryListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListVie
     template_name = 'products/category_list.html'
     context_object_name = 'categories'
 
+    def get_queryset(self):
+        return super().get_queryset().select_related('parent')
+
 
 class CategoryCreateView(LoginRequiredMixin, StaffPermissionRequiredMixin, CreateView):
     permission_required = 'products.add_category'
