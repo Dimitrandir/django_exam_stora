@@ -1,4 +1,4 @@
-from django.contrib.auth.decorators import login_required
+from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import JsonResponse
 from django.shortcuts import render, redirect
@@ -9,6 +9,7 @@ from STORA.sales.tasks import log_sale_completed
 
 import json
 
+from STORA.core.mixins import StaffPermissionRequiredMixin
 from STORA.core.session_service import (
     clear_cashier_operation_state,
     extract_formset_state,
@@ -20,6 +21,9 @@ from STORA.products.models import Product, Barcode
 from STORA.sales.forms import SaleForms, SaleItemFormSet
 from STORA.sales.models import SaleAttributes
 
+
+@login_required
+@permission_required('sales.add_saleattributes', raise_exception=True)
 def sales_add(request):
     products_data = list(Product.objects.values('id', 'internal_code', 'name', 'sell_price', 'unit_type'))
     barcodes_data = list(Barcode.objects.values('code', 'product_id', 'is_scale_code'))
@@ -41,7 +45,6 @@ def sales_add(request):
 
             formset.instance = sale
             formset.save()
-            sale.save()
 
             dispatch_task(log_sale_completed, sale.id)
 
@@ -97,30 +100,34 @@ def sales_add(request):
     return render(request, 'sales/sale_add.html', context)
 
 
-class SalesDetailView(DetailView):
+class SalesDetailView(LoginRequiredMixin, StaffPermissionRequiredMixin, DetailView):
+    permission_required = 'sales.view_saleattributes'
     model = SaleAttributes
     template_name = 'sales/sale_details.html'
     context_object_name = 'sale'
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['sold_items'] = self.object.items.all()
+        context['sold_items'] = self.object.items.select_related('sale_item').all()
         return context
 
 
-class SalesListView(ListView):
+class SalesListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListView):
+    permission_required = 'sales.view_saleattributes'
     model = SaleAttributes
     template_name = 'sales/sales_list.html'
     context_object_name = 'sales'
 
 
-class SalesDeleteView(DeleteView):
+class SalesDeleteView(LoginRequiredMixin, StaffPermissionRequiredMixin, DeleteView):
+    permission_required = 'sales.delete_saleattributes'
     model = SaleAttributes
     template_name = 'sales/sale_confirm_delete.html'
     context_object_name = 'sale'
     success_url = reverse_lazy('sales_list')
 
 
+@login_required
 @require_POST
 def sales_draft_save(request):
     payload = json.loads(request.body.decode('utf-8'))

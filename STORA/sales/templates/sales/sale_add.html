@@ -214,6 +214,22 @@
             document.getElementById('transaction-total').textContent = total.toFixed(2);
         }
 
+        // A weight product (e.g. loose fruit, sold in kg) needs a
+        // fractional quantity like 0.350 -- the plain HTML number input's
+        // default step=1 rejects that at submit time even though the JS
+        // above already wrote it into the field (scale barcode decode, or
+        // just someone typing "0.35" by hand). A piece product stays at
+        // whole numbers, step=1.
+        function applyQuantityConstraints(qtyInput, product) {
+            if (product && product.unit_type === 'weight') {
+                qtyInput.min = '0.001';
+                qtyInput.step = '0.001';
+            } else {
+                qtyInput.min = '1';
+                qtyInput.step = '1';
+            }
+        }
+
         function recalculateRow(row) {
             const qtyInput = row.querySelector('.quantity-input');
             const unitPriceInput = row.querySelector('.unit-price-input');
@@ -316,6 +332,7 @@
                 saleItemInput.value = product.id;
                 nameInput.value = product.name;
                 unitPriceInput.value = product.sell_price;
+                applyQuantityConstraints(qtyInput, product);
                 if (scaleQuantity !== null) {
                     qtyInput.value = product.unit_type === 'weight' ? scaleQuantity.toFixed(3) : scaleQuantity;
                 }
@@ -373,6 +390,7 @@
                     saleItemInput.value = product.id;
                     nameInput.value = product.name;
                     unitPriceInput.value = product.sell_price;
+                    applyQuantityConstraints(qtyInput, product);
                 } else {
                     codeInput.value = draftRow.product_code || '';
                     saleItemInput.value = draftRow.sale_item || '';

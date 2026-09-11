@@ -16,7 +16,7 @@
             <th>Time</th>
             <th>Amount</th>
             <th>
-                <a href="{% url 'sale_add' %}" class="add-btn-table" title="New Sale">+</a>
+                {% if perms.sales.add_saleattributes %}<a href="{% url 'sale_add' %}" class="add-btn-table" title="New Sale">+</a>{% endif %}
             </th>
         </tr>
     </thead>
@@ -32,8 +32,9 @@
                 </a>
             </td>
         </tr>
+        {% empty %}
         <tr>
-            {% empty %}
+            <td colspan="4">No sales found.</td>
         </tr>
         {% endfor %}
     </tbody>

@@ -74,6 +74,101 @@ class SalesViewTests(TestCase):
         self.assertEqual(weight_product.quantity, Decimal('9.650'))
 
 
+class SalesPermissionTests(TestCase):
+    """Every sales view used to have zero login/permission checks -- wide
+    open to an anonymous visitor. Cashiers/Managers groups already had the
+    right permissions assigned in accounts/signals.py, they just were never
+    checked anywhere."""
+
+    def setUp(self):
+        self.cashier = User.objects.create_user(username='perm-cashier', password='pass12345', role=User.CASHIER)
+        self.warehouse = User.objects.create_user(username='perm-warehouse', password='pass12345', role=User.WAREHOUSE)
+        self.manager = User.objects.create_user(username='perm-manager', password='pass12345', role=User.MANAGER)
+        self.sale = SaleAttributes.objects.create(cashier=self.cashier)
+
+    def test_anonymous_is_redirected_to_login_not_500(self):
+        for url in [reverse('sale_add'), reverse('sales_list'), reverse('sale_details', args=[self.sale.pk]),
+                    reverse('sale_delete', args=[self.sale.pk])]:
+            response = self.client.get(url)
+            self.assertEqual(response.status_code, 302, url)
+            self.assertIn('/accounts/login/', response.url, url)
+
+    def test_warehouse_has_no_sales_access(self):
+        self.client.force_login(self.warehouse)
+        self.assertEqual(self.client.get(reverse('sale_add')).status_code, 403)
+        self.assertEqual(self.client.get(reverse('sales_list')).status_code, 403)
+        self.assertEqual(self.client.get(reverse('sale_details', args=[self.sale.pk])).status_code, 403)
+        self.assertEqual(self.client.get(reverse('sale_delete', args=[self.sale.pk])).status_code, 403)
+
+    def test_cashier_has_full_sales_access(self):
+        self.client.force_login(self.cashier)
+        self.assertEqual(self.client.get(reverse('sale_add')).status_code, 200)
+        self.assertEqual(self.client.get(reverse('sales_list')).status_code, 200)
+        self.assertEqual(self.client.get(reverse('sale_details', args=[self.sale.pk])).status_code, 200)
+        self.assertEqual(self.client.get(reverse('sale_delete', args=[self.sale.pk])).status_code, 200)
+
+    def test_manager_has_full_sales_access(self):
+        self.client.force_login(self.manager)
+        self.assertEqual(self.client.get(reverse('sale_add')).status_code, 200)
+        self.assertEqual(self.client.get(reverse('sales_list')).status_code, 200)
+
+
+class SalesListDisplayTests(TestCase):
+    """sales_list.html had a malformed {% for %}/{% empty %} (a dangling
+    <tr> after every real row, and the 'no sales' message never rendering
+    at all) -- same shape of bug fixed earlier for deliveries_list.html."""
+
+    def setUp(self):
+        self.manager = User.objects.create_user(username='list-manager', password='pass12345', role=User.MANAGER)
+        self.client.force_login(self.manager)
+
+    def test_empty_state_message_renders(self):
+        response = self.client.get(reverse('sales_list'))
+        self.assertContains(response, 'No sales found.')
+
+    def test_real_row_does_not_duplicate_into_a_stray_empty_row(self):
+        sale = SaleAttributes.objects.create(cashier=self.manager)
+        response = self.client.get(reverse('sales_list'))
+        self.assertContains(response, str(sale.id))
+        self.assertNotContains(response, 'No sales found.')
+
+
+class SalesFormSubmissionTests(TestCase):
+    """Full POST cycle through sales_add -- also pins down that removing
+    the redundant second `sale.save()` call didn't break total_amount
+    (SaleItems.save()'s post_save signal sets it on this exact same `sale`
+    object via the formset's shared instance, before the single remaining
+    save)."""
+
+    def setUp(self):
+        self.cashier = User.objects.create_user(username='submit-cashier', password='pass12345', role=User.CASHIER)
+        self.client.force_login(self.cashier)
+        self.product = Product.objects.create(
+            internal_code='P0000011', name='Cookies', sell_price=Decimal('2.50'), quantity=Decimal('20.000'),
+        )
+
+    def test_creating_sale_with_one_item_sets_total_amount(self):
+        data = {
+            'cashier': self.cashier.pk,
+            'items-TOTAL_FORMS': '1',
+            'items-INITIAL_FORMS': '0',
+            'items-MIN_NUM_FORMS': '0',
+            'items-MAX_NUM_FORMS': '1000',
+            'items-0-sale_item': self.product.pk,
+            'items-0-sale_quantity': '4',
+            'items-0-price_at_sale': '2.50',
+            'items-0-total_price_row': '10.00',
+            'items-0-DELETE': '',
+        }
+        response = self.client.post(reverse('sale_add'), data)
+        self.assertRedirects(response, reverse('sales_list'))
+
+        sale = SaleAttributes.objects.get(cashier=self.cashier)
+        self.assertEqual(sale.total_amount, Decimal('10.00'))
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.quantity, Decimal('16.000'))
+
+
 class SaleFormValidationTests(TestCase):
     def setUp(self):
         self.product = Product.objects.create(

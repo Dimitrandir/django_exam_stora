@@ -31,7 +31,7 @@
  </table>
 <h2 align="center">Total Amount: {{ sale.total_amount|currency }}</h2>
 <div>
-    <a href="{% url 'sale_delete' sale.pk %}" class="button_delete">DELETE</a>
+    {% if perms.sales.delete_saleattributes %}<a href="{% url 'sale_delete' sale.pk %}" class="button_delete">DELETE</a>{% endif %}
 </div>
 
 {% endblock content%}
