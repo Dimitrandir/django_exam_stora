@@ -190,6 +190,82 @@ input[type="text"], input[type="number"], input[type="email"], select, textarea 
     box-shadow: 0 0.5rem 1rem rgba(0,0,0,.05);
 }
 
+/* Cashier POS screen (sale_add.html) -- operator name + live clock top
+   left, cart on the left, category quick-pick buttons on the right. Design
+   pass on colors/spacing is deferred to the end, per project convention --
+   this is functional-first. */
+.pos-header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.pos-header__meta {
+    margin: 0;
+    color: #6c757d;
+    font-size: 0.9rem;
+}
+
+.sale-form__workspace {
+    display: flex;
+    gap: 1.5rem;
+    align-items: flex-start;
+}
+
+.sale-form__items {
+    flex: 2;
+    min-width: 0;
+}
+
+.sale-form__categories {
+    flex: 1;
+    min-width: 280px;
+}
+
+.category-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+}
+
+.category-back-btn {
+    background: none;
+    border: 1px solid #ced4da;
+    border-radius: 0.4rem;
+    padding: 0.25rem 0.6rem;
+    cursor: pointer;
+}
+
+.category-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.category-folder-btn,
+.category-product-btn {
+    flex: 1 1 120px;
+    min-height: 60px;
+    border: 1px solid #ced4da;
+    border-radius: 0.6rem;
+    background: #f8f9fa;
+    cursor: pointer;
+    font-weight: 600;
+    padding: 0.5rem;
+}
+
+.category-folder-btn {
+    background: #fff3cd;
+    border-color: #ffe69c;
+}
+
+.category-product-btn:hover {
+    background: #e9ecef;
+}
+
 /* Write-off is the same screen/grid as a delivery, just moving stock the
    other way -- a red accent border and negative-styled numbers (see
    .qty-negative) keep it from being mistaken for an ordinary delivery at a

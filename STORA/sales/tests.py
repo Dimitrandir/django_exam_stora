@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
 
-from STORA.products.models import Product, RecipeIngredient
+from STORA.products.models import Category, Product, RecipeIngredient
 from STORA.sales.models import SaleAttributes, SaleItems
 from STORA.sales.forms import SaleItemForm
 from STORA.sales.tasks import backfill_recipe_ingredient_stock
@@ -167,6 +167,56 @@ class SalesFormSubmissionTests(TestCase):
         self.assertEqual(sale.total_amount, Decimal('10.00'))
         self.product.refresh_from_db()
         self.assertEqual(self.product.quantity, Decimal('16.000'))
+
+
+class SalePaymentFieldsTests(TestCase):
+    """SaleAttributes.payment_method/amount_paid/change_due (Фаза 2 step 1,
+    checkout modal prep) -- nullable so existing/pre-checkout-screen sales
+    aren't affected."""
+
+    def setUp(self):
+        self.cashier = User.objects.create_user(username='payment-cashier', password='pass12345', role=User.CASHIER)
+
+    def test_defaults_to_null(self):
+        sale = SaleAttributes.objects.create(cashier=self.cashier)
+        self.assertIsNone(sale.payment_method)
+        self.assertIsNone(sale.amount_paid)
+        self.assertIsNone(sale.change_due)
+
+    def test_stores_cash_payment_with_change(self):
+        sale = SaleAttributes.objects.create(
+            cashier=self.cashier, payment_method=SaleAttributes.CASH,
+            amount_paid=Decimal('10.00'), change_due=Decimal('2.50'),
+        )
+        self.assertEqual(sale.payment_method, SaleAttributes.CASH)
+        self.assertEqual(sale.change_due, Decimal('2.50'))
+
+
+class SalesAddCategoryPanelDataTests(TestCase):
+    """sales_add's context feeds the category/subcategory quick-pick panel
+    (Фаза 2 step 2) -- products carry category_id, and categories_data has
+    the full tree (id/name/parent_id) for the JS to build folders from."""
+
+    def setUp(self):
+        self.cashier = User.objects.create_user(username='panel-cashier', password='pass12345', role=User.CASHIER)
+        self.client.force_login(self.cashier)
+        self.drinks = Category.objects.create(name='Panel Drinks')
+        self.sodas = Category.objects.create(name='Panel Sodas', parent=self.drinks)
+        self.product = Product.objects.create(
+            internal_code='PNL0001', name='Panel Cola', sell_price=Decimal('1.50'), quantity=10,
+            category=self.drinks,
+        )
+
+    def test_products_data_includes_category_id(self):
+        response = self.client.get(reverse('sale_add'))
+        row = next(p for p in response.context['products_data'] if p['id'] == self.product.pk)
+        self.assertEqual(row['category_id'], self.drinks.pk)
+
+    def test_categories_data_includes_parent_relationship(self):
+        response = self.client.get(reverse('sale_add'))
+        by_id = {c['id']: c for c in response.context['categories_data']}
+        self.assertIsNone(by_id[self.drinks.pk]['parent_id'])
+        self.assertEqual(by_id[self.sodas.pk]['parent_id'], self.drinks.pk)
 
 
 class SaleFormValidationTests(TestCase):

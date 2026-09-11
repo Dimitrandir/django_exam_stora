@@ -10,10 +10,27 @@ from STORA.accounts.models import Employee
 from STORA.products.models import Product
 
 class SaleAttributes(models.Model):
+    CASH = 'CASH'
+    CARD = 'CARD'
+    PAYMENT_METHOD_CHOICES = [(CASH, 'Cash'), (CARD, 'Card')]
+
     cashier = models.ForeignKey(Employee, on_delete=models.PROTECT, related_name='sales',
                                 verbose_name='Cashier')
     time_of_sale = models.DateTimeField(auto_now_add=True, verbose_name='Sale Time')
     total_amount = models.DecimalField(default=0.00, decimal_places=2, max_digits=12)
+    # Nullable -- existing rows predate the checkout screen (Фаза 2) that
+    # sets these. New sales always get one via the checkout modal's own
+    # client-side requirement, not a DB-level NOT NULL, so nothing here
+    # breaks mid-rollout while that screen is still being built in stages.
+    payment_method = models.CharField(max_length=4, choices=PAYMENT_METHOD_CHOICES, null=True, blank=True,
+                                      verbose_name='Payment Method')
+    # Stored for both CASH and CARD (card just gets paid=total, change=0)
+    # so a later report never has to branch on payment_method to know what
+    # was tendered.
+    amount_paid = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True,
+                                      verbose_name='Amount Paid')
+    change_due = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True,
+                                     verbose_name='Change Due')
 
     class Meta:
         verbose_name = 'Sale'

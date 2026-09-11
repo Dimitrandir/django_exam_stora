@@ -17,7 +17,7 @@ from STORA.core.session_service import (
     set_cashier_operation_state,
 )
 from STORA.core.utils import build_cashier_operation_state, build_restore_formset_data, dispatch_task
-from STORA.products.models import Product, Barcode
+from STORA.products.models import Product, Barcode, Category
 from STORA.sales.forms import SaleForms, SaleItemFormSet
 from STORA.sales.models import SaleAttributes
 
@@ -25,8 +25,12 @@ from STORA.sales.models import SaleAttributes
 @login_required
 @permission_required('sales.add_saleattributes', raise_exception=True)
 def sales_add(request):
-    products_data = list(Product.objects.values('id', 'internal_code', 'name', 'sell_price', 'unit_type'))
+    # category_id feeds the category/subcategory quick-pick panel (Фаза 2) --
+    # it groups these same products by category client-side, no extra
+    # requests per click.
+    products_data = list(Product.objects.values('id', 'internal_code', 'name', 'sell_price', 'unit_type', 'category_id'))
     barcodes_data = list(Barcode.objects.values('code', 'product_id', 'is_scale_code'))
+    categories_data = list(Category.objects.values('id', 'name', 'parent_id'))
 
     formset_prefix = 'items'
     state = get_cashier_operation_state(request)
@@ -94,6 +98,7 @@ def sales_add(request):
         'formset_prefix': formset_prefix,
         'products_data': products_data,
         'barcodes_data': barcodes_data,
+        'categories_data': categories_data,
         'sale_draft': sale_draft,
         'sale_formset_initial_count': len(formset_initial) if formset_initial else 0,
     }

@@ -6,8 +6,15 @@ from STORA.sales.models import SaleItems, SaleAttributes
 class SaleForms(forms.ModelForm):
     class Meta:
         model = SaleAttributes
-        fields = ['cashier']
+        fields = ['cashier', 'payment_method', 'amount_paid', 'change_due']
         labels = {'cashier': 'Cashier'}
+        widgets = {
+            # Set by the checkout modal's JS (Фаза 2, still being built in
+            # stages) -- not rendered as visible form controls here.
+            'payment_method': forms.HiddenInput(),
+            'amount_paid': forms.HiddenInput(),
+            'change_due': forms.HiddenInput(),
+        }
 
     def __init__(self, *args, current_user=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -53,13 +60,16 @@ class SaleItemForm(forms.ModelForm):
         fields = ['sale_item', 'sale_quantity', 'price_at_sale', 'total_price_row']
         widgets = {
             'sale_item': forms.HiddenInput(),
-            # min/step start as whole-piece defaults -- the template's JS
-            # switches them to 0.001/fractional the moment a weight product
-            # is picked (see bindRow's unitPriceInput... actually qtyInput
-            # handling in sale_add.html), since a plain HTML number input
-            # with step=1 rejects a fractional value like 0.350 at submit
-            # time even though the JS already wrote it in.
-            'sale_quantity': forms.NumberInput(attrs={'min': '0.001', 'step': '1', 'class': 'quantity-input'}),
+            # min/step start as whole-piece defaults (1/1) -- the template's
+            # JS (applyQuantityConstraints) switches them to 0.001/0.001 the
+            # moment a weight product is picked, since a plain HTML number
+            # input with step=1 rejects a fractional value like 0.350 at
+            # submit time even though the JS already wrote it in.
+            # HTML5 step validation is relative to `min`, not to 0 -- min=
+            # "0.001" with step="1" would make 1, 2, 3... all INVALID (only
+            # 0.001, 1.001, 2.001... pass), which silently blocked every
+            # ordinary whole-number sale until this was min="1" instead.
+            'sale_quantity': forms.NumberInput(attrs={'min': '1', 'step': '1', 'class': 'quantity-input'}),
             'price_at_sale': forms.HiddenInput(),
             'total_price_row': forms.HiddenInput(),
         }

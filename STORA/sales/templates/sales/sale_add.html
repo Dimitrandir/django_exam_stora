@@ -1,9 +1,13 @@
 {% extends 'base.html' %}
 
+{% block main_class %}main-wide{% endblock %}
+{% block container_class %}container-fluid{% endblock %}
+
 {% block content %}
 <section class="sale-form">
-    <header class="page-header">
+    <header class="page-header pos-header">
         <h1>New Sale</h1>
+        <p class="pos-header__meta"><span id="live-clock"></span> — {{ user.username }}</p>
     </header>
 
     {% if form.errors %}
@@ -34,9 +38,14 @@
                 <p>
                     <strong>Current user:</strong> {{ user.username }}
                 </p>
+                {# Populated by the checkout modal's JS (Фаза 2, staged build) before submit. #}
+                {{ form.payment_method }}
+                {{ form.amount_paid }}
+                {{ form.change_due }}
             </div>
         </section>
 
+        <div class="sale-form__workspace">
         <section class="sale-form__items">
             <header class="section-header">
                 <h2>Products</h2>
@@ -95,12 +104,25 @@
                     {{ formset.empty_form.total_price_row }}
                 </tr>
             </template>
+
+            <section class="sale-form__total">
+                <strong>Transaction Total:</strong>
+                <span id="transaction-total">0.00</span>
+            </section>
         </section>
 
-        <section class="sale-form__total">
-            <strong>Transaction Total:</strong>
-            <span id="transaction-total">0.00</span>
+        <section class="sale-form__categories">
+            <header class="section-header">
+                <h2>Categories</h2>
+            </header>
+            <div class="category-breadcrumb">
+                <button type="button" id="category-back-btn" class="category-back-btn" style="display:none;">&larr; Back</button>
+                <span id="category-breadcrumb-label"></span>
+            </div>
+            <div id="category-folders" class="category-grid"></div>
+            <div id="category-products" class="category-grid"></div>
         </section>
+        </div>
 
         <footer class="page-actions">
             <button type="button" id="add-row-btn">+ Add row</button>
@@ -111,13 +133,28 @@
 
     {{ products_data|json_script:"products-data" }}
     {{ barcodes_data|json_script:"barcodes-data" }}
+    {{ categories_data|json_script:"categories-data" }}
     {{ sale_draft|json_script:"sale-draft" }}
 
     <script>
         const productsData = JSON.parse(document.getElementById('products-data').textContent);
         const barcodesData = JSON.parse(document.getElementById('barcodes-data').textContent);
+        const categoriesData = JSON.parse(document.getElementById('categories-data').textContent);
         const saleDraftElement = document.getElementById('sale-draft');
         const saleDraft = saleDraftElement ? JSON.parse(saleDraftElement.textContent || 'null') : null;
+
+        // -- Live clock, top-left, next to the operator name (matches the
+        // reference cash-register screenshot). --
+        (function () {
+            const clockEl = document.getElementById('live-clock');
+            function tick() {
+                const now = new Date();
+                const pad = n => String(n).padStart(2, '0');
+                clockEl.textContent = `${pad(now.getDate())}.${pad(now.getMonth() + 1)}.${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+            }
+            tick();
+            setInterval(tick, 1000);
+        })();
         const formPrefix = "{{ formset_prefix }}";
 
         function findProductByCode(code) {
@@ -420,9 +457,7 @@
         populateDraftIfNeeded();
         updateTransactionTotal();
 
-        document.getElementById('add-row-btn').addEventListener('click', async () => {
-            await saveDraft();
-
+        function appendEmptyRow() {
             const body = document.getElementById('sale-items-body');
             const totalFormsInput = document.getElementById(`id_${formPrefix}-TOTAL_FORMS`);
             const formCount = parseInt(totalFormsInput.value);
@@ -435,9 +470,105 @@
 
             const newRow = body.lastElementChild;
             bindRow(newRow);
+            return newRow;
+        }
+
+        document.getElementById('add-row-btn').addEventListener('click', async () => {
+            await saveDraft();
+            appendEmptyRow();
             updateTransactionTotal();
             await saveDraft();
         });
+
+        // Tapping a category quick-pick button (see the panel below) --
+        // already-in-the-cart bumps quantity by one instead of adding a
+        // duplicate row, same as scanning the same barcode twice.
+        async function addProductToCart(product) {
+            const existingRows = Array.from(document.querySelectorAll('.sale-row'));
+            for (const row of existingRows) {
+                const saleItemInput = row.querySelector('input[name$="-sale_item"]');
+                if (saleItemInput && String(saleItemInput.value) === String(product.id)) {
+                    const qtyInput = row.querySelector('.quantity-input');
+                    qtyInput.value = String((parseFloat(qtyInput.value || 0) + 1));
+                    recalculateRow(row);
+                    await saveDraft();
+                    return;
+                }
+            }
+
+            const row = appendEmptyRow();
+            const codeInput = row.querySelector('.product-code-input');
+            const qtyInput = row.querySelector('.quantity-input');
+            const saleItemInput = row.querySelector('input[name$="-sale_item"]');
+            const nameInput = row.querySelector('.product-name-input');
+            const unitPriceInput = row.querySelector('.unit-price-input');
+
+            codeInput.value = product.internal_code;
+            saleItemInput.value = product.id;
+            nameInput.value = product.name;
+            unitPriceInput.value = product.sell_price;
+            applyQuantityConstraints(qtyInput, product);
+            qtyInput.value = '1';
+            recalculateRow(row);
+            updateTransactionTotal();
+            await saveDraft();
+        }
+
+        // -- Category/subcategory quick-pick panel -- clicking a folder
+        // drills in, showing its subcategories AND its own directly-
+        // assigned products (a product can be tagged at any level, not
+        // just a leaf category, same as the Products screen). --
+        (function () {
+            const foldersEl = document.getElementById('category-folders');
+            const productsEl = document.getElementById('category-products');
+            const backBtn = document.getElementById('category-back-btn');
+            const breadcrumbLabel = document.getElementById('category-breadcrumb-label');
+            const categoriesById = {};
+            categoriesData.forEach(c => { categoriesById[String(c.id)] = c; });
+
+            let currentParentId = null; // null = top level
+
+            function render() {
+                foldersEl.innerHTML = '';
+                productsEl.innerHTML = '';
+
+                const currentCategory = currentParentId ? categoriesById[String(currentParentId)] : null;
+                backBtn.style.display = currentCategory ? '' : 'none';
+                breadcrumbLabel.textContent = currentCategory ? currentCategory.name : '';
+
+                categoriesData
+                    .filter(c => String(c.parent_id || '') === String(currentParentId || ''))
+                    .forEach(cat => {
+                        const btn = document.createElement('button');
+                        btn.type = 'button';
+                        btn.className = 'category-folder-btn';
+                        btn.textContent = cat.name;
+                        btn.addEventListener('click', () => { currentParentId = cat.id; render(); });
+                        foldersEl.appendChild(btn);
+                    });
+
+                if (currentParentId) {
+                    productsData
+                        .filter(p => String(p.category_id || '') === String(currentParentId))
+                        .forEach(product => {
+                            const btn = document.createElement('button');
+                            btn.type = 'button';
+                            btn.className = 'category-product-btn';
+                            btn.textContent = product.name;
+                            btn.addEventListener('click', () => addProductToCart(product));
+                            productsEl.appendChild(btn);
+                        });
+                }
+            }
+
+            backBtn.addEventListener('click', () => {
+                const currentCategory = currentParentId ? categoriesById[String(currentParentId)] : null;
+                currentParentId = currentCategory ? currentCategory.parent_id : null;
+                render();
+            });
+
+            render();
+        })();
     </script>
 </section>
 {% endblock %}
