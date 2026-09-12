@@ -164,7 +164,7 @@ class SalesFormSubmissionTests(TestCase):
             'items-0-DELETE': '',
         }
         response = self.client.post(reverse('sale_add'), data)
-        self.assertRedirects(response, reverse('sales_list'))
+        self.assertRedirects(response, reverse('sale_add'))
 
         sale = SaleAttributes.objects.get(cashier=self.cashier)
         self.assertEqual(sale.total_amount, Decimal('10.00'))
@@ -191,7 +191,7 @@ class SalesFormSubmissionTests(TestCase):
             'items-0-DELETE': '',
         }
         response = self.client.post(reverse('sale_add'), data)
-        self.assertRedirects(response, reverse('sales_list'))
+        self.assertRedirects(response, reverse('sale_add'))
 
         sale = SaleAttributes.objects.get(cashier=self.cashier)
         self.assertEqual(sale.payment_method, SaleAttributes.CASH)
@@ -219,7 +219,7 @@ class SalesFormSubmissionTests(TestCase):
             'items-0-DELETE': '',
         }
         response = self.client.post(reverse('sale_add'), data)
-        self.assertRedirects(response, reverse('sales_list'))
+        self.assertRedirects(response, reverse('sale_add'))
 
         sale = SaleAttributes.objects.get(cashier=self.cashier)
         self.assertEqual(sale.payment_method, SaleAttributes.MIXED)
@@ -381,15 +381,10 @@ class SaleItemsInitialDraftRestoreTests(TestCase):
         )
 
     def _set_draft(self, forms):
-        from STORA.core.utils import build_cashier_operation_state, get_cashier_operation_session_key
+        from STORA.sales.tab_state import DEFAULT_TAB, SALE_TABS_SESSION_KEY
 
-        state = build_cashier_operation_state(
-            operation_type='sale', path='/sales/add/',
-            data={'cashier_id': self.cashier.pk, 'cashier_username': self.cashier.username},
-            formset_data={'forms': forms}, active=True,
-        )
         session = self.client.session
-        session[get_cashier_operation_session_key()] = state
+        session[SALE_TABS_SESSION_KEY] = {DEFAULT_TAB: {'formset_data': {'forms': forms}, 'active': True}}
         session.save()
 
     def test_restored_row_carries_unit_type_for_weight_product(self):
@@ -410,6 +405,117 @@ class SaleItemsInitialDraftRestoreTests(TestCase):
         }])
         response = self.client.get(reverse('sale_add'))
         self.assertEqual(response.context['sale_items_initial'], [])
+
+
+class SaleTabsTests(TestCase):
+    """The 3 basket tabs on the POS screen each keep an independent draft
+    (see STORA.sales.tab_state) -- separate from the single-slot mechanism
+    deliveries/write-off/scrap share, since only sales needed more than one
+    at a time."""
+
+    def setUp(self):
+        self.cashier = User.objects.create_user(username='tabs-cashier', password='pass12345', role=User.CASHIER)
+        self.client.force_login(self.cashier)
+        self.product_a = Product.objects.create(internal_code='TAB0001', name='Tab Product A', sell_price=Decimal('2.00'), quantity=10)
+        self.product_b = Product.objects.create(internal_code='TAB0002', name='Tab Product B', sell_price=Decimal('3.00'), quantity=10)
+
+    def _save_draft(self, product):
+        return self.client.post(
+            reverse('sale_draft_save'),
+            data=json.dumps({
+                'form_data': {},
+                'formset_data': {'forms': [{
+                    'sale_item': str(product.pk), 'sale_quantity': '1',
+                    'price_at_sale': str(product.sell_price), 'total_price_row': str(product.sell_price),
+                    'DELETE': '',
+                }]},
+            }),
+            content_type='application/json',
+        )
+
+    def test_defaults_to_tab_1(self):
+        response = self.client.get(reverse('sale_add'))
+        self.assertEqual(response.context['active_tab'], '1')
+
+    def test_draft_saved_on_one_tab_does_not_leak_into_another(self):
+        self._save_draft(self.product_a)  # lands on tab 1 (the default)
+
+        self.client.post(reverse('switch_sale_tab'), data=json.dumps({'tab': '2'}), content_type='application/json')
+        response = self.client.get(reverse('sale_add'))
+        self.assertEqual(response.context['active_tab'], '2')
+        self.assertEqual(response.context['sale_items_initial'], [])  # tab 2 starts empty
+
+        self.client.post(reverse('switch_sale_tab'), data=json.dumps({'tab': '1'}), content_type='application/json')
+        response = self.client.get(reverse('sale_add'))
+        rows = response.context['sale_items_initial']
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['sale_item'], self.product_a.pk)
+
+    def test_tabs_summary_reflects_which_tabs_have_items(self):
+        self._save_draft(self.product_a)  # tab 1
+        self.client.post(reverse('switch_sale_tab'), data=json.dumps({'tab': '3'}), content_type='application/json')
+        self._save_draft(self.product_b)  # tab 3
+
+        response = self.client.get(reverse('sale_add'))
+        summary = {row['tab']: row for row in response.context['sale_tabs_summary']}
+        self.assertTrue(summary['1']['has_items'])
+        self.assertFalse(summary['2']['has_items'])
+        self.assertTrue(summary['3']['has_items'])
+        self.assertTrue(summary['3']['is_active'])
+        self.assertFalse(summary['1']['is_active'])
+
+    def test_switch_tab_rejects_invalid_tab(self):
+        response = self.client.post(reverse('switch_sale_tab'), data=json.dumps({'tab': '99'}), content_type='application/json')
+        self.assertEqual(response.status_code, 400)
+
+    def test_completing_a_sale_clears_only_that_tabs_draft(self):
+        self._save_draft(self.product_a)  # tab 1
+        self.client.post(reverse('switch_sale_tab'), data=json.dumps({'tab': '2'}), content_type='application/json')
+        self._save_draft(self.product_b)  # tab 2
+
+        # Complete the sale sitting on tab 2.
+        self.client.post(reverse('sale_add'), {
+            'cashier': self.cashier.pk,
+            'items-TOTAL_FORMS': '1', 'items-INITIAL_FORMS': '0',
+            'items-MIN_NUM_FORMS': '0', 'items-MAX_NUM_FORMS': '1000',
+            'items-0-sale_item': self.product_b.pk, 'items-0-sale_quantity': '1',
+            'items-0-price_at_sale': '3.00', 'items-0-total_price_row': '3.00', 'items-0-DELETE': '',
+        })
+
+        response = self.client.get(reverse('sale_add'))
+        self.assertEqual(response.context['active_tab'], '2')  # stays on tab 2
+        self.assertEqual(response.context['sale_items_initial'], [])  # now empty
+
+        self.client.post(reverse('switch_sale_tab'), data=json.dumps({'tab': '1'}), content_type='application/json')
+        response = self.client.get(reverse('sale_add'))
+        self.assertEqual(len(response.context['sale_items_initial']), 1)  # tab 1's draft untouched
+
+    def test_cancel_sale_clears_active_tab_and_redirects_to_sale_add(self):
+        self._save_draft(self.product_a)
+        response = self.client.get(reverse('cancel_sale'))
+        self.assertRedirects(response, reverse('sale_add'))
+        self.assertEqual(self.client.get(reverse('sale_add')).context['sale_items_initial'], [])
+
+    def test_completing_a_sale_persists_change_until_next_item_added(self):
+        # Cash sale for 2.00, paid with a fiver -- 3.00 change.
+        self.client.post(reverse('sale_add'), {
+            'cashier': self.cashier.pk,
+            'payment_method': 'CASH', 'amount_paid': '5.00', 'card_amount': '0.00', 'change_due': '3.00',
+            'items-TOTAL_FORMS': '1', 'items-INITIAL_FORMS': '0',
+            'items-MIN_NUM_FORMS': '0', 'items-MAX_NUM_FORMS': '1000',
+            'items-0-sale_item': self.product_a.pk, 'items-0-sale_quantity': '1',
+            'items-0-price_at_sale': '2.00', 'items-0-total_price_row': '2.00', 'items-0-DELETE': '',
+        })
+
+        # Still there on the next fresh-cart page load.
+        response = self.client.get(reverse('sale_add'))
+        self.assertEqual(response.context['last_change'], '3.00')
+
+        # Ringing up the next customer (any cart activity) clears it --
+        # see clear_last_change in sales_draft_save.
+        self._save_draft(self.product_b)
+        response = self.client.get(reverse('sale_add'))
+        self.assertIsNone(response.context['last_change'])
 
 
 class PosPinViewTests(TestCase):

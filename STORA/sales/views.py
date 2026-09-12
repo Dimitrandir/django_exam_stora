@@ -14,16 +14,23 @@ from STORA.sales.tasks import log_sale_completed
 import json
 
 from STORA.core.mixins import StaffPermissionRequiredMixin
-from STORA.core.session_service import (
-    clear_cashier_operation_state,
-    extract_formset_state,
-    get_cashier_operation_state,
-    set_cashier_operation_state,
-)
-from STORA.core.utils import build_cashier_operation_state, build_restore_formset_data, dispatch_task
+from STORA.core.session_service import extract_formset_state
+from STORA.core.utils import build_restore_formset_data, dispatch_task
 from STORA.products.models import Product, Barcode, Category
 from STORA.sales.forms import SaleForms, SaleItemFormSet
 from STORA.sales.models import SaleAttributes, SaleItems, PosPin, SaleItemVoidLog
+from STORA.sales.tab_state import (
+    TAB_IDS,
+    clear_last_change,
+    clear_tab_draft,
+    get_active_tab,
+    get_last_change,
+    get_tab_draft,
+    set_active_tab,
+    set_last_change,
+    set_tab_draft,
+    tabs_summary,
+)
 
 # How many days back counts as "recently sold" for the top-3 most-popular
 # products shown first when a category is opened on the POS screen (Фаза 2
@@ -66,7 +73,13 @@ def sales_add(request):
     ]
 
     formset_prefix = 'items'
-    state = get_cashier_operation_state(request)
+    # Each of the 3 basket tabs (see the header's tab buttons) keeps its own
+    # independent draft -- a cashier parks an unfinished sale on one tab,
+    # switches to another to ring up a different customer, then switches
+    # back. Separate from the single-slot mechanism deliveries/write-off/
+    # scrap share (see STORA.sales.tab_state for why).
+    active_tab = get_active_tab(request)
+    tab_draft = get_tab_draft(request, active_tab)
     sale_draft = None
     formset_initial = []
     sale_instance = SaleAttributes(cashier=request.user)
@@ -85,21 +98,19 @@ def sales_add(request):
 
             dispatch_task(log_sale_completed, sale.id)
 
-            clear_cashier_operation_state(request)
-            return redirect('sales_list')
+            if sale.change_due is not None:
+                set_last_change(request, active_tab, sale.change_due)
+            clear_tab_draft(request, active_tab)
+            # Back to a fresh New Sale screen, not the list -- a cashier
+            # completing one sale is almost always about to ring up the
+            # next customer, not review history. Stays on the SAME tab,
+            # now empty -- matches "done with this customer" rather than
+            # forcing a tab switch too.
+            return redirect('sale_add')
 
         extracted_state = extract_formset_state(request.POST, formset_prefix)
-        sale_draft = build_cashier_operation_state(
-            operation_type='sale',
-            path=request.path,
-            data={
-                'cashier_id': request.user.pk,
-                'cashier_username': request.user.username,
-            },
-            formset_data=extracted_state,
-            active=True,
-        )
-        set_cashier_operation_state(request, sale_draft)
+        sale_draft = {'formset_data': extracted_state, 'active': True}
+        set_tab_draft(request, active_tab, sale_draft)
 
         form = SaleForms(request.POST, current_user=request.user)
         formset_initial = extracted_state.get('forms', [])
@@ -110,9 +121,9 @@ def sales_add(request):
             initial=formset_initial,
         )
     else:
-        if state and state.get('type') == 'sale' and state.get('active'):
+        if tab_draft and tab_draft.get('active'):
             form = SaleForms(current_user=request.user)
-            formset_initial = state.get('formset_data', {}).get('forms', []) or [{}]
+            formset_initial = tab_draft.get('formset_data', {}).get('forms', []) or [{}]
             restore_post_data = build_restore_formset_data(formset_prefix, formset_initial)
 
             formset = SaleItemFormSet(
@@ -120,7 +131,7 @@ def sales_add(request):
                 instance=sale_instance,
                 prefix=formset_prefix,
             )
-            sale_draft = state
+            sale_draft = tab_draft
         else:
             form = SaleForms(current_user=request.user)
             formset = SaleItemFormSet(instance=sale_instance, prefix=formset_prefix)
@@ -160,6 +171,9 @@ def sales_add(request):
         'sale_items_initial': sale_items_initial,
         'sale_draft': sale_draft,
         'sale_formset_initial_count': len(formset_initial) if formset_initial else 0,
+        'active_tab': active_tab,
+        'sale_tabs_summary': tabs_summary(request),
+        'last_change': get_last_change(request, active_tab),
     }
     return render(request, 'sales/sale_add.html', context)
 
@@ -195,18 +209,40 @@ class SalesDeleteView(LoginRequiredMixin, StaffPermissionRequiredMixin, DeleteVi
 @require_POST
 def sales_draft_save(request):
     payload = json.loads(request.body.decode('utf-8'))
-    form_data = payload.get('form_data', {})
     formset_data = payload.get('formset_data', {})
-
-    draft = build_cashier_operation_state(
-        operation_type='sale',
-        path='/sales/add/',
-        data=form_data,
-        formset_data=formset_data,
-        active=True,
-    )
-    set_cashier_operation_state(request, draft)
+    active_tab = get_active_tab(request)
+    set_tab_draft(request, active_tab, {'formset_data': formset_data, 'active': True})
+    # A draft save only ever fires once the cart has items in it again --
+    # the cashier has started ringing up the next customer, so the
+    # previous sale's Change no longer belongs on screen.
+    clear_last_change(request, active_tab)
     return JsonResponse({'status': 'ok'})
+
+
+@login_required
+@permission_required('sales.add_saleattributes', raise_exception=True)
+@require_POST
+def switch_sale_tab(request):
+    """Switches which of the 3 basket tabs is active -- the JS reloads
+    sale_add right after, which then loads whichever draft (or empty cart)
+    lives on that tab."""
+    payload = json.loads(request.body.decode('utf-8'))
+    tab = payload.get('tab')
+    if tab not in TAB_IDS:
+        return JsonResponse({'error': 'Invalid tab.'}, status=400)
+    set_active_tab(request, tab)
+    return JsonResponse({'status': 'ok'})
+
+
+@login_required
+@permission_required('sales.add_saleattributes', raise_exception=True)
+def cancel_sale(request):
+    """The sales screen's own "Cancel" -- clears just the active tab's
+    draft and stays on a fresh sale_add, instead of the generic
+    clear_cashier_operation (shared by deliveries/write-off/scrap) which
+    would jump away to the sales list."""
+    clear_tab_draft(request, get_active_tab(request))
+    return redirect('sale_add')
 
 
 @login_required

@@ -241,20 +241,133 @@ input[type="text"], input[type="number"], input[type="email"], select, textarea 
     box-shadow: 0 0.5rem 1rem rgba(0,0,0,.05);
 }
 
-/* Cashier POS screen (sale_add.html) -- operator name + live clock top
-   left, cart on the left, category quick-pick buttons on the right. Design
-   pass on colors/spacing is deferred to the end, per project convention --
-   this is functional-first. */
+/* Cashier POS screen (sale_add.html) -- a full-width blue strip across the
+   top (operator name + clock on the left), with the Total/Change window
+   and the 3 basket tabs sitting raised on top of it, right-aligned. Design
+   pass on colors/spacing beyond this is deferred to the end, per project
+   convention -- this is functional-first. */
 .pos-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    margin: -1.5rem -1.5rem 0.5rem;
+    padding: 0.6rem 1.5rem;
+}
+
+.pos-header__info {
     display: flex;
     flex-direction: column;
     gap: 0.15rem;
+}
+
+/* Overrides the global h1 (40px + underline + padding-bottom) -- too much
+   vertical space for this compact header, and the underline has nothing
+   to visually relate to here. */
+.pos-header h1 {
+    margin: 0;
+    border-bottom: none;
+    padding-bottom: 0;
+    font-size: 1.5rem;
 }
 
 .pos-header__meta {
     margin: 0;
     color: #6c757d;
     font-size: 0.9rem;
+}
+
+.pos-header__right {
+    display: flex;
+    align-items: stretch;
+    gap: 0.85rem;
+}
+
+/* The "window" floating on the blue strip -- a visibly raised panel (its
+   own shadow + a lighter blue than the strip behind it), not just more of
+   the same background. Total was previously its own line under the cart;
+   Change mirrors the checkout modal's own live value (see recompute() in
+   the script) so it's visible even once that modal is closed. */
+.pos-header__totals {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    min-width: 190px;
+    padding: 0.4rem 1.1rem;
+    background: #173f82;
+    border: 1px solid #3a5fa8;
+    border-radius: 0.5rem;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.25);
+    color: #ffffff;
+}
+
+.pos-header__total-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 1rem;
+}
+
+.pos-header__total-label {
+    font-size: 0.8rem;
+    line-height: 1.15;
+    opacity: 0.85;
+}
+
+.pos-header__total-value {
+    font-size: 1.8rem;
+    line-height: 1.15;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+/* 3 parallel baskets, to the left of the Total/Change window -- tap an
+   empty one to park the current sale and serve someone else, tap back to
+   resume. Matches the totals window's height (align-items: stretch, both
+   here and on the parent .pos-header__right) rather than its width --
+   narrow, tall tiles instead of small squares. */
+.pos-header__tabs {
+    display: flex;
+    align-items: stretch;
+    gap: 0.4rem;
+}
+
+.pos-tab-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.15rem;
+    width: 2.6rem;
+    border: 1px solid #3a5fa8;
+    border-radius: 0.5rem;
+    background: #173f82;
+    color: #c9d6ef;
+    cursor: pointer;
+}
+
+.pos-tab-btn__icon {
+    font-size: 1.3rem;
+    /* Empty basket (🛒) reads faded until there's actually something on
+       that tab -- at which point the template swaps in a different icon
+       (🛍️) entirely, not just a full-opacity version of the same one. */
+    opacity: 0.5;
+}
+
+.pos-tab-btn__label {
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.pos-tab-btn.has-items .pos-tab-btn__icon {
+    opacity: 1;
+}
+
+.pos-tab-btn.is-active {
+    background: #ffffff;
+    border-color: #ffffff;
+    color: #0b3d91;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.25);
 }
 
 .sale-form__workspace {
@@ -269,32 +382,36 @@ input[type="text"], input[type="number"], input[type="email"], select, textarea 
 }
 
 .sale-item-search-row {
-    display: flex;
-    gap: 0.5rem;
-    align-items: stretch;
     margin-bottom: 0.5rem;
 }
 
 .sale-item-search-wrapper {
-    flex: 1;
     min-width: 0;
 }
 
+/* Docked inside the search box itself, flush right, instead of sitting
+   next to it as a separate button. */
+#sale-item-search-input {
+    padding-right: 2.4rem;
+}
+
 .sale-keyboard-toggle-btn {
-    flex: 0 0 auto;
-    width: 2.6rem;
-    border: 1px solid #ced4da;
-    border-radius: 0.4rem;
-    background: #ffffff;
+    position: absolute;
+    top: 50%;
+    right: 0.5rem;
+    transform: translateY(-50%);
+    padding: 0;
+    border: none;
+    background: transparent;
     color: #212529;
-    font-size: 1.1rem;
+    font-size: 1.3rem;
+    line-height: 1;
     cursor: pointer;
+    z-index: 2;
 }
 
 .sale-keyboard-toggle-btn.is-active {
-    background: #0b3d91;
-    border-color: #0b3d91;
-    color: #ffffff;
+    color: #0b3d91;
 }
 
 /* On-screen keyboard -- a touchscreen till with no physical keyboard
@@ -370,6 +487,23 @@ input[type="text"], input[type="number"], input[type="email"], select, textarea 
    scrolls just the rows once there are more than fit on screen. */
 .sale-items-table-container {
     margin-bottom: 0.75rem;
+}
+
+/* Thinner than a regular data row -- it's a running summary (Qty/Sum
+   totals), not another line item, and doesn't need the same row height.
+   Tabulator sets the row's own height/min-height inline via JS (measured
+   from its rendered content) -- a plain CSS rule on the cell alone can't
+   win against that, hence !important on the row itself here. */
+#sale-items-table .tabulator-calcs-holder .tabulator-row {
+    height: 26px !important;
+    min-height: 26px !important;
+}
+
+#sale-items-table .tabulator-calcs-holder .tabulator-cell {
+    padding-top: 0.1rem;
+    padding-bottom: 0.1rem;
+    min-height: 0;
+    font-size: 0.85rem;
 }
 
 

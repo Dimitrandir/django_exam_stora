@@ -11,8 +11,58 @@
 {% block content %}
 <section class="sale-form">
     <header class="page-header pos-header">
-        <h1>New Sale</h1>
-        <p class="pos-header__meta"><span id="live-clock"></span> — {{ user.username }}</p>
+        <div class="pos-header__info">
+            <h1>New Sale</h1>
+            <p class="pos-header__meta"><span id="live-clock"></span> — {{ user.username }}</p>
+        </div>
+        <div class="pos-header__right">
+            {% comment %}
+            3 parallel baskets -- a cashier can park an unfinished sale on
+            one tab (e.g. a customer stepped away) and tap an empty tab to
+            serve someone else, then switch back. Each tab keeps its own
+            independent draft server-side (see STORA.sales.tab_state).
+            The basket icon fills in once that tab has at least one item.
+            Sits to the left of the Total/Change window, matching its
+            height.
+            {% endcomment %}
+            <div class="pos-header__tabs">
+                {% for tab in sale_tabs_summary %}
+                <button
+                    type="button" class="pos-tab-btn{% if tab.is_active %} is-active{% endif %}{% if tab.has_items %} has-items{% endif %}"
+                    data-tab="{{ tab.tab }}"
+                >
+                    {% comment %}
+                    A genuinely different picture once the basket has
+                    something in it, not just a dimmed/full-color version
+                    of the same outline icon.
+                    {% endcomment %}
+                    <span class="pos-tab-btn__icon">{% if tab.has_items %}🛍️{% else %}🛒{% endif %}</span>
+                    <span class="pos-tab-btn__label">{{ tab.tab }}</span>
+                </button>
+                {% endfor %}
+            </div>
+
+            <div class="pos-header__totals">
+                <div class="pos-header__total-row">
+                    <span class="pos-header__total-label">Total</span>
+                    <span class="pos-header__total-value" id="transaction-total">0.00</span>
+                </div>
+                {% comment %}
+                Mirrors the checkout modal's own Change value live (see
+                recompute() below) -- stays showing whatever it last
+                computed until the cashier starts a new round of input (a
+                fresh Paid amount, a new item, etc.), not cleared on its
+                own. Survives the redirect+reload after Complete Sale too
+                (see last_change / STORA.sales.tab_state) -- seeded here
+                from the server, then cleared client-side the moment the
+                next item is added (see addProductToCart).
+                {% endcomment %}
+                <div class="pos-header__total-row pos-header__total-row--change">
+                    <span class="pos-header__total-label">Change</span>
+                    <span class="pos-header__total-value" id="header-change-due">{{ last_change|default:"0.00" }}</span>
+                </div>
+            </div>
+        </div>
     </header>
 
     {% if form.errors %}
@@ -30,33 +80,20 @@
     <form method="post" class="sale-form__form">
         {% csrf_token %}
 
-        <section class="sale-form__general">
-            <header class="section-header">
-                <h2>General Information</h2>
-            </header>
-
-            <div class="sale-form__fields">
-                <p>
-                    {{ form.cashier.label_tag }}
-                    {{ form.cashier }}
-                </p>
-                <p>
-                    <strong>Current user:</strong> {{ user.username }}
-                </p>
-                {# Populated by the checkout modal's JS (Фаза 2, staged build) before submit. #}
-                {{ form.payment_method }}
-                {{ form.amount_paid }}
-                {{ form.card_amount }}
-                {{ form.change_due }}
-            </div>
-        </section>
+        {% comment %}
+        form.cashier is disabled (the view sets sale.cashier server-side
+        regardless, and a disabled field never submits anyway) -- not
+        rendered at all, nothing would come of it. Payment fields are
+        populated by the checkout modal's JS before submit; kept hidden
+        here on purpose.
+        {% endcomment %}
+        {{ form.payment_method }}
+        {{ form.amount_paid }}
+        {{ form.card_amount }}
+        {{ form.change_due }}
 
         <div class="sale-form__workspace">
         <section class="sale-form__items">
-            <header class="section-header">
-                <h2>Products</h2>
-            </header>
-
             {{ formset.management_form }}
             <div id="sale-items-hidden-inputs"></div>
 
@@ -71,16 +108,17 @@
             <div class="sale-item-search-row">
                 <div class="position-relative sale-item-search-wrapper">
                     <input type="search" id="sale-item-search-input" class="form-control"
-                           placeholder="Scan or search by name/code..." autocomplete="off">
+                           placeholder="Search PRODUCTS..." autocomplete="off">
+                    {% comment %}
+                    Shows/hides the on-screen keyboard below -- for a touch-
+                    screen till with no physical keyboard attached, typing a
+                    product name by hand still has to be possible somehow.
+                    Docked inside the search box itself, at its right edge.
+                    {% endcomment %}
+                    <button type="button" id="sale-keyboard-toggle-btn" class="sale-keyboard-toggle-btn" title="Show keyboard">⌨</button>
                     <div id="sale-item-search-results" class="global-search-results"></div>
                     <small id="sale-item-search-hint" class="text-muted"></small>
                 </div>
-                {% comment %}
-                Shows/hides the on-screen keyboard below -- for a touch-
-                screen till with no physical keyboard attached, typing a
-                product name by hand still has to be possible somehow.
-                {% endcomment %}
-                <button type="button" id="sale-keyboard-toggle-btn" class="sale-keyboard-toggle-btn" title="Show keyboard">⌨</button>
             </div>
 
             {% comment %}
@@ -99,17 +137,12 @@
             <div class="sale-items-table-container">
                 <div id="sale-items-table" class="table-sm"></div>
             </div>
-
-            <section class="sale-form__total">
-                <strong>Transaction Total:</strong>
-                <span id="transaction-total">0.00</span>
-            </section>
         </section>
 
         <section class="sale-form__categories">
             <header class="section-header">
-                <h2>Categories</h2>
-                <button type="button" id="category-edit-mode-btn" class="category-edit-btn">Edit shortcuts</button>
+                <h2>Shortcuts</h2>
+                <button type="button" id="category-edit-mode-btn" class="category-edit-btn">Edit</button>
             </header>
 
             {% comment %}
@@ -154,7 +187,6 @@
             <button type="button" id="delete-line-btn" class="button-delete-line">Delete Line</button>
             <button type="button" id="void-sale-btn" class="button-void-sale">Void Sale</button>
             <button type="button" id="complete-sale-btn" class="button-save">Complete Sale</button>
-            <a href="{% url 'clear_cashier_operation' %}" class="button-cancel">Cancel</a>
         </footer>
     </form>
 
@@ -286,6 +318,26 @@
             tick();
             setInterval(tick, 1000);
         })();
+
+        // -- Basket tabs (top right) -- tapping a different tab switches
+        // which draft the server loads on the next request, then reloads
+        // the page to actually show it (simplest thing that works, same
+        // idea as the bulk actions elsewhere in the app). Tapping the
+        // already-active tab does nothing. --
+        document.querySelectorAll('.pos-tab-btn').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                if (btn.classList.contains('is-active')) return;
+                fetch("{% url 'switch_sale_tab' %}", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+                    },
+                    body: JSON.stringify({tab: btn.dataset.tab}),
+                }).then(() => location.reload());
+            });
+        });
+
         const formPrefix = "{{ formset_prefix }}";
 
         function findProductByCode(code) {
@@ -377,6 +429,14 @@
             const total = saleItemsTable.getData()
                 .reduce((sum, row) => sum + (parseFloat(row.total_price_row) || 0), 0);
             document.getElementById('transaction-total').textContent = total.toFixed(2);
+        }
+
+        // The previous sale's Change stays on screen (seeded server-side,
+        // see last_change in the view) until the cashier rings up the next
+        // customer -- the moment a product is added, it's stale and goes
+        // away immediately, without waiting on the saveDraft() round trip.
+        function clearHeaderChangeDisplay() {
+            document.getElementById('header-change-due').textContent = '0.00';
         }
 
         // A weight product (e.g. loose fruit, sold in kg) needs a
@@ -510,16 +570,21 @@
                 {formatter: 'rownum', title: '#', width: 40, hozAlign: 'center', headerSort: false},
                 {title: 'Name', field: 'product_name', widthGrow: 3},
                 {
-                    title: 'Qty', field: 'sale_quantity', width: 110, hozAlign: 'right',
+                    // bottomCalc sums the raw numbers regardless of unit --
+                    // fine for an all-piece or all-weight cart, but mixing
+                    // pcs and kg in the same sum stops being meaningful
+                    // (same caveat as the Products grid's Stock column).
+                    title: 'Qty', field: 'sale_quantity', width: 70, hozAlign: 'right',
                     editor: numberEditor, editorParams: quantityEditorParams,
+                    bottomCalc: 'sum', bottomCalcFormatter: (cell) => Number(cell.getValue() || 0).toFixed(3),
                 },
                 {
-                    title: 'Unit Price', field: 'price_at_sale', width: 120, hozAlign: 'right',
+                    title: 'Unit Price', field: 'price_at_sale', width: 85, hozAlign: 'right',
                     editor: numberEditor, editorParams: {min: 0.01, step: 0.01},
                     formatter: (cell) => Number(cell.getValue() || 0).toFixed(2),
                 },
                 {
-                    title: 'Sum', field: 'total_price_row', width: 120, hozAlign: 'right',
+                    title: 'Sum', field: 'total_price_row', width: 85, hozAlign: 'right',
                     editor: numberEditor, editorParams: {min: 0, step: 0.01},
                     formatter: (cell) => Number(cell.getValue() || 0).toFixed(2),
                     bottomCalc: 'sum', bottomCalcFormatter: (cell) => Number(cell.getValue() || 0).toFixed(2),
@@ -608,6 +673,7 @@
         // in-the-cart bumps quantity by one instead of adding a duplicate
         // row, same as scanning the same barcode twice.
         function addProductToCart(product) {
+            clearHeaderChangeDisplay();
             const existing = saleItemsTable.getRows()
                 .find(r => String(r.getData().sale_item) === String(product.id));
             if (existing) {
@@ -762,6 +828,7 @@
                 // A scanned scale barcode already carries its own exact
                 // weight/qty -- set it directly rather than bumping by 1
                 // like a plain rescan of a non-scale barcode would.
+                clearHeaderChangeDisplay();
                 const existing = saleItemsTable.getRows()
                     .find(r => String(r.getData().sale_item) === String(product.id));
                 if (existing) {
@@ -1189,7 +1256,7 @@
             editModeBtn.addEventListener('click', () => {
                 editMode = !editMode;
                 editModeBtn.classList.toggle('is-active', editMode);
-                editModeBtn.textContent = editMode ? 'Done editing' : 'Edit shortcuts';
+                editModeBtn.textContent = editMode ? 'Done' : 'Edit';
                 pinPickerEl.style.display = 'none';
                 renderPinnedBar();
             });
@@ -1235,6 +1302,12 @@
                 return parseFloat(document.getElementById('transaction-total').textContent) || 0;
             }
 
+            // Mirrors into the always-visible header panel (top right) --
+            // it just shows whatever this last computed, staying put once
+            // the modal closes until the next round of input changes it
+            // again (a fresh Paid amount, a new item, etc.).
+            const headerChangeEl = document.getElementById('header-change-due');
+
             function recompute() {
                 const total = currentTotal();
                 if (selectedMethod === 'CASH') {
@@ -1247,6 +1320,7 @@
                 } else {
                     changeEl.textContent = '0.00';
                 }
+                if (headerChangeEl) headerChangeEl.textContent = changeEl.textContent;
             }
 
             function selectMethod(method) {
