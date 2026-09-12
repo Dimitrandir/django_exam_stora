@@ -23,7 +23,7 @@ from STORA.core.session_service import (
 from STORA.core.utils import build_cashier_operation_state, build_restore_formset_data, dispatch_task
 from STORA.products.models import Product, Barcode, Category
 from STORA.sales.forms import SaleForms, SaleItemFormSet
-from STORA.sales.models import SaleAttributes, SaleItems, PosPin
+from STORA.sales.models import SaleAttributes, SaleItems, PosPin, SaleItemVoidLog
 
 # How many days back counts as "recently sold" for the top-3 most-popular
 # products shown first when a category is opened on the POS screen (Фаза 2
@@ -125,6 +125,30 @@ def sales_add(request):
             form = SaleForms(current_user=request.user)
             formset = SaleItemFormSet(instance=sale_instance, prefix=formset_prefix)
 
+    # Seeds the Tabulator cart on page load -- resolves each draft row back
+    # to its real Product (name/current sell_price), same idea as
+    # `delivery_items_initial` for the Deliveries items grid. Only the
+    # draft-restore path ever has rows here; a fresh sale starts with an
+    # empty cart, ready for scanning.
+    sale_items_initial = []
+    if formset_initial:
+        product_ids = [row['sale_item'] for row in formset_initial if row.get('sale_item')]
+        products_by_id = {p.pk: p for p in Product.objects.filter(pk__in=product_ids)}
+        for row in formset_initial:
+            if row.get('DELETE'):
+                continue
+            product = products_by_id.get(int(row['sale_item'])) if row.get('sale_item') else None
+            quantity = float(row.get('sale_quantity') or 1)
+            price = float(row.get('price_at_sale') or (product.sell_price if product else 0) or 0)
+            sale_items_initial.append({
+                'sale_item': product.pk if product else '',
+                'product_name': product.name if product else row.get('product_name', ''),
+                'unit_type': product.unit_type if product else '',
+                'sale_quantity': quantity,
+                'price_at_sale': price,
+                'total_price_row': float(row.get('total_price_row') or quantity * price),
+            })
+
     context = {
         'form': form,
         'formset': formset,
@@ -133,6 +157,7 @@ def sales_add(request):
         'barcodes_data': barcodes_data,
         'categories_data': categories_data,
         'pos_pins_data': pos_pins_data,
+        'sale_items_initial': sale_items_initial,
         'sale_draft': sale_draft,
         'sale_formset_initial_count': len(formset_initial) if formset_initial else 0,
     }
@@ -215,3 +240,36 @@ def pos_pin_add(request):
 def pos_pin_remove(request, pk):
     PosPin.objects.filter(pk=pk).delete()
     return JsonResponse({'status': 'ok'})
+
+
+@login_required
+@permission_required('sales.add_saleattributes', raise_exception=True)
+@require_POST
+def log_removed_sale_item(request):
+    """Records cart lines removed before a sale is completed -- either one
+    line ("Delete line") or the whole in-progress cart ("Void sale"), both
+    reachable from sale_add.html. The cart is only session draft state at
+    this point (no SaleAttributes row exists yet), so this is the only
+    record of the removal short of combing through session history."""
+    payload = json.loads(request.body.decode('utf-8'))
+    action = payload.get('action')
+    if action not in dict(SaleItemVoidLog.ACTION_CHOICES):
+        return JsonResponse({'error': 'Invalid action.'}, status=400)
+
+    items = payload.get('items', [])
+    product_ids = [item['product_id'] for item in items if item.get('product_id')]
+    products_by_id = {p.pk: p for p in Product.objects.filter(pk__in=product_ids)}
+
+    logs = [
+        SaleItemVoidLog(
+            employee=request.user,
+            product=products_by_id.get(int(item['product_id'])) if item.get('product_id') else None,
+            quantity=item.get('quantity') or 0,
+            unit_price=item.get('unit_price') or None,
+            total_price=item.get('total_price') or None,
+            action=action,
+        )
+        for item in items
+    ]
+    SaleItemVoidLog.objects.bulk_create(logs)
+    return JsonResponse({'status': 'ok', 'count': len(logs)})

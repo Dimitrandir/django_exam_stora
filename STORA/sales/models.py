@@ -184,3 +184,37 @@ class PosPin(models.Model):
     def __str__(self):
         target = self.category or self.product
         return f"Pin #{self.position}: {target}"
+
+
+class SaleItemVoidLog(models.Model):
+    """Audit trail for cart lines removed BEFORE a sale is ever completed --
+    scanned an item, then took it back off (cashier mistake, customer
+    changed their mind, or worth a manager's attention). This is not tied
+    to a SaleAttributes row: the cart these lines came from is still just
+    session draft state at removal time, may never turn into a saved sale
+    at all, and there's no requirement it must. Written from sale_add.html
+    via the dedicated log_removed_sale_item endpoint -- there is no review
+    screen for this yet (deferred as a separate task), only the raw log."""
+
+    REMOVE_LINE = 'REMOVE_LINE'
+    VOID_SALE = 'VOID_SALE'
+    ACTION_CHOICES = [(REMOVE_LINE, 'Removed one line'), (VOID_SALE, 'Voided whole sale')]
+
+    employee = models.ForeignKey(Employee, on_delete=models.PROTECT, related_name='sale_item_voids')
+    # SET_NULL, not PROTECT/CASCADE -- this is a historical log entry; a
+    # product being deleted later shouldn't be blocked by, or take down,
+    # an old audit row about it.
+    product = models.ForeignKey(Product, on_delete=models.SET_NULL, null=True, related_name='sale_item_voids')
+    quantity = models.DecimalField(max_digits=10, decimal_places=3)
+    unit_price = models.DecimalField(max_digits=9, decimal_places=2, null=True, blank=True)
+    total_price = models.DecimalField(max_digits=9, decimal_places=2, null=True, blank=True)
+    action = models.CharField(max_length=15, choices=ACTION_CHOICES)
+    removed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Removed Sale Item'
+        verbose_name_plural = 'Removed Sale Items'
+        ordering = ['-removed_at']
+
+    def __str__(self):
+        return f"{self.employee} {self.get_action_display()}: {self.quantity} x {self.product}"

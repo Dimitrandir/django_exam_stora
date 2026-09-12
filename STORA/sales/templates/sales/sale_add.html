@@ -1,7 +1,12 @@
 {% extends 'base.html' %}
+{% load static cache_bust %}
 
 {% block main_class %}main-wide{% endblock %}
 {% block container_class %}container-fluid{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
+{% endblock %}
 
 {% block content %}
 <section class="sale-form">
@@ -53,58 +58,47 @@
             </header>
 
             {{ formset.management_form }}
+            <div id="sale-items-hidden-inputs"></div>
 
-            <div class="table-wrapper">
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th>Code / Barcode</th>
-                            <th>Product Name</th>
-                            <th>Qty</th>
-                            <th>Unit Price</th>
-                            <th>Line Total</th>
-                            <th>Remove</th>
-                        </tr>
-                    </thead>
-                    <tbody id="sale-items-body">
-                        {% for s_form in formset %}
-                            <tr class="sale-row">
-                                <td>
-                                    {{ s_form.product_code }}
-                                    <small class="scale-hint text-muted"></small>
-                                    {{ s_form.sale_item }}
-                                    {{ s_form.id }}
-                                </td>
-                                <td>{{ s_form.product_name }}</td>
-                                <td>{{ s_form.sale_quantity }}</td>
-                                <td>{{ s_form.unit_price }}</td>
-                                <td>{{ s_form.line_total }}</td>
-                                <td>{{ s_form.DELETE }}</td>
-                                {{ s_form.price_at_sale }}
-                                {{ s_form.total_price_row }}
-                            </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+            {% comment %}
+            One box for everything -- type to search by name/code, or scan a
+            barcode (the gun fires Enter for you). Picking a match or an
+            exact code/barcode hit adds/bumps a row in the grid below AND
+            puts focus straight back in this box -- ready for the next scan
+            without touching anything else. Scale (weighing) barcodes are
+            decoded client-side the same way as before.
+            {% endcomment %}
+            <div class="sale-item-search-row">
+                <div class="position-relative sale-item-search-wrapper">
+                    <input type="search" id="sale-item-search-input" class="form-control"
+                           placeholder="Scan or search by name/code..." autocomplete="off">
+                    <div id="sale-item-search-results" class="global-search-results"></div>
+                    <small id="sale-item-search-hint" class="text-muted"></small>
+                </div>
+                {% comment %}
+                Shows/hides the on-screen keyboard below -- for a touch-
+                screen till with no physical keyboard attached, typing a
+                product name by hand still has to be possible somehow.
+                {% endcomment %}
+                <button type="button" id="sale-keyboard-toggle-btn" class="sale-keyboard-toggle-btn" title="Show keyboard">⌨</button>
             </div>
 
-            <template id="empty-form-template">
-                <tr class="sale-row">
-                    <td>
-                        {{ formset.empty_form.product_code }}
-                        <small class="scale-hint text-muted"></small>
-                        {{ formset.empty_form.sale_item }}
-                        {{ formset.empty_form.id }}
-                    </td>
-                    <td>{{ formset.empty_form.product_name }}</td>
-                    <td>{{ formset.empty_form.sale_quantity }}</td>
-                    <td>{{ formset.empty_form.unit_price }}</td>
-                    <td>{{ formset.empty_form.line_total }}</td>
-                    <td>{{ formset.empty_form.DELETE }}</td>
-                    {{ formset.empty_form.price_at_sale }}
-                    {{ formset.empty_form.total_price_row }}
-                </tr>
-            </template>
+            {% comment %}
+            Built fresh on each BG/EN toggle (see script below) -- every key
+            writes straight into the search box above and puts focus right
+            back there, same as typing on a physical keyboard would.
+            {% endcomment %}
+            <div id="sale-keyboard" class="sale-keyboard" style="display:none;"></div>
+
+            {% comment %}
+            Fixed-height box so the page itself doesn't grow with the cart --
+            the grid scrolls internally once it has more rows than fit.
+            Buttons (Complete Sale/Cancel) stay below this box, not inside
+            it -- see the footer further down.
+            {% endcomment %}
+            <div class="sale-items-table-container">
+                <div id="sale-items-table" class="table-sm"></div>
+            </div>
 
             <section class="sale-form__total">
                 <strong>Transaction Total:</strong>
@@ -151,7 +145,14 @@
         </div>
 
         <footer class="page-actions">
-            <button type="button" id="add-row-btn">+ Add row</button>
+            {% comment %}
+            No per-row remove button in the grid -- tap a line to select it
+            (see .is-selected-for-delete), then use Delete Line here. Every
+            removal (one line or the whole cart) is logged for later review
+            -- see SaleItemVoidLog / log_removed_sale_item.
+            {% endcomment %}
+            <button type="button" id="delete-line-btn" class="button-delete-line">Delete Line</button>
+            <button type="button" id="void-sale-btn" class="button-void-sale">Void Sale</button>
             <button type="button" id="complete-sale-btn" class="button-save">Complete Sale</button>
             <a href="{% url 'clear_cashier_operation' %}" class="button-cancel">Cancel</a>
         </footer>
@@ -260,7 +261,10 @@
     {{ categories_data|json_script:"categories-data" }}
     {{ pos_pins_data|json_script:"pos-pins-data" }}
     {{ sale_draft|json_script:"sale-draft" }}
+    {{ sale_items_initial|json_script:"sale-items-seed-data" }}
 
+    <script src="{% static 'vendor/tabulator/tabulator.min.js' %}"></script>
+    <script src="{% static_v 'js/data-table.js' %}"></script>
     <script>
         const productsData = JSON.parse(document.getElementById('products-data').textContent);
         const barcodesData = JSON.parse(document.getElementById('barcodes-data').textContent);
@@ -268,6 +272,7 @@
         let posPinsData = JSON.parse(document.getElementById('pos-pins-data').textContent);
         const saleDraftElement = document.getElementById('sale-draft');
         const saleDraft = saleDraftElement ? JSON.parse(saleDraftElement.textContent || 'null') : null;
+        const saleItemsInitial = JSON.parse(document.getElementById('sale-items-seed-data').textContent);
 
         // -- Live clock, top-left, next to the operator name (matches the
         // reference cash-register screenshot). --
@@ -335,22 +340,20 @@
             return null;
         }
 
-        // Live hint while typing/scanning -- a digit counter until 13
-        // digits are in, then a preview of what it decoded to (or a
-        // warning if the check digit doesn't match), so a cashier typing
-        // one of these by hand knows when to stop instead of guessing.
-        function updateScaleHint(row) {
-            const codeInput = row.querySelector('.product-code-input');
-            const hintEl = row.querySelector('.scale-hint');
-            if (!hintEl) return;
-            const raw = codeInput.value.trim();
-
+        // Live hint while typing/scanning into the (single, always-focused)
+        // search box -- a digit counter until 13 digits are in, then a
+        // preview of what it decoded to (or a warning if the check digit
+        // doesn't match), so a cashier typing one of these by hand knows
+        // when to stop instead of guessing.
+        const scaleHintEl = document.getElementById('sale-item-search-hint');
+        function updateScaleHint(raw) {
+            raw = raw.trim();
             if (!raw || !/^\d+$/.test(raw)) {
-                hintEl.textContent = '';
+                scaleHintEl.textContent = '';
                 return;
             }
             if (raw.length < 13) {
-                hintEl.textContent = raw.length + '/13';
+                scaleHintEl.textContent = raw.length + '/13';
                 return;
             }
             const decoded = decodeScaleBarcode(raw);
@@ -358,94 +361,120 @@
                 const unitLabel = decoded.product.unit_type === 'weight' ? 'kg' : 'pcs';
                 const quantityLabel = decoded.product.unit_type === 'weight'
                     ? decoded.quantity.toFixed(3) : decoded.quantity;
-                hintEl.textContent = decoded.product.name + ': ' + quantityLabel + ' ' + unitLabel;
+                scaleHintEl.textContent = decoded.product.name + ': ' + quantityLabel + ' ' + unitLabel;
             } else if (!isValidEan13(raw)) {
-                hintEl.textContent = 'invalid check digit';
+                scaleHintEl.textContent = 'invalid check digit';
             } else {
-                hintEl.textContent = '';
+                scaleHintEl.textContent = '';
             }
         }
 
+        function round2(n) {
+            return Math.round((n + Number.EPSILON) * 100) / 100;
+        }
+
         function updateTransactionTotal() {
-            let total = 0;
-            document.querySelectorAll('.sale-row').forEach(row => {
-                if (row.style.display !== 'none') {
-                    const lineTotalInput = row.querySelector('.line-total-input');
-                    total += parseFloat(lineTotalInput.value || 0);
-                }
-            });
+            const total = saleItemsTable.getData()
+                .reduce((sum, row) => sum + (parseFloat(row.total_price_row) || 0), 0);
             document.getElementById('transaction-total').textContent = total.toFixed(2);
         }
 
         // A weight product (e.g. loose fruit, sold in kg) needs a
-        // fractional quantity like 0.350 -- the plain HTML number input's
-        // default step=1 rejects that at submit time even though the JS
-        // above already wrote it into the field (scale barcode decode, or
-        // just someone typing "0.35" by hand). A piece product stays at
-        // whole numbers, step=1.
-        function applyQuantityConstraints(qtyInput, product) {
-            if (product && product.unit_type === 'weight') {
-                qtyInput.min = '0.001';
-                qtyInput.step = '0.001';
-            } else {
-                qtyInput.min = '1';
-                qtyInput.step = '1';
-            }
+        // fractional quantity like 0.350 -- the Qty column's default
+        // step/min (whole pieces) rejects that. Read dynamically per row
+        // from its own unit_type, carried in the row data.
+        function quantityEditorParams(cell) {
+            return cell.getData().unit_type === 'weight'
+                ? {min: 0.001, step: 0.001}
+                : {min: 1, step: 1};
         }
 
-        function recalculateRow(row) {
-            const qtyInput = row.querySelector('.quantity-input');
-            const unitPriceInput = row.querySelector('.unit-price-input');
-            const lineTotalInput = row.querySelector('.line-total-input');
-            const priceHidden = row.querySelector('input[name$="-price_at_sale"]');
-            const totalHidden = row.querySelector('input[name$="-total_price_row"]');
+        // Tabulator's built-in editor:'number' has no Enter-key handling at
+        // all (confirmed against the vendored build -- its keybinding table
+        // only maps Tab/Shift-Tab/arrows, never Enter/13). A custom editor
+        // gives explicit control: Enter commits via `success()`, Escape
+        // cancels. The underlying <input type="number"> still gets the
+        // browser's native up/down-arrow increment/decrement for free --
+        // no extra code needed for that part.
+        function numberEditor(cell, onRendered, success, cancel, editorParams) {
+            const params = (typeof editorParams === 'function') ? editorParams(cell) : (editorParams || {});
+            const input = document.createElement('input');
+            input.type = 'number';
+            if (params.min !== undefined) input.min = params.min;
+            if (params.step !== undefined) input.step = params.step;
+            input.style.padding = '4px';
+            input.style.width = '100%';
+            input.style.boxSizing = 'border-box';
+            input.style.height = '100%';
+            input.value = cell.getValue();
+            onRendered(() => { input.focus(); input.select(); });
 
-            const qty = parseFloat(qtyInput.value || 0);
-            const price = parseFloat(unitPriceInput.value || 0);
-            const total = qty * price;
+            function commit() {
+                success(input.value === '' ? 0 : parseFloat(input.value));
+            }
 
-            lineTotalInput.value = total.toFixed(2);
-            priceHidden.value = price.toFixed(2);
-            totalHidden.value = total.toFixed(2);
+            input.addEventListener('blur', commit);
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    commit();
+                } else if (e.key === 'Escape') {
+                    cancel();
+                }
+            });
+            return input;
+        }
+
+        // Qty/Unit Price/Sum are linked two ways, same "source of truth"
+        // idea as the Deliveries items grid: editing Qty or Unit Price
+        // recomputes the Sum; editing the Sum directly (e.g. the cashier
+        // was told a flat total for this line) recomputes the Unit Price
+        // instead, with Qty held fixed.
+        function recalcRow(row, source) {
+            const data = row.getData();
+            const qty = parseFloat(data.sale_quantity) || 0;
+            if (source === 'total_price_row') {
+                const total = parseFloat(data.total_price_row) || 0;
+                row.update({price_at_sale: round2(qty > 0 ? total / qty : 0)});
+            } else {
+                const price = parseFloat(data.price_at_sale) || 0;
+                row.update({total_price_row: round2(qty * price)});
+            }
             updateTransactionTotal();
         }
 
-        function collectDraftState() {
-            const rows = Array.from(document.querySelectorAll('.sale-row'));
+        function buildRow(product, overrides) {
+            overrides = overrides || {};
+            const quantity = overrides.sale_quantity || 1;
+            const price = overrides.price_at_sale !== undefined ? overrides.price_at_sale : product.sell_price;
+            return Object.assign({
+                sale_item: product.id,
+                product_name: product.name,
+                unit_type: product.unit_type,
+                sale_quantity: quantity,
+                price_at_sale: price,
+                total_price_row: round2(quantity * price),
+            }, overrides);
+        }
 
+        function collectDraftState() {
+            const rows = saleItemsTable.getData();
             return {
                 formset_data: {
                     TOTAL_FORMS: rows.length,
-                    forms: rows.map(row => {
-                        const productCodeInput = row.querySelector('.product-code-input');
-                        const saleItemInput = row.querySelector('input[name$="-sale_item"]');
-                        const qtyInput = row.querySelector('.quantity-input');
-                        const nameInput = row.querySelector('.product-name-input');
-                        const unitPriceInput = row.querySelector('.unit-price-input');
-                        const lineTotalInput = row.querySelector('.line-total-input');
-                        const priceHidden = row.querySelector('input[name$="-price_at_sale"]');
-                        const totalHidden = row.querySelector('input[name$="-total_price_row"]');
-                        const deleteCheckbox = row.querySelector('input[type="checkbox"][name$="-DELETE"]');
-
-                        return {
-                            product_code: productCodeInput ? productCodeInput.value : '',
-                            sale_item: saleItemInput ? saleItemInput.value : '',
-                            sale_quantity: qtyInput ? qtyInput.value : '',
-                            product_name: nameInput ? nameInput.value : '',
-                            unit_price: unitPriceInput ? unitPriceInput.value : '',
-                            line_total: lineTotalInput ? lineTotalInput.value : '',
-                            price_at_sale: priceHidden ? priceHidden.value : '',
-                            total_price_row: totalHidden ? totalHidden.value : '',
-                            DELETE: deleteCheckbox && deleteCheckbox.checked ? 'on' : '',
-                        };
-                    })
-                }
+                    forms: rows.map(row => ({
+                        sale_item: row.sale_item || '',
+                        sale_quantity: row.sale_quantity,
+                        product_name: row.product_name || '',
+                        price_at_sale: row.price_at_sale,
+                        total_price_row: row.total_price_row,
+                        DELETE: '',
+                    })),
+                },
             };
         }
 
         async function saveDraft() {
-            console.log("SAVE DRAFT CALLED");
-
             try {
                 await fetch("{% url 'sale_draft_save' %}", {
                     method: "POST",
@@ -466,179 +495,445 @@
             }
         }
 
-        function bindRow(row) {
-            const codeInput = row.querySelector('.product-code-input');
-            const qtyInput = row.querySelector('.quantity-input');
-            const saleItemInput = row.querySelector('input[name$="-sale_item"]');
-            const nameInput = row.querySelector('.product-name-input');
-            const unitPriceInput = row.querySelector('.unit-price-input');
+        // The visible cart -- plain Tabulator (not the Excel-style sort/
+        // filter/column-chooser convention the rest of the app's *listing*
+        // tables use): this is a short, actively-changing in-progress sale,
+        // not something a cashier needs to filter or export mid-transaction.
+        // Fixed `height` keeps the header pinned and scrolls just the rows
+        // once there are more than fit -- see .sale-items-table-container.
+        const saleItemsTable = new Tabulator('#sale-items-table', {
+            data: saleItemsInitial,
+            layout: 'fitColumns',
+            height: 'calc(100vh - 480px)',
+            placeholder: 'Scan or search a product above to start the sale.',
+            columns: [
+                {formatter: 'rownum', title: '#', width: 40, hozAlign: 'center', headerSort: false},
+                {title: 'Name', field: 'product_name', widthGrow: 3},
+                {
+                    title: 'Qty', field: 'sale_quantity', width: 110, hozAlign: 'right',
+                    editor: numberEditor, editorParams: quantityEditorParams,
+                },
+                {
+                    title: 'Unit Price', field: 'price_at_sale', width: 120, hozAlign: 'right',
+                    editor: numberEditor, editorParams: {min: 0.01, step: 0.01},
+                    formatter: (cell) => Number(cell.getValue() || 0).toFixed(2),
+                },
+                {
+                    title: 'Sum', field: 'total_price_row', width: 120, hozAlign: 'right',
+                    editor: numberEditor, editorParams: {min: 0, step: 0.01},
+                    formatter: (cell) => Number(cell.getValue() || 0).toFixed(2),
+                    bottomCalc: 'sum', bottomCalcFormatter: (cell) => Number(cell.getValue() || 0).toFixed(2),
+                },
+            ],
+        });
 
-            codeInput.addEventListener('input', () => updateScaleHint(row));
+        // -- Selecting a line to delete -- tap its row (the Qty/Unit
+        // Price/Sum cells each swallow their own click to open an editor,
+        // per Tabulator's usual behavior, so in practice this fires from
+        // tapping the # or Name cell). "Delete Line"/"Void Sale" live in
+        // the page footer, not as a per-row button -- see below. --
+        let selectedRowForDelete = null;
 
-            codeInput.addEventListener('change', async () => {
-                let product = findProductByCode(codeInput.value);
-                let scaleQuantity = null;
-
-                if (!product) {
-                    const decoded = decodeScaleBarcode(codeInput.value);
-                    if (decoded) {
-                        product = decoded.product;
-                        scaleQuantity = decoded.quantity;
-                    }
-                }
-
-                if (!product) {
-                    alert('Product not found');
-                    return;
-                }
-
-                saleItemInput.value = product.id;
-                nameInput.value = product.name;
-                unitPriceInput.value = product.sell_price;
-                applyQuantityConstraints(qtyInput, product);
-                if (scaleQuantity !== null) {
-                    qtyInput.value = product.unit_type === 'weight' ? scaleQuantity.toFixed(3) : scaleQuantity;
-                }
-                recalculateRow(row);
-                await saveDraft();
-            });
-
-            qtyInput.addEventListener('input', async () => {
-                recalculateRow(row);
-                await saveDraft();
-            });
-
-            unitPriceInput.addEventListener('input', async () => {
-                recalculateRow(row);
-                await saveDraft();
-            });
-
-            const deleteCheckbox = row.querySelector('input[type="checkbox"][name$="-DELETE"]');
-            if (deleteCheckbox) {
-                deleteCheckbox.addEventListener('change', async () => {
-                    row.style.display = deleteCheckbox.checked ? 'none' : '';
-                    updateTransactionTotal();
-                    await saveDraft();
-                });
+        function clearRowSelection() {
+            if (selectedRowForDelete) {
+                selectedRowForDelete.getElement().classList.remove('is-selected-for-delete');
+                selectedRowForDelete = null;
             }
         }
 
-        function populateDraftIfNeeded() {
-            if (!saleDraft || !saleDraft.formset_data || !saleDraft.formset_data.forms) {
+        saleItemsTable.on('rowClick', (e, row) => {
+            if (selectedRowForDelete === row) {
+                clearRowSelection();
+                return;
+            }
+            clearRowSelection();
+            selectedRowForDelete = row;
+            row.getElement().classList.add('is-selected-for-delete');
+        });
+
+        // Sends removed lines to the audit log (log_removed_sale_item) --
+        // fire-and-forget, same as saveDraft: a logging hiccup shouldn't
+        // block the cashier from continuing the sale.
+        function logRemovedItems(rows, action) {
+            fetch("{% url 'log_removed_sale_item' %}", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+                },
+                body: JSON.stringify({
+                    action: action,
+                    items: rows.map(row => ({
+                        product_id: row.sale_item,
+                        quantity: row.sale_quantity,
+                        unit_price: row.price_at_sale,
+                        total_price: row.total_price_row,
+                    })),
+                }),
+            }).catch(() => console.error('Failed to log removed item(s)'));
+        }
+
+        document.getElementById('delete-line-btn').addEventListener('click', () => {
+            if (!selectedRowForDelete) {
+                alert('Select a line first (tap its row).');
+                return;
+            }
+            logRemovedItems([selectedRowForDelete.getData()], 'REMOVE_LINE');
+            selectedRowForDelete.delete();
+            selectedRowForDelete = null;
+            updateTransactionTotal();
+            saveDraft();
+        });
+
+        document.getElementById('void-sale-btn').addEventListener('click', () => {
+            const rows = saleItemsTable.getData();
+            if (!rows.length) return;
+            if (!confirm('Сигурен ли си, че искаш да изтриеш цялата сметка?')) return;
+            logRemovedItems(rows, 'VOID_SALE');
+            saleItemsTable.clearData();
+            clearRowSelection();
+            updateTransactionTotal();
+            saveDraft();
+        });
+
+        saleItemsTable.on('cellEdited', (cell) => {
+            recalcRow(cell.getRow(), cell.getField());
+            saveDraft();
+        });
+
+        saleItemsTable.on('tableBuilt', updateTransactionTotal);
+
+        // Tapping a category quick-pick button (see the panel below), or
+        // picking/scanning a match in the search box just below -- already-
+        // in-the-cart bumps quantity by one instead of adding a duplicate
+        // row, same as scanning the same barcode twice.
+        function addProductToCart(product) {
+            const existing = saleItemsTable.getRows()
+                .find(r => String(r.getData().sale_item) === String(product.id));
+            if (existing) {
+                const newQty = (parseFloat(existing.getData().sale_quantity) || 0) + 1;
+                existing.update({sale_quantity: newQty});
+                recalcRow(existing, 'sale_quantity');
+            } else {
+                saleItemsTable.addRow(buildRow(product)).then(updateTransactionTotal);
+            }
+            saveDraft();
+        }
+
+        // -- Search-to-add: one box, type to search by name/code or scan a
+        // barcode (the gun fires Enter right after). Search runs entirely
+        // client-side against the full catalog already on the page -- the
+        // server's `ingredient_search` endpoint (used by the Deliveries/
+        // recipe pickers) deliberately excludes recipe products, which
+        // Sales must still be able to find (a recipe IS sellable, just
+        // never delivered directly). --
+        const searchInput = document.getElementById('sale-item-search-input');
+        const resultsBox = document.getElementById('sale-item-search-results');
+        let currentResults = [];
+        let highlightedIndex = -1;
+
+        function highlightResult(index) {
+            const items = resultsBox.querySelectorAll('.global-search-result');
+            items.forEach(el => el.classList.remove('is-highlighted'));
+            if (index >= 0 && index < items.length) {
+                items[index].classList.add('is-highlighted');
+                items[index].scrollIntoView({block: 'nearest'});
+            }
+            highlightedIndex = index;
+        }
+
+        function renderResults(results) {
+            resultsBox.innerHTML = '';
+            currentResults = results;
+            if (!results.length) {
+                resultsBox.classList.remove('is-open');
+                return;
+            }
+            results.forEach((product, index) => {
+                const row = document.createElement('div');
+                row.className = 'global-search-result';
+                row.textContent = product.internal_code + ' — ' + product.name;
+                row.addEventListener('mouseenter', () => highlightResult(index));
+                row.addEventListener('click', () => selectProduct(product));
+                resultsBox.appendChild(row);
+            });
+            resultsBox.classList.add('is-open');
+            // First match pre-highlighted -- Enter immediately picks it
+            // without needing an extra arrow-down first.
+            highlightResult(0);
+        }
+
+        function runSearch() {
+            const q = searchInput.value.trim().toLowerCase();
+            if (!q) { renderResults([]); return; }
+            const startsWith = [];
+            const contains = [];
+            productsData.forEach(product => {
+                const name = product.name.toLowerCase();
+                const code = product.internal_code.toLowerCase();
+                if (name.startsWith(q) || code.startsWith(q)) startsWith.push(product);
+                else if (name.includes(q) || code.includes(q)) contains.push(product);
+            });
+            renderResults(startsWith.concat(contains).slice(0, 30));
+        }
+
+        // Shared by mouse click and keyboard (Enter on a highlighted
+        // result) selection. Re-focusing the search box afterwards (unlike
+        // the Deliveries items grid, which hands focus to the new row's Qty
+        // cell instead) is the whole point for a cashier scanning items one
+        // after another -- the box has to be ready for the very next scan
+        // without an extra click.
+        function selectProduct(product) {
+            addProductToCart(product);
+            resultsBox.classList.remove('is-open');
+            searchInput.value = '';
+            scaleHintEl.textContent = '';
+            currentResults = [];
+            highlightedIndex = -1;
+            searchInput.focus();
+        }
+
+        searchInput.addEventListener('input', () => {
+            runSearch();
+            updateScaleHint(searchInput.value);
+        });
+        document.addEventListener('click', (e) => {
+            // The on-screen keyboard's own keys count as "inside" too -- a
+            // tap there re-runs the search (see insertAtCursor) and must
+            // not have this same click immediately close what it just
+            // opened.
+            if (
+                !e.target.closest('#sale-item-search-input')
+                && !e.target.closest('#sale-item-search-results')
+                && !e.target.closest('#sale-keyboard')
+            ) {
+                resultsBox.classList.remove('is-open');
+            }
+        });
+
+        searchInput.addEventListener('keydown', (e) => {
+            const hasOpenResults = resultsBox.classList.contains('is-open') && currentResults.length;
+
+            if (e.key === 'ArrowDown') {
+                if (!hasOpenResults) return;
+                e.preventDefault();
+                highlightResult(Math.min(highlightedIndex + 1, currentResults.length - 1));
+                return;
+            }
+            if (e.key === 'ArrowUp') {
+                if (!hasOpenResults) return;
+                e.preventDefault();
+                highlightResult(Math.max(highlightedIndex - 1, 0));
+                return;
+            }
+            if (e.key === 'Escape') {
+                resultsBox.classList.remove('is-open');
+                return;
+            }
+            if (e.key !== 'Enter') return;
+            e.preventDefault();
+
+            if (hasOpenResults) {
+                selectProduct(currentResults[highlightedIndex >= 0 ? highlightedIndex : 0]);
                 return;
             }
 
-            const rows = document.querySelectorAll('.sale-row');
-            const draftForms = saleDraft.formset_data.forms;
+            // No dropdown match -- fall back to an exact code/barcode match
+            // (including a decoded scale barcode), for a barcode scanner's
+            // rapid type-then-Enter faster than the search above catches up.
+            const code = searchInput.value.trim();
+            if (!code) return;
 
-            draftForms.forEach((draftRow, index) => {
-                if (!rows[index]) return;
-
-                const row = rows[index];
-                const codeInput = row.querySelector('.product-code-input');
-                const qtyInput = row.querySelector('.quantity-input');
-                const saleItemInput = row.querySelector('input[name$="-sale_item"]');
-                const nameInput = row.querySelector('.product-name-input');
-                const unitPriceInput = row.querySelector('.unit-price-input');
-                const lineTotalInput = row.querySelector('.line-total-input');
-                const priceHidden = row.querySelector('input[name$="-price_at_sale"]');
-                const totalHidden = row.querySelector('input[name$="-total_price_row"]');
-
-                const product = draftRow.sale_item
-                    ? productsData.find(p => String(p.id) === String(draftRow.sale_item))
-                    : findProductByCode(draftRow.product_code);
-
-                if (product) {
-                    codeInput.value = product.internal_code;
-                    saleItemInput.value = product.id;
-                    nameInput.value = product.name;
-                    unitPriceInput.value = product.sell_price;
-                    applyQuantityConstraints(qtyInput, product);
-                } else {
-                    codeInput.value = draftRow.product_code || '';
-                    saleItemInput.value = draftRow.sale_item || '';
-                    nameInput.value = draftRow.product_name || '';
-                    unitPriceInput.value = draftRow.unit_price || '';
+            let product = findProductByCode(code);
+            let scaleQuantity = null;
+            if (!product) {
+                const decoded = decodeScaleBarcode(code);
+                if (decoded) {
+                    product = decoded.product;
+                    scaleQuantity = decoded.quantity;
                 }
-
-                qtyInput.value = draftRow.sale_quantity || 1;
-                lineTotalInput.value = draftRow.line_total || '';
-                priceHidden.value = draftRow.price_at_sale || '';
-                totalHidden.value = draftRow.total_price_row || '';
-
-                if (product && (!lineTotalInput.value || !priceHidden.value || !totalHidden.value)) {
-                    recalculateRow(row);
-                }
-            });
-
-            const totalFormsInput = document.getElementById(`id_${formPrefix}-TOTAL_FORMS`);
-            if (totalFormsInput) {
-                totalFormsInput.value = rows.length;
+            }
+            if (!product) {
+                alert('Product not found');
+                return;
             }
 
-            updateTransactionTotal();
-        }
-
-        document.querySelectorAll('.sale-row').forEach(bindRow);
-        populateDraftIfNeeded();
-        updateTransactionTotal();
-
-        function appendEmptyRow() {
-            const body = document.getElementById('sale-items-body');
-            const totalFormsInput = document.getElementById(`id_${formPrefix}-TOTAL_FORMS`);
-            const formCount = parseInt(totalFormsInput.value);
-
-            const template = document.getElementById('empty-form-template').innerHTML;
-            const newRowHtml = template.replaceAll('__prefix__', formCount);
-
-            body.insertAdjacentHTML('beforeend', newRowHtml);
-            totalFormsInput.value = formCount + 1;
-
-            const newRow = body.lastElementChild;
-            bindRow(newRow);
-            return newRow;
-        }
-
-        document.getElementById('add-row-btn').addEventListener('click', async () => {
-            await saveDraft();
-            appendEmptyRow();
-            updateTransactionTotal();
-            await saveDraft();
+            if (scaleQuantity !== null) {
+                // A scanned scale barcode already carries its own exact
+                // weight/qty -- set it directly rather than bumping by 1
+                // like a plain rescan of a non-scale barcode would.
+                const existing = saleItemsTable.getRows()
+                    .find(r => String(r.getData().sale_item) === String(product.id));
+                if (existing) {
+                    existing.update({sale_quantity: scaleQuantity});
+                    recalcRow(existing, 'sale_quantity');
+                } else {
+                    saleItemsTable.addRow(buildRow(product, {sale_quantity: scaleQuantity})).then(updateTransactionTotal);
+                }
+                saveDraft();
+            } else {
+                addProductToCart(product);
+            }
+            resultsBox.classList.remove('is-open');
+            searchInput.value = '';
+            scaleHintEl.textContent = '';
+            searchInput.focus();
         });
 
-        // Tapping a category quick-pick button (see the panel below) --
-        // already-in-the-cart bumps quantity by one instead of adding a
-        // duplicate row, same as scanning the same barcode twice.
-        async function addProductToCart(product) {
-            const existingRows = Array.from(document.querySelectorAll('.sale-row'));
-            for (const row of existingRows) {
-                const saleItemInput = row.querySelector('input[name$="-sale_item"]');
-                if (saleItemInput && String(saleItemInput.value) === String(product.id)) {
-                    const qtyInput = row.querySelector('.quantity-input');
-                    qtyInput.value = String((parseFloat(qtyInput.value || 0) + 1));
-                    recalculateRow(row);
-                    await saveDraft();
-                    return;
-                }
-            }
+        // -- On-screen keyboard (BG/EN) -- a touchscreen till has no
+        // physical keyboard attached, so typing a product name by hand
+        // still has to be possible somehow. BG uses the standard
+        // Bulgarian Phonetic layout (each Cyrillic letter sits on the
+        // Latin key it sounds like) -- Ч/Ш/Щ/Ю sit on punctuation keys on
+        // a real physical keyboard, which doesn't apply here, so they just
+        // get their own extra row instead. --
+        const KEYBOARD_LAYOUTS = {
+            bg: [
+                ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'],
+                ['я', 'в', 'е', 'р', 'т', 'ъ', 'у', 'и', 'о', 'п'],
+                ['а', 'с', 'д', 'ф', 'г', 'х', 'й', 'к', 'л'],
+                ['з', 'ь', 'ц', 'ж', 'б', 'н', 'м'],
+                ['ч', 'ш', 'щ', 'ю'],
+            ],
+            en: [
+                ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'],
+                ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
+                ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l'],
+                ['z', 'x', 'c', 'v', 'b', 'n', 'm'],
+            ],
+        };
 
-            const row = appendEmptyRow();
-            const codeInput = row.querySelector('.product-code-input');
-            const qtyInput = row.querySelector('.quantity-input');
-            const saleItemInput = row.querySelector('input[name$="-sale_item"]');
-            const nameInput = row.querySelector('.product-name-input');
-            const unitPriceInput = row.querySelector('.unit-price-input');
+        const keyboardToggleBtn = document.getElementById('sale-keyboard-toggle-btn');
+        const keyboardEl = document.getElementById('sale-keyboard');
+        let keyboardLanguage = 'bg';
 
-            codeInput.value = product.internal_code;
-            saleItemInput.value = product.id;
-            nameInput.value = product.name;
-            unitPriceInput.value = product.sell_price;
-            applyQuantityConstraints(qtyInput, product);
-            qtyInput.value = '1';
-            recalculateRow(row);
-            updateTransactionTotal();
-            await saveDraft();
+        // Inserts at the current cursor position (not just appended) --
+        // matches how typing on a real keyboard behaves if the cashier
+        // taps back into the middle of what they've already typed.
+        function insertAtCursor(text) {
+            const start = searchInput.selectionStart ?? searchInput.value.length;
+            const end = searchInput.selectionEnd ?? searchInput.value.length;
+            searchInput.value = searchInput.value.slice(0, start) + text + searchInput.value.slice(end);
+            searchInput.setSelectionRange(start + text.length, start + text.length);
+            searchInput.focus();
+            searchInput.dispatchEvent(new Event('input', {bubbles: true}));
         }
+
+        function renderKeyboard() {
+            keyboardEl.innerHTML = '';
+
+            KEYBOARD_LAYOUTS[keyboardLanguage].forEach((rowKeys) => {
+                const rowEl = document.createElement('div');
+                rowEl.className = 'sale-keyboard-row';
+                rowKeys.forEach((key) => {
+                    const keyBtn = document.createElement('button');
+                    keyBtn.type = 'button';
+                    keyBtn.className = 'sale-keyboard-key';
+                    keyBtn.textContent = key;
+                    keyBtn.addEventListener('click', () => insertAtCursor(key));
+                    rowEl.appendChild(keyBtn);
+                });
+                keyboardEl.appendChild(rowEl);
+            });
+
+            const controlsRow = document.createElement('div');
+            controlsRow.className = 'sale-keyboard-row';
+
+            const langBtn = document.createElement('button');
+            langBtn.type = 'button';
+            langBtn.className = 'sale-keyboard-key sale-keyboard-key--lang';
+            langBtn.textContent = keyboardLanguage === 'bg' ? 'EN' : 'BG';
+            langBtn.title = 'Switch keyboard language';
+            langBtn.addEventListener('click', () => {
+                keyboardLanguage = keyboardLanguage === 'bg' ? 'en' : 'bg';
+                renderKeyboard();
+                searchInput.focus();
+            });
+            controlsRow.appendChild(langBtn);
+
+            const spaceBtn = document.createElement('button');
+            spaceBtn.type = 'button';
+            spaceBtn.className = 'sale-keyboard-key sale-keyboard-key--space';
+            spaceBtn.textContent = 'Space';
+            spaceBtn.addEventListener('click', () => insertAtCursor(' '));
+            controlsRow.appendChild(spaceBtn);
+
+            const backspaceBtn = document.createElement('button');
+            backspaceBtn.type = 'button';
+            backspaceBtn.className = 'sale-keyboard-key sale-keyboard-key--backspace';
+            backspaceBtn.textContent = '←';
+            backspaceBtn.addEventListener('click', () => {
+                const start = searchInput.selectionStart ?? searchInput.value.length;
+                const end = searchInput.selectionEnd ?? searchInput.value.length;
+                if (start === end && start > 0) {
+                    searchInput.value = searchInput.value.slice(0, start - 1) + searchInput.value.slice(end);
+                    searchInput.setSelectionRange(start - 1, start - 1);
+                } else {
+                    searchInput.value = searchInput.value.slice(0, start) + searchInput.value.slice(end);
+                    searchInput.setSelectionRange(start, start);
+                }
+                searchInput.focus();
+                searchInput.dispatchEvent(new Event('input', {bubbles: true}));
+            });
+            controlsRow.appendChild(backspaceBtn);
+
+            const enterBtn = document.createElement('button');
+            enterBtn.type = 'button';
+            enterBtn.className = 'sale-keyboard-key sale-keyboard-key--enter';
+            enterBtn.textContent = '↵';
+            // Reuses the exact same Enter-key handling as a physical
+            // keyboard/barcode scanner would trigger -- no separate logic.
+            enterBtn.addEventListener('click', () => {
+                searchInput.focus();
+                searchInput.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true, cancelable: true}));
+            });
+            controlsRow.appendChild(enterBtn);
+
+            keyboardEl.appendChild(controlsRow);
+        }
+
+        renderKeyboard();
+
+        keyboardToggleBtn.addEventListener('click', () => {
+            const isHidden = keyboardEl.style.display === 'none';
+            keyboardEl.style.display = isHidden ? '' : 'none';
+            keyboardToggleBtn.classList.toggle('is-active', isHidden);
+            searchInput.focus();
+        });
+
+        // -- Submit: rebuild items-<n>-<field> hidden inputs from the
+        // table's current data right before the real POST -- same pattern
+        // as the Deliveries items grid (see _delivery_items_table.html).
+        // Sales are create-only (no edit screen), so every row here is
+        // brand new -- no per-row `id`/DELETE bookkeeping for existing rows
+        // is needed, unlike Deliveries. --
+        const saleForm = document.querySelector('.sale-form__form');
+
+        function rebuildHiddenInputs() {
+            const container = document.getElementById('sale-items-hidden-inputs');
+            container.innerHTML = '';
+            const rows = saleItemsTable.getData();
+
+            rows.forEach((data, index) => {
+                const fields = {
+                    sale_item: data.sale_item,
+                    sale_quantity: data.sale_quantity,
+                    price_at_sale: data.price_at_sale,
+                    total_price_row: data.total_price_row,
+                };
+                Object.keys(fields).forEach(name => {
+                    const input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = formPrefix + '-' + index + '-' + name;
+                    input.value = fields[name];
+                    container.appendChild(input);
+                });
+            });
+
+            document.getElementById('id_' + formPrefix + '-TOTAL_FORMS').value = rows.length;
+        }
+
+        saleForm.addEventListener('submit', rebuildHiddenInputs);
 
         // -- Category/subcategory quick-pick panel -- clicking a folder
         // drills in, showing its subcategories AND its own directly-
@@ -1005,10 +1300,7 @@
             }));
 
             completeSaleBtn.addEventListener('click', () => {
-                const hasItem = Array.from(document.querySelectorAll('.sale-row')).some(row => {
-                    const saleItemInput = row.querySelector('input[name$="-sale_item"]');
-                    return saleItemInput && saleItemInput.value;
-                });
+                const hasItem = saleItemsTable.getData().some(row => row.sale_item);
                 if (!hasItem) {
                     alert('Add at least one product before completing the sale.');
                     return;

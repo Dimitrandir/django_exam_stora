@@ -8,7 +8,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from STORA.products.models import Category, Product, RecipeIngredient
-from STORA.sales.models import SaleAttributes, SaleItems, PosPin
+from STORA.sales.models import SaleAttributes, SaleItems, PosPin, SaleItemVoidLog
 from STORA.sales.forms import SaleItemForm
 from STORA.sales.tasks import backfill_recipe_ingredient_stock
 
@@ -365,6 +365,53 @@ class PosRecentSalesRankingTests(TestCase):
         self.assertEqual(by_id[self.quiet.pk]['recent_qty'], 0.0)
 
 
+class SaleItemsInitialDraftRestoreTests(TestCase):
+    """sales_add seeds the Tabulator cart (sale_items_initial) by resolving
+    a saved draft's rows back to their real Product -- covers the Стъпка 4
+    rewrite (plain table -> Tabulator). A weight product's row must carry
+    unit_type, or the Qty column's numberEditor falls back to whole-piece
+    step/min and rejects a fractional value like 0.350 on restore."""
+
+    def setUp(self):
+        self.cashier = User.objects.create_user(username='draft-restore-cashier', password='pass12345', role=User.CASHIER)
+        self.client.force_login(self.cashier)
+        self.weight_product = Product.objects.create(
+            internal_code='DRAFT001', name='Draft Weight Product', unit_type=Product.WEIGHT,
+            sell_price=Decimal('4.00'), quantity=10,
+        )
+
+    def _set_draft(self, forms):
+        from STORA.core.utils import build_cashier_operation_state, get_cashier_operation_session_key
+
+        state = build_cashier_operation_state(
+            operation_type='sale', path='/sales/add/',
+            data={'cashier_id': self.cashier.pk, 'cashier_username': self.cashier.username},
+            formset_data={'forms': forms}, active=True,
+        )
+        session = self.client.session
+        session[get_cashier_operation_session_key()] = state
+        session.save()
+
+    def test_restored_row_carries_unit_type_for_weight_product(self):
+        self._set_draft([{
+            'sale_item': str(self.weight_product.pk), 'sale_quantity': '0.35',
+            'price_at_sale': '4.00', 'total_price_row': '1.40', 'DELETE': '',
+        }])
+        response = self.client.get(reverse('sale_add'))
+        rows = response.context['sale_items_initial']
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['unit_type'], Product.WEIGHT)
+        self.assertEqual(rows[0]['sale_quantity'], 0.35)
+
+    def test_deleted_draft_row_is_skipped(self):
+        self._set_draft([{
+            'sale_item': str(self.weight_product.pk), 'sale_quantity': '1',
+            'price_at_sale': '4.00', 'total_price_row': '4.00', 'DELETE': 'on',
+        }])
+        response = self.client.get(reverse('sale_add'))
+        self.assertEqual(response.context['sale_items_initial'], [])
+
+
 class PosPinViewTests(TestCase):
     """PosPin rows (the fixed shortcut bar's contents) are managed through
     two plain POST endpoints reached from the POS screen's own "edit
@@ -428,6 +475,69 @@ class PosPinViewTests(TestCase):
         self.client.logout()
         response = self.client.post(
             reverse('pos_pin_add'), data=json.dumps({'type': 'product', 'target_id': self.product.pk}),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 302)
+
+
+class LogRemovedSaleItemViewTests(TestCase):
+    """Deleting a line (or voiding the whole cart) on the POS screen
+    happens before any SaleAttributes row exists -- this is the only
+    record of it, written via a plain POST from sale_add.html's JS."""
+
+    def setUp(self):
+        self.cashier = User.objects.create_user(username='void-log-cashier', password='pass12345', role=User.CASHIER)
+        self.client.force_login(self.cashier)
+        self.product = Product.objects.create(
+            internal_code='VOID0001', name='Void Log Product', sell_price=Decimal('3.00'), quantity=10,
+        )
+
+    def test_log_single_removed_line(self):
+        response = self.client.post(
+            reverse('log_removed_sale_item'),
+            data=json.dumps({
+                'action': 'REMOVE_LINE',
+                'items': [{'product_id': self.product.pk, 'quantity': 2, 'unit_price': '3.00', 'total_price': '6.00'}],
+            }),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+        entry = SaleItemVoidLog.objects.get()
+        self.assertEqual(entry.employee, self.cashier)
+        self.assertEqual(entry.product, self.product)
+        self.assertEqual(entry.quantity, Decimal('2'))
+        self.assertEqual(entry.action, SaleItemVoidLog.REMOVE_LINE)
+
+    def test_log_void_whole_sale_with_multiple_items(self):
+        other = Product.objects.create(internal_code='VOID0002', name='Void Log Product 2', sell_price=Decimal('1.00'), quantity=5)
+        response = self.client.post(
+            reverse('log_removed_sale_item'),
+            data=json.dumps({
+                'action': 'VOID_SALE',
+                'items': [
+                    {'product_id': self.product.pk, 'quantity': 1, 'unit_price': '3.00', 'total_price': '3.00'},
+                    {'product_id': other.pk, 'quantity': 4, 'unit_price': '1.00', 'total_price': '4.00'},
+                ],
+            }),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(SaleItemVoidLog.objects.filter(action=SaleItemVoidLog.VOID_SALE).count(), 2)
+
+    def test_invalid_action_rejected(self):
+        response = self.client.post(
+            reverse('log_removed_sale_item'),
+            data=json.dumps({'action': 'NOT_A_REAL_ACTION', 'items': []}),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(SaleItemVoidLog.objects.exists())
+
+    def test_requires_login(self):
+        self.client.logout()
+        response = self.client.post(
+            reverse('log_removed_sale_item'),
+            data=json.dumps({'action': 'REMOVE_LINE', 'items': []}),
             content_type='application/json',
         )
         self.assertEqual(response.status_code, 302)

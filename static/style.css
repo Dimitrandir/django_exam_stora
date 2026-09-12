@@ -182,6 +182,28 @@ input[type="text"], input[type="number"], input[type="email"], select, textarea 
     flex-wrap: wrap;
 }
 
+/* Tap a cart line to mark it for deletion (see .is-selected-for-delete
+   below), then one of these footer buttons acts on it/the whole cart --
+   explicit color+border since these are plain <button>s and would
+   otherwise inherit the global button{color:white} rule on their own
+   light background (see CLAUDE.md "Технически капани"). */
+.button-delete-line {
+    background: #fff3cd;
+    border: 1px solid #d39e00;
+    color: #664d03;
+}
+
+.button-void-sale {
+    background: #f8d7da;
+    border: 1px solid #e35d6a;
+    color: #842029;
+}
+
+.is-selected-for-delete {
+    outline: 2px solid #d39e00;
+    outline-offset: -2px;
+}
+
 /* Django's {{ form.errors }} output on its own is just plain unstyled
    text -- easy to miss entirely at the top of a long form. Styled to read
    as an unmissable "something's wrong" banner, not blend into the page. */
@@ -245,6 +267,111 @@ input[type="text"], input[type="number"], input[type="email"], select, textarea 
     flex: 2;
     min-width: 0;
 }
+
+.sale-item-search-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: stretch;
+    margin-bottom: 0.5rem;
+}
+
+.sale-item-search-wrapper {
+    flex: 1;
+    min-width: 0;
+}
+
+.sale-keyboard-toggle-btn {
+    flex: 0 0 auto;
+    width: 2.6rem;
+    border: 1px solid #ced4da;
+    border-radius: 0.4rem;
+    background: #ffffff;
+    color: #212529;
+    font-size: 1.1rem;
+    cursor: pointer;
+}
+
+.sale-keyboard-toggle-btn.is-active {
+    background: #0b3d91;
+    border-color: #0b3d91;
+    color: #ffffff;
+}
+
+/* On-screen keyboard -- a touchscreen till with no physical keyboard
+   attached still needs some way to type a product name. Keys stay
+   lowercase-only (search matching is already case-insensitive) and
+   square-ish for a reliable touch target, matching the checkout modal's
+   keypad. */
+.sale-keyboard {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    margin-bottom: 0.75rem;
+    padding: 0.5rem;
+    background: #f8f9fa;
+    border: 1px solid #ced4da;
+    border-radius: 0.5rem;
+}
+
+.sale-keyboard-row {
+    display: flex;
+    gap: 0.3rem;
+    justify-content: center;
+}
+
+.sale-keyboard-key {
+    flex: 1;
+    max-width: 3rem;
+    min-height: 2.6rem;
+    border: 1px solid #ced4da;
+    border-radius: 0.4rem;
+    background: #ffffff;
+    color: #212529;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.sale-keyboard-key:active {
+    background: #dee2e6;
+}
+
+.sale-keyboard-key--lang {
+    flex: 0 0 3.2rem;
+    background: #e7f1ff;
+    border-color: #8ec1ff;
+    color: #0b3d91;
+}
+
+.sale-keyboard-key--space {
+    flex: 3 0 auto;
+    max-width: none;
+}
+
+.sale-keyboard-key--backspace,
+.sale-keyboard-key--enter {
+    flex: 0 0 3.2rem;
+}
+
+.sale-keyboard-key--backspace {
+    background: #f8d7da;
+    border-color: #e35d6a;
+    color: #842029;
+}
+
+.sale-keyboard-key--enter {
+    background: #d4edda;
+    border-color: #2f6f4f;
+    color: #1e4d35;
+}
+
+/* Fixed-height box so the page itself doesn't grow with the cart -- the
+   grid's own height option (see sale_add.html) keeps its header pinned and
+   scrolls just the rows once there are more than fit on screen. */
+.sale-items-table-container {
+    margin-bottom: 0.75rem;
+}
+
 
 .sale-form__categories {
     flex: 1;
