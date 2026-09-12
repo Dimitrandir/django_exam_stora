@@ -732,15 +732,25 @@
         function runSearch() {
             const q = searchInput.value.trim().toLowerCase();
             if (!q) { renderResults([]); return; }
+            // Splitting on whitespace and requiring every word to appear
+            // somewhere (any order) is what makes "вода пред" match
+            // "Изворна вода Предела" -- useful once there are many
+            // similarly-named products. A query with no space (e.g. a
+            // scanned barcode/code) is a single token, so this behaves
+            // exactly like the old single-substring check for those.
+            const tokens = q.split(/\s+/).filter(Boolean);
             const startsWith = [];
-            const contains = [];
+            const allWordsMatch = [];
             productsData.forEach(product => {
                 const name = product.name.toLowerCase();
                 const code = product.internal_code.toLowerCase();
-                if (name.startsWith(q) || code.startsWith(q)) startsWith.push(product);
-                else if (name.includes(q) || code.includes(q)) contains.push(product);
+                if (name.startsWith(q) || code.startsWith(q)) {
+                    startsWith.push(product);
+                } else if (tokens.every(t => name.includes(t) || code.includes(t))) {
+                    allWordsMatch.push(product);
+                }
             });
-            renderResults(startsWith.concat(contains).slice(0, 30));
+            renderResults(startsWith.concat(allWordsMatch).slice(0, 30));
         }
 
         // Shared by mouse click and keyboard (Enter on a highlighted

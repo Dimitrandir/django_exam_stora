@@ -1,6 +1,26 @@
 import logging
 
+from django.db.models import Q
+
 logger = logging.getLogger(__name__)
+
+
+def multi_token_icontains_q(query: str, fields: list[str]) -> Q:
+    """Splits `query` on whitespace and requires EVERY token to appear in
+    at least one of `fields` (icontains) -- so "вода пред" matches "Изворна
+    вода Предела" (both words present, any order/position), not just a
+    name containing that exact two-word phrase. A query with no spaces
+    (e.g. a scanned barcode/code) collapses to a single token, behaving
+    exactly like the old single-substring check -- this is a strict
+    superset, not a behavior change, for anything without whitespace.
+    """
+    combined = Q()
+    for token in query.split():
+        token_q = Q()
+        for field in fields:
+            token_q |= Q(**{f'{field}__icontains': token})
+        combined &= token_q
+    return combined
 
 
 def dispatch_task(task, *args, **kwargs) -> None:

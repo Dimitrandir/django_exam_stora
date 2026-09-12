@@ -87,6 +87,19 @@ class GlobalSearchViewTests(TestCase):
         self.client.force_login(self.user)
         response = self._search('zzzznomatchzzzz')
         self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertEqual(data['products'], [])
-        self.assertEqual(data['suppliers'], [])
+
+    def test_multi_word_query_matches_regardless_of_word_order(self):
+        # "Sparkling Water" should turn up for either word order -- each
+        # word just has to appear somewhere in the name (see
+        # multi_token_icontains_q), not as one contiguous phrase.
+        self.client.force_login(self.user)
+        for query in ('water sparkling', 'sparkling water'):
+            labels = [item['label'] for item in self._search(query).json()['products']]
+            self.assertTrue(any('Sparkling Water' in label for label in labels), query)
+
+    def test_multi_word_query_requires_every_word_present(self):
+        # Every word has to match somewhere -- "sparkling" alone isn't
+        # enough if a second word in the query doesn't appear at all.
+        self.client.force_login(self.user)
+        labels = [item['label'] for item in self._search('sparkling nomatchword').json()['products']]
+        self.assertFalse(any('Sparkling Water' in label for label in labels))

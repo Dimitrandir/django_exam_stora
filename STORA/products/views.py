@@ -4,7 +4,7 @@ from decimal import Decimal, InvalidOperation
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.postgres.search import TrigramSimilarity
-from django.db.models import ProtectedError, Q, Sum
+from django.db.models import ProtectedError, Sum
 from django.forms.models import model_to_dict
 from django.http import HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404, render
@@ -15,7 +15,7 @@ from django.views.generic import CreateView, ListView, DetailView, UpdateView, D
 
 from STORA.core.mixins import StaffPermissionRequiredMixin
 from STORA.core.session_service import get_cashier_operation_state
-from STORA.core.utils import dispatch_task
+from STORA.core.utils import dispatch_task, multi_token_icontains_q
 from STORA.deliveries.models import DeliveryItems
 from STORA.products.forms import (
     ProductForms, ProductInlineEditForm, CategoryForm, SuppliersForm, BarcodeFormSet, ProductSupplierFormSet,
@@ -355,7 +355,7 @@ class IngredientSearchView(LoginRequiredMixin, StaffPermissionRequiredMixin, Vie
         if query:
             products = (
                 products
-                .filter(Q(name__icontains=query) | Q(internal_code__icontains=query))
+                .filter(multi_token_icontains_q(query, ['name', 'internal_code']))
                 .annotate(similarity=TrigramSimilarity('name', query))
                 .order_by('-similarity', 'name')
             )
@@ -393,7 +393,7 @@ class SupplierSearchView(LoginRequiredMixin, StaffPermissionRequiredMixin, View)
         if query:
             suppliers = (
                 suppliers
-                .filter(Q(name__icontains=query) | Q(bulstat__icontains=query))
+                .filter(multi_token_icontains_q(query, ['name', 'bulstat']))
                 .annotate(similarity=TrigramSimilarity('name', query))
                 .order_by('-similarity', 'name')
             )

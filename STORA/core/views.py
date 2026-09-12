@@ -1,6 +1,5 @@
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.postgres.search import TrigramSimilarity
-from django.db.models import Q
 from django.db.models.functions import Greatest
 from django.http import JsonResponse
 from django.shortcuts import redirect
@@ -8,6 +7,7 @@ from django.urls import reverse
 from django.views import View
 
 from STORA.core.session_service import clear_cashier_operation_state
+from STORA.core.utils import multi_token_icontains_q
 
 
 def clear_cashier_operation(request):
@@ -47,7 +47,7 @@ class GlobalSearchView(LoginRequiredMixin, View):
 
         results = (
             Product.objects
-            .filter(Q(name__icontains=query) | Q(internal_code__icontains=query) | Q(barcode__code__icontains=query))
+            .filter(multi_token_icontains_q(query, ['name', 'internal_code', 'barcode__code']))
             .distinct()
             .annotate(similarity=Greatest(
                 TrigramSimilarity('name', query), TrigramSimilarity('internal_code', query),
@@ -64,7 +64,7 @@ class GlobalSearchView(LoginRequiredMixin, View):
 
         results = (
             Suppliers.objects
-            .filter(Q(name__icontains=query) | Q(bulstat__icontains=query))
+            .filter(multi_token_icontains_q(query, ['name', 'bulstat']))
             .annotate(similarity=TrigramSimilarity('name', query))
             .order_by('-similarity', 'name')[:self.RESULTS_PER_CATEGORY]
         )
@@ -78,7 +78,7 @@ class GlobalSearchView(LoginRequiredMixin, View):
 
         results = (
             Category.objects
-            .filter(name__icontains=query)
+            .filter(multi_token_icontains_q(query, ['name']))
             .annotate(similarity=TrigramSimilarity('name', query))
             .order_by('-similarity', 'name')[:self.RESULTS_PER_CATEGORY]
         )
@@ -92,7 +92,7 @@ class GlobalSearchView(LoginRequiredMixin, View):
 
         results = (
             Employee.objects
-            .filter(Q(first_name__icontains=query) | Q(last_name__icontains=query) | Q(username__icontains=query))
+            .filter(multi_token_icontains_q(query, ['first_name', 'last_name', 'username']))
             .annotate(similarity=Greatest(
                 TrigramSimilarity('first_name', query),
                 TrigramSimilarity('last_name', query),

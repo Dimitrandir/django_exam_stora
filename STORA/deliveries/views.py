@@ -2,7 +2,6 @@ from decimal import Decimal
 
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.db.models import Q
 from django.contrib.postgres.search import TrigramSimilarity
 from django.http import JsonResponse
 from django.shortcuts import render, redirect, get_object_or_404
@@ -20,7 +19,12 @@ from STORA.core.session_service import (
     get_cashier_operation_state,
     set_cashier_operation_state,
 )
-from STORA.core.utils import build_cashier_operation_state, build_restore_formset_data, get_cashier_operation_type
+from STORA.core.utils import (
+    build_cashier_operation_state,
+    build_restore_formset_data,
+    get_cashier_operation_type,
+    multi_token_icontains_q,
+)
 from STORA.deliveries.forms import (
     DeliveryForms, DeliveryItemFormSet, DocumentTypeForm, WriteOffForm, ScrapForm, ScrapReasonForm,
 )
@@ -404,7 +408,7 @@ class BatchSearchView(LoginRequiredMixin, StaffPermissionRequiredMixin, View):
         if query:
             batches = (
                 batches
-                .filter(Q(delivery_item__name__icontains=query) | Q(delivery_item__internal_code__icontains=query))
+                .filter(multi_token_icontains_q(query, ['delivery_item__name', 'delivery_item__internal_code']))
                 .annotate(similarity=TrigramSimilarity('delivery_item__name', query))
                 .order_by('-similarity', 'expiry_date')
             )
