@@ -122,6 +122,35 @@ button, .btn-primary { background-color: var(--accent-color); color: white; }
     color: white;
 }
 
+/* Shared "Show on POS" toggle button -- Products grid and Categories list
+   both use it, one click flips the state immediately (no separate "Enable
+   Edit" step needed, unlike the grid's other inline-edit fields). A plain
+   <button> inherits the global `button { color: white; }` rule above, so
+   both states set color explicitly -- otherwise the off state renders
+   invisible white text on its own light background (see CLAUDE.md
+   "Технически капани"). */
+.pos-toggle-btn {
+    border: 1px solid #ced4da;
+    border-radius: 999px;
+    padding: 0.2rem 0.85rem;
+    background: #f1f3f5;
+    color: #495057;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.pos-toggle-btn--on {
+    background: #2f6f4f;
+    border-color: #2f6f4f;
+    color: #ffffff;
+}
+
+.pos-toggle-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
 
 th:last-child {
     text-align: center;
@@ -222,6 +251,89 @@ input[type="text"], input[type="number"], input[type="email"], select, textarea 
     min-width: 280px;
 }
 
+.section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.category-edit-btn {
+    border: 1px solid #adb5bd;
+    border-radius: 0.4rem;
+    padding: 0.3rem 0.7rem;
+    background: #ffffff;
+    color: #212529;
+    cursor: pointer;
+}
+
+.category-edit-btn.is-active {
+    background: #0b3d91;
+    border-color: #0b3d91;
+    color: #ffffff;
+}
+
+/* Fixed shortcut bar -- a cashier-curated mix of category and product
+   buttons (PosPin model) that stays visible regardless of how deep the
+   folder browser below has drilled in. Dashed border + tinted background
+   mark it as a distinct "always here" strip, not just another grid. */
+.category-pinned-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    min-height: 2.4rem;
+    padding: 0.4rem;
+    margin-bottom: 0.6rem;
+    background: #f8f9fa;
+    border: 1px dashed #ced4da;
+    border-radius: 0.5rem;
+}
+
+.category-pin-btn {
+    min-height: 2.4rem;
+}
+
+.category-pin-btn.is-open {
+    box-shadow: inset 0 0 0 2px #0b3d91;
+}
+
+.category-pin-wrapper {
+    position: relative;
+    display: inline-flex;
+}
+
+.category-pin-remove-btn {
+    position: absolute;
+    top: -0.5rem;
+    right: -0.5rem;
+    width: 1.4rem;
+    height: 1.4rem;
+    padding: 0;
+    border: 1px solid #e35d6a;
+    border-radius: 50%;
+    background: #f8d7da;
+    color: #842029;
+    font-size: 0.85rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.category-pin-add-btn {
+    min-height: 2.4rem;
+    padding: 0.35rem 0.9rem;
+    border: 1px dashed #adb5bd;
+    border-radius: 0.6rem;
+    background: #ffffff;
+    color: #495057;
+    cursor: pointer;
+}
+
+.category-pin-picker {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.6rem;
+}
+
 .category-breadcrumb {
     display: flex;
     align-items: center;
@@ -230,13 +342,18 @@ input[type="text"], input[type="number"], input[type="email"], select, textarea 
     font-weight: 600;
 }
 
-.category-back-btn {
+.category-page-indicator {
+    margin-left: auto;
     background: none;
     border: 1px solid #ced4da;
     border-radius: 0.4rem;
-    padding: 0.25rem 0.6rem;
+    padding: 0.2rem 0.5rem;
+    font-size: 0.85rem;
+    font-weight: 400;
+    color: #212529;
     cursor: pointer;
 }
+
 
 .category-grid {
     display: flex;
@@ -245,49 +362,179 @@ input[type="text"], input[type="number"], input[type="email"], select, textarea 
     margin-bottom: 0.75rem;
 }
 
+/* A plain global `button { color: white; }` rule elsewhere in this file
+   (for the app's filled action buttons) was leaking into every button
+   added for the POS screen -- white text on these buttons' light
+   backgrounds was invisible. Every button class from here down sets its
+   own `color` explicitly instead of relying on that default. */
 .category-folder-btn,
 .category-product-btn {
     flex: 1 1 120px;
     min-height: 60px;
     border: 1px solid #ced4da;
     border-radius: 0.6rem;
-    background: #f8f9fa;
+    background: #ffffff;
+    color: #212529;
     cursor: pointer;
     font-weight: 600;
     padding: 0.5rem;
 }
 
 .category-folder-btn {
-    background: #fff3cd;
-    border-color: #ffe69c;
+    background: #e7f1ff;
+    border-color: #8ec1ff;
+    color: #0b3d91;
 }
 
 .category-product-btn:hover {
     background: #e9ecef;
 }
 
-.payment-method-buttons {
+/* Checkout modal -- a small till-display design pass (see CLAUDE.md
+   "Дизайн / UI задачи"): the amount tiles read like a cash register's own
+   display (paper surface, tabular-figure digits, a colored spine that
+   threads back to whichever payment method is selected), not a generic
+   form. Three columns -- methods, tiles, keypad -- not one long stack. */
+.checkout-modal-dialog {
+    --pos-ink: #1c2b2d;
+    --pos-paper: #f7f5f0;
+    --pos-cash: #2f6f4f;
+    --pos-card: #2a4d7a;
+    --pos-mixed: #9a5b1f;
+    max-width: 560px;
+}
+
+.checkout-modal-dialog .modal-body {
+    padding: 0.85rem 1rem;
+}
+
+.checkout-modal-body {
     display: flex;
+    gap: 0.85rem;
+    align-items: flex-start;
+}
+
+.checkout-methods-col {
+    flex: 0 0 110px;
+    display: flex;
+    flex-direction: column;
     gap: 0.5rem;
 }
 
 .payment-method-btn {
-    flex: 1;
-    padding: 0.75rem;
-    border: 2px solid #ced4da;
-    border-radius: 0.6rem;
-    background: #f8f9fa;
+    width: 100%;
+    min-height: 4.5rem;
+    padding: 0.5rem;
+    border: 2px solid #adb5bd;
+    border-radius: 0.5rem;
+    background: #ffffff;
+    color: var(--pos-ink);
     font-weight: 700;
     cursor: pointer;
 }
 
-.payment-method-btn.is-selected {
-    border-color: #198754;
-    background: #d1e7dd;
+.payment-method-btn[data-method="CASH"].is-selected { border-color: var(--pos-cash); background: var(--pos-cash); color: #ffffff; }
+.payment-method-btn[data-method="CARD"].is-selected { border-color: var(--pos-card); background: var(--pos-card); color: #ffffff; }
+.payment-method-btn[data-method="MIXED"].is-selected { border-color: var(--pos-mixed); background: var(--pos-mixed); color: #ffffff; }
+
+/* The tiles -- Total/Paid-or-Card/Change -- are the one deliberately bold
+   element of this modal; everything else stays quiet around them. Each is
+   its own paper-toned rectangle with a colored left spine, not just text
+   in a row, so Total/Paid/Change read as distinct at a glance. */
+.checkout-tiles-col {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
 }
 
-.checkout-total-row {
+.checkout-tile {
+    background: var(--pos-paper);
+    border: 1px solid #ddd7c8;
+    border-left: 5px solid var(--pos-ink);
+    border-radius: 0.4rem;
+    padding: 0.4rem 0.65rem;
+    display: flex;
+    flex-direction: column;
+}
+
+.checkout-tile__label {
+    font-size: 0.8rem;
+    color: #5b6664;
+    margin-bottom: 0.1rem;
+}
+
+.checkout-tile__value,
+.checkout-tile__input {
+    font-size: 1.5rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--pos-ink);
+    line-height: 1.15;
+}
+
+.checkout-tile__input {
+    border: none;
+    background: transparent;
+    padding: 0;
+    width: 100%;
+}
+
+.checkout-tile__input:focus {
+    outline: none;
+}
+
+/* Paid/Card-amount/Change/Cash-remainder tint to whichever method is
+   selected -- the thread connecting the method button to its own amounts.
+   Total stays neutral ink -- it's the same number regardless of method. */
+.checkout-tiles-col[data-method="CASH"] .checkout-tile--input,
+.checkout-tiles-col[data-method="CASH"] .checkout-tile--change {
+    border-left-color: var(--pos-cash);
+}
+.checkout-tiles-col[data-method="CARD"] .checkout-tile--change {
+    border-left-color: var(--pos-card);
+}
+.checkout-tiles-col[data-method="MIXED"] .checkout-tile--input,
+.checkout-tiles-col[data-method="MIXED"] .checkout-tile--change {
+    border-left-color: var(--pos-mixed);
+}
+
+.checkout-keypad-col {
+    flex: 0 0 auto;
+}
+
+/* On-screen keypad -- most shops run this on a touchscreen with no
+   physical keyboard, so buttons need to be big enough to tap reliably with
+   a finger (44px is the usual touch-target minimum). aspect-ratio:1 keeps
+   them square regardless of the modal's width. */
+.checkout-keypad {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.35rem;
+    width: 11.5rem;
+}
+
+.keypad-btn {
+    aspect-ratio: 1;
     font-size: 1.2rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    border: 1px solid #adb5bd;
+    border-radius: 0.5rem;
+    background: #ffffff;
+    color: var(--pos-ink);
+    cursor: pointer;
+}
+
+.keypad-btn:active {
+    background: #dee2e6;
+}
+
+.keypad-btn--del {
+    background: #f8d7da;
+    border-color: #e35d6a;
+    color: #842029;
 }
 
 /* Write-off is the same screen/grid as a delivery, just moving stock the

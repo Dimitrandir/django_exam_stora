@@ -10,6 +10,7 @@
             <th>Name</th>
             <th>Parent</th>
             <th>Description</th>
+            <th>Show on POS</th>
             <th>{% if perms.products.add_category %}<a href="{% url 'category_create' %}" class="add-btn-table" title="Add a new category">+</a>{% endif %}</th>
         </tr>
     </thead>
@@ -20,6 +21,13 @@
             <td>{{ category.parent.name|default:"—" }}</td>
             <td>{{ category.description }}</td>
             <td>
+                <button
+                    type="button" class="pos-toggle-btn{% if category.show_on_pos %} pos-toggle-btn--on{% endif %}"
+                    data-pk="{{ category.pk }}"
+                    {% if not perms.products.change_category %}disabled{% endif %}
+                >{% if category.show_on_pos %}On{% else %}Off{% endif %}</button>
+            </td>
+            <td>
                 {% if perms.products.change_category %}<a href="{% url 'category_edit' category.pk %}">Edit</a>{% endif %}
                 {% if perms.products.change_category and perms.products.delete_category %}|{% endif %}
                 {% if perms.products.delete_category %}<a href="{% url 'category_delete' category.pk %}">Delete</a>{% endif %}
@@ -27,10 +35,50 @@
         </tr>
         {% empty %}
         <tr>
-            <td colspan="4">No categories found.</td>
+            <td colspan="5">No categories found.</td>
         </tr>
         {% endfor %}
     </tbody>
 </table>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    function getCookie(name) {
+        var match = document.cookie.match('(?:^|; )' + name + '=([^;]*)');
+        return match ? decodeURIComponent(match[1]) : '';
+    }
+
+    document.querySelectorAll('.pos-toggle-btn').forEach(function (btn) {
+        if (btn.disabled) return;
+        btn.addEventListener('click', function () {
+            var turningOn = !btn.classList.contains('pos-toggle-btn--on');
+            var body = new URLSearchParams();
+            body.set('value', turningOn ? 'true' : 'false');
+
+            function applyState(on) {
+                btn.classList.toggle('pos-toggle-btn--on', on);
+                btn.textContent = on ? 'On' : 'Off';
+            }
+            applyState(turningOn);
+
+            fetch('/products/categories/' + btn.dataset.pk + '/toggle-pos/', {
+                method: 'POST',
+                headers: {'X-CSRFToken': getCookie('csrftoken')},
+                body: body,
+            })
+                .then(function (response) {
+                    if (!response.ok) {
+                        applyState(!turningOn);
+                        alert('Could not save the change.');
+                    }
+                })
+                .catch(function () {
+                    applyState(!turningOn);
+                    alert('Network error -- change was not saved.');
+                });
+        });
+    });
+});
+</script>
 
 {% endblock %}

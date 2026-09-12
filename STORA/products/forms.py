@@ -17,7 +17,7 @@ class ProductForms(forms.ModelForm):
         # Suppliers are managed entirely through ProductSupplierFormSet.
         fields = [
             'internal_code', 'name', 'unit_type', 'delivery_price', 'sell_price', 'category', 'tax_group',
-            'quantity', 'is_recipe',
+            'quantity', 'is_recipe', 'show_on_pos',
         ]
 
         labels = {
@@ -25,6 +25,7 @@ class ProductForms(forms.ModelForm):
             'delivery_price': 'Last Delivery Price',
             'sell_price': 'Selling Price',
             'quantity': 'Current Stock',
+            'show_on_pos': 'Show on POS screen',
         }
 
     def __init__(self, *args, **kwargs):
@@ -50,13 +51,13 @@ class ProductForms(forms.ModelForm):
 
 class ProductInlineEditForm(forms.ModelForm):
     """Backs the Products grid's inline "Enable Edit" mode -- deliberately
-    only the 4 fields safe to edit cell-by-cell. `quantity` is excluded on
+    only the fields safe to edit cell-by-cell. `quantity` is excluded on
     purpose: it must only change via Deliveries/Sales, same rule as the
     regular edit form (see ProductForms)."""
 
     class Meta:
         model = Product
-        fields = ['name', 'unit_type', 'category', 'sell_price', 'delivery_price']
+        fields = ['name', 'unit_type', 'category', 'sell_price', 'delivery_price', 'show_on_pos']
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -68,9 +69,12 @@ class ProductInlineEditForm(forms.ModelForm):
 class CategoryForm(forms.ModelForm):
     class Meta:
         model = Category
-        fields = ['name', 'description', 'parent']
+        fields = ['name', 'description', 'parent', 'show_on_pos']
 
-        labels = {'name': 'Category Name', 'description': 'Description', 'parent': 'Parent Category'}
+        labels = {
+            'name': 'Category Name', 'description': 'Description', 'parent': 'Parent Category',
+            'show_on_pos': 'Show on POS screen',
+        }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

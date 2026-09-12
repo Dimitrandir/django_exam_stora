@@ -72,6 +72,7 @@ class ProductListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListView
                 'category': product.category.name if product.category else '',
                 'unit_type': product.unit_type,
                 'is_recipe': product.is_recipe,
+                'show_on_pos': product.show_on_pos,
                 'quantity': float(product.quantity),
                 'sell_price': float(product.sell_price) if product.sell_price is not None else None,
                 'delivery_price': float(product.delivery_price) if product.delivery_price is not None else None,
@@ -541,6 +542,21 @@ class CategoryListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListVie
 
     def get_queryset(self):
         return super().get_queryset().select_related('parent')
+
+
+class CategoryTogglePosView(LoginRequiredMixin, StaffPermissionRequiredMixin, View):
+    """Backs the single checkbox column on the Categories list -- the list
+    itself is still a plain HTML table (see CLAUDE.md, Tabulator-ifying it
+    is a separate Фаза 1.5 item), so this is a lightweight one-field toggle
+    rather than the full Products-grid inline-edit machinery."""
+
+    permission_required = 'products.change_category'
+
+    def post(self, request, pk):
+        category = get_object_or_404(Category, pk=pk)
+        category.show_on_pos = request.POST.get('value') == 'true'
+        category.save(update_fields=['show_on_pos'])
+        return JsonResponse({'show_on_pos': category.show_on_pos})
 
 
 class CategoryCreateView(LoginRequiredMixin, StaffPermissionRequiredMixin, CreateView):

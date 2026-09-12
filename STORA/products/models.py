@@ -42,6 +42,13 @@ class Category(models.Model):
     # top-level), it doesn't take them down with it.
     parent = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True,
                                related_name='subcategories', verbose_name='Parent Category')
+    # Curated opt-in, not opt-out -- a new category defaults to hidden from
+    # the POS screen until someone explicitly flags it. Controls the
+    # category-folders panel in sales/sale_add.html, not the Products list.
+    show_on_pos = models.BooleanField(
+        default=False, verbose_name='Show on POS screen',
+        help_text='If checked, this category appears as a folder button on the cash register screen.',
+    )
 
     class Meta:
         indexes = [
@@ -131,6 +138,13 @@ class Product(models.Model):
     sell_price = models.DecimalField(validators=[MinValueValidator(0.01)], max_digits=9,
                                      decimal_places=2, verbose_name='sale price', help_text="Selling price per unit")
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, related_name='product')
+    # Same curated opt-in idea as Category.show_on_pos -- lets a category
+    # with many products show only a hand-picked subset of them as buttons
+    # on the POS screen, instead of every product in it.
+    show_on_pos = models.BooleanField(
+        default=False, verbose_name='Show on POS screen',
+        help_text='If checked, this product appears as a button when its category is opened on the cash register screen.',
+    )
     tax_group = models.ForeignKey(
         TaxGroup, on_delete=models.SET_NULL, null=True, blank=True, related_name='products',
         verbose_name='Tax group',

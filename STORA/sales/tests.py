@@ -1,11 +1,14 @@
+import json
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
 
+from django.utils import timezone
+
 from STORA.products.models import Category, Product, RecipeIngredient
-from STORA.sales.models import SaleAttributes, SaleItems
+from STORA.sales.models import SaleAttributes, SaleItems, PosPin
 from STORA.sales.forms import SaleItemForm
 from STORA.sales.tasks import backfill_recipe_ingredient_stock
 
@@ -195,6 +198,35 @@ class SalesFormSubmissionTests(TestCase):
         self.assertEqual(sale.amount_paid, Decimal('20.00'))
         self.assertEqual(sale.change_due, Decimal('10.00'))
 
+    def test_creating_sale_with_mixed_payment(self):
+        # Split payment: part card, the remainder in cash (assumed exact,
+        # no change) -- what the checkout modal posts when "Mixed" is
+        # selected.
+        data = {
+            'cashier': self.cashier.pk,
+            'payment_method': SaleAttributes.MIXED,
+            'amount_paid': '4.00',
+            'card_amount': '6.00',
+            'change_due': '0.00',
+            'items-TOTAL_FORMS': '1',
+            'items-INITIAL_FORMS': '0',
+            'items-MIN_NUM_FORMS': '0',
+            'items-MAX_NUM_FORMS': '1000',
+            'items-0-sale_item': self.product.pk,
+            'items-0-sale_quantity': '4',
+            'items-0-price_at_sale': '2.50',
+            'items-0-total_price_row': '10.00',
+            'items-0-DELETE': '',
+        }
+        response = self.client.post(reverse('sale_add'), data)
+        self.assertRedirects(response, reverse('sales_list'))
+
+        sale = SaleAttributes.objects.get(cashier=self.cashier)
+        self.assertEqual(sale.payment_method, SaleAttributes.MIXED)
+        self.assertEqual(sale.amount_paid, Decimal('4.00'))
+        self.assertEqual(sale.card_amount, Decimal('6.00'))
+        self.assertEqual(sale.card_amount + sale.amount_paid, sale.total_amount)
+
 
 class SalePaymentFieldsTests(TestCase):
     """SaleAttributes.payment_method/amount_paid/change_due (Фаза 2 step 1,
@@ -208,6 +240,7 @@ class SalePaymentFieldsTests(TestCase):
         sale = SaleAttributes.objects.create(cashier=self.cashier)
         self.assertIsNone(sale.payment_method)
         self.assertIsNone(sale.amount_paid)
+        self.assertIsNone(sale.card_amount)
         self.assertIsNone(sale.change_due)
 
     def test_stores_cash_payment_with_change(self):
@@ -217,6 +250,14 @@ class SalePaymentFieldsTests(TestCase):
         )
         self.assertEqual(sale.payment_method, SaleAttributes.CASH)
         self.assertEqual(sale.change_due, Decimal('2.50'))
+
+    def test_stores_mixed_payment_split_between_cash_and_card(self):
+        sale = SaleAttributes.objects.create(
+            cashier=self.cashier, payment_method=SaleAttributes.MIXED,
+            amount_paid=Decimal('4.00'), card_amount=Decimal('6.00'), change_due=Decimal('0.00'),
+        )
+        self.assertEqual(sale.payment_method, SaleAttributes.MIXED)
+        self.assertEqual(sale.card_amount, Decimal('6.00'))
 
 
 class SalesAddCategoryPanelDataTests(TestCase):
@@ -244,6 +285,152 @@ class SalesAddCategoryPanelDataTests(TestCase):
         by_id = {c['id']: c for c in response.context['categories_data']}
         self.assertIsNone(by_id[self.drinks.pk]['parent_id'])
         self.assertEqual(by_id[self.sodas.pk]['parent_id'], self.drinks.pk)
+
+
+class PosShowOnPosDataTests(TestCase):
+    """Category.show_on_pos/Product.show_on_pos control the POS screen's
+    category quick-pick panel -- sales_add's context carries the flag for
+    both, and the full (unfiltered) products_data stays available so
+    findProductByCode (barcode/code search) keeps working for every
+    product regardless of this flag."""
+
+    def setUp(self):
+        self.cashier = User.objects.create_user(username='pos-flag-cashier', password='pass12345', role=User.CASHIER)
+        self.client.force_login(self.cashier)
+        self.visible_category = Category.objects.create(name='Visible Category', show_on_pos=True)
+        self.hidden_category = Category.objects.create(name='Hidden Category', show_on_pos=False)
+        self.visible_product = Product.objects.create(
+            internal_code='POS0001', name='Visible Product', sell_price=Decimal('2.00'), quantity=10,
+            category=self.visible_category, show_on_pos=True,
+        )
+        self.hidden_product = Product.objects.create(
+            internal_code='POS0002', name='Hidden Product', sell_price=Decimal('2.00'), quantity=10,
+            category=self.visible_category, show_on_pos=False,
+        )
+
+    def test_categories_data_carries_show_on_pos(self):
+        response = self.client.get(reverse('sale_add'))
+        by_id = {c['id']: c for c in response.context['categories_data']}
+        self.assertTrue(by_id[self.visible_category.pk]['show_on_pos'])
+        self.assertFalse(by_id[self.hidden_category.pk]['show_on_pos'])
+
+    def test_products_data_carries_show_on_pos_but_is_not_filtered(self):
+        # The view must NOT drop hidden products from products_data -- the
+        # barcode/code search box still needs to find them.
+        response = self.client.get(reverse('sale_add'))
+        by_id = {p['id']: p for p in response.context['products_data']}
+        self.assertTrue(by_id[self.visible_product.pk]['show_on_pos'])
+        self.assertFalse(by_id[self.hidden_product.pk]['show_on_pos'])
+
+    def test_new_category_and_product_default_to_hidden(self):
+        self.assertFalse(Category.objects.create(name='Brand New Category').show_on_pos)
+        self.assertFalse(
+            Product.objects.create(
+                internal_code='POS0003', name='Brand New Product', sell_price=Decimal('1.00'),
+            ).show_on_pos
+        )
+
+
+class PosRecentSalesRankingTests(TestCase):
+    """products_data carries recent_qty (total sold in the last
+    POS_RECENT_SALES_DAYS days) -- the category panel's JS uses it to put
+    the most-recently-popular products in the first slots when a category
+    is opened. Sales older than the window don't count."""
+
+    def setUp(self):
+        self.cashier = User.objects.create_user(username='pos-recent-cashier', password='pass12345', role=User.CASHIER)
+        self.client.force_login(self.cashier)
+        self.category = Category.objects.create(name='Recent Sales Category', show_on_pos=True)
+        self.popular = Product.objects.create(
+            internal_code='REC0001', name='Popular Product', sell_price=Decimal('1.00'), quantity=100,
+            category=self.category, show_on_pos=True,
+        )
+        self.quiet = Product.objects.create(
+            internal_code='REC0002', name='Quiet Product', sell_price=Decimal('1.00'), quantity=100,
+            category=self.category, show_on_pos=True,
+        )
+        sale = SaleAttributes.objects.create(cashier=self.cashier)
+        SaleItems.objects.create(sale=sale, sale_item=self.popular, sale_quantity=Decimal('5'), price_at_sale=Decimal('1.00'))
+
+        old_sale = SaleAttributes.objects.create(cashier=self.cashier)
+        old_item = SaleItems.objects.create(sale=old_sale, sale_item=self.quiet, sale_quantity=Decimal('9'), price_at_sale=Decimal('1.00'))
+        # Back-date the old sale past the recent-sales window -- update()
+        # bypasses auto_now_add so this sticks.
+        SaleAttributes.objects.filter(pk=old_sale.pk).update(time_of_sale=timezone.now() - timezone.timedelta(days=30))
+
+    def test_recent_qty_counts_only_sales_within_the_window(self):
+        response = self.client.get(reverse('sale_add'))
+        by_id = {p['id']: p for p in response.context['products_data']}
+        self.assertEqual(by_id[self.popular.pk]['recent_qty'], 5.0)
+        self.assertEqual(by_id[self.quiet.pk]['recent_qty'], 0.0)
+
+
+class PosPinViewTests(TestCase):
+    """PosPin rows (the fixed shortcut bar's contents) are managed through
+    two plain POST endpoints reached from the POS screen's own "edit
+    shortcuts" mode -- see sale_add.html. Only show_on_pos items can be
+    pinned; pos_pins_data in sales_add's context reflects current pins."""
+
+    def setUp(self):
+        self.cashier = User.objects.create_user(username='pos-pin-cashier', password='pass12345', role=User.CASHIER)
+        self.client.force_login(self.cashier)
+        self.category = Category.objects.create(name='Pinnable Category', show_on_pos=True)
+        self.hidden_category = Category.objects.create(name='Unpinnable Category', show_on_pos=False)
+        self.product = Product.objects.create(
+            internal_code='PIN0001', name='Pinnable Product', sell_price=Decimal('1.00'), quantity=10,
+            show_on_pos=True,
+        )
+
+    def test_pos_pins_data_reflects_existing_pins_in_position_order(self):
+        PosPin.objects.create(product=self.product, position=2)
+        PosPin.objects.create(category=self.category, position=1)
+
+        response = self.client.get(reverse('sale_add'))
+        pins = response.context['pos_pins_data']
+        self.assertEqual([p['type'] for p in pins], ['category', 'product'])
+        self.assertEqual(pins[0]['name'], self.category.name)
+
+    def test_add_category_pin(self):
+        response = self.client.post(
+            reverse('pos_pin_add'), data=json.dumps({'type': 'category', 'target_id': self.category.pk}),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+        pin = PosPin.objects.get()
+        self.assertEqual(pin.category_id, self.category.pk)
+        self.assertIsNone(pin.product_id)
+
+    def test_add_product_pin(self):
+        response = self.client.post(
+            reverse('pos_pin_add'), data=json.dumps({'type': 'product', 'target_id': self.product.pk}),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+        pin = PosPin.objects.get()
+        self.assertEqual(pin.product_id, self.product.pk)
+        self.assertIsNone(pin.category_id)
+
+    def test_cannot_pin_a_category_that_is_not_show_on_pos(self):
+        response = self.client.post(
+            reverse('pos_pin_add'), data=json.dumps({'type': 'category', 'target_id': self.hidden_category.pk}),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(PosPin.objects.exists())
+
+    def test_remove_pin(self):
+        pin = PosPin.objects.create(product=self.product, position=1)
+        response = self.client.post(reverse('pos_pin_remove', kwargs={'pk': pin.pk}))
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(PosPin.objects.exists())
+
+    def test_pin_endpoints_require_login(self):
+        self.client.logout()
+        response = self.client.post(
+            reverse('pos_pin_add'), data=json.dumps({'type': 'product', 'target_id': self.product.pk}),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 302)
 
 
 class SaleFormValidationTests(TestCase):

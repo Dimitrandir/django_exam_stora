@@ -5,7 +5,7 @@ from .views import (
     ProductListView, ProductCreateView, ProductDeleteView, ProductUpdateView, ProductDetailView,
     ProductHistoryView, ProductInlineUpdateView, ProductBulkActionView, IngredientSearchView,
     SupplierSearchView,
-    CategoryListView, CategoryCreateView, CategoryDeleteView, CategoryUpdateView,
+    CategoryListView, CategoryCreateView, CategoryDeleteView, CategoryUpdateView, CategoryTogglePosView,
     SuppliersListView, SupplierCreateView, SupplierUpdateView, SupplierDeleteView,
     TaxGroupListView, TaxGroupCreateView, TaxGroupUpdateView, TaxGroupDeleteView,
 )
@@ -24,6 +24,7 @@ urlpatterns = [
     path('categories/', CategoryListView.as_view(), name='category_list'),
     path('categories/add/', CategoryCreateView.as_view(), name='category_create'),
     path('categories/edit/<int:pk>/', CategoryUpdateView.as_view(), name='category_edit'),
+    path('categories/<int:pk>/toggle-pos/', CategoryTogglePosView.as_view(), name='category_toggle_pos'),
     path('categories/delete/<int:pk>/', CategoryDeleteView.as_view(), name='category_delete'),
     path('tax-groups/', TaxGroupListView.as_view(), name='tax_group_list'),
     path('tax-groups/add/', TaxGroupCreateView.as_view(), name='tax_group_create'),

@@ -1,8 +1,12 @@
+from datetime import timedelta
+
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.db.models import Max, Sum
 from django.http import JsonResponse
-from django.shortcuts import render, redirect
+from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse_lazy
+from django.utils import timezone
 from django.views.generic import ListView, DetailView, DeleteView
 from django.views.decorators.http import require_POST
 from STORA.sales.tasks import log_sale_completed
@@ -19,7 +23,12 @@ from STORA.core.session_service import (
 from STORA.core.utils import build_cashier_operation_state, build_restore_formset_data, dispatch_task
 from STORA.products.models import Product, Barcode, Category
 from STORA.sales.forms import SaleForms, SaleItemFormSet
-from STORA.sales.models import SaleAttributes
+from STORA.sales.models import SaleAttributes, SaleItems, PosPin
+
+# How many days back counts as "recently sold" for the top-3 most-popular
+# products shown first when a category is opened on the POS screen (Фаза 2
+# pinned-shortcuts feature). Arbitrary but reasonable -- easy to tune later.
+POS_RECENT_SALES_DAYS = 7
 
 
 @login_required
@@ -27,10 +36,34 @@ from STORA.sales.models import SaleAttributes
 def sales_add(request):
     # category_id feeds the category/subcategory quick-pick panel (Фаза 2) --
     # it groups these same products by category client-side, no extra
-    # requests per click.
-    products_data = list(Product.objects.values('id', 'internal_code', 'name', 'sell_price', 'unit_type', 'category_id'))
+    # requests per click. show_on_pos is included so the panel's own JS can
+    # filter to curated items -- the barcode/code search (findProductByCode)
+    # deliberately still searches ALL products regardless of this flag, so
+    # the full Product queryset (not a show_on_pos-filtered one) stays here.
+    recent_cutoff = timezone.now() - timedelta(days=POS_RECENT_SALES_DAYS)
+    recent_qty_by_product = dict(
+        SaleItems.objects.filter(sale__time_of_sale__gte=recent_cutoff)
+        .values('sale_item_id')
+        .annotate(total_qty=Sum('sale_quantity'))
+        .values_list('sale_item_id', 'total_qty')
+    )
+    products_data = [
+        {**row, 'recent_qty': float(recent_qty_by_product.get(row['id'], 0))}
+        for row in Product.objects.values(
+            'id', 'internal_code', 'name', 'sell_price', 'unit_type', 'category_id', 'show_on_pos',
+        )
+    ]
     barcodes_data = list(Barcode.objects.values('code', 'product_id', 'is_scale_code'))
-    categories_data = list(Category.objects.values('id', 'name', 'parent_id'))
+    categories_data = list(Category.objects.values('id', 'name', 'parent_id', 'show_on_pos'))
+    pos_pins_data = [
+        {
+            'id': pin.id,
+            'type': 'category' if pin.category_id else 'product',
+            'target_id': pin.category_id or pin.product_id,
+            'name': pin.category.name if pin.category_id else pin.product.name,
+        }
+        for pin in PosPin.objects.select_related('category', 'product').order_by('position')
+    ]
 
     formset_prefix = 'items'
     state = get_cashier_operation_state(request)
@@ -99,6 +132,7 @@ def sales_add(request):
         'products_data': products_data,
         'barcodes_data': barcodes_data,
         'categories_data': categories_data,
+        'pos_pins_data': pos_pins_data,
         'sale_draft': sale_draft,
         'sale_formset_initial_count': len(formset_initial) if formset_initial else 0,
     }
@@ -147,4 +181,37 @@ def sales_draft_save(request):
         active=True,
     )
     set_cashier_operation_state(request, draft)
+    return JsonResponse({'status': 'ok'})
+
+
+@login_required
+@permission_required('sales.add_saleattributes', raise_exception=True)
+@require_POST
+def pos_pin_add(request):
+    """Pins a category or product to the fixed shortcut bar on the POS
+    screen (edit mode, sale_add.html). Only items flagged `show_on_pos`
+    can be pinned -- the picker that calls this only ever offers those,
+    but it's re-checked here too since this is a plain POST endpoint."""
+    payload = json.loads(request.body.decode('utf-8'))
+    pin_type = payload.get('type')
+    target_id = payload.get('target_id')
+    next_position = (PosPin.objects.aggregate(Max('position'))['position__max'] or 0) + 1
+
+    if pin_type == 'category':
+        category = get_object_or_404(Category, pk=target_id, show_on_pos=True)
+        PosPin.objects.create(category=category, position=next_position)
+    elif pin_type == 'product':
+        product = get_object_or_404(Product, pk=target_id, show_on_pos=True)
+        PosPin.objects.create(product=product, position=next_position)
+    else:
+        return JsonResponse({'error': 'Invalid type'}, status=400)
+
+    return JsonResponse({'status': 'ok'})
+
+
+@login_required
+@permission_required('sales.add_saleattributes', raise_exception=True)
+@require_POST
+def pos_pin_remove(request, pk):
+    PosPin.objects.filter(pk=pk).delete()
     return JsonResponse({'status': 'ok'})

@@ -93,6 +93,48 @@ document.addEventListener('DOMContentLoaded', function () {
         delivery_price: {editor: 'number', editorParams: {min: 0, step: 0.01}},
     };
 
+    // show_on_pos isn't part of editorConfig/"Enable Edit" -- it's a quick,
+    // low-stakes toggle meant to be flipped often while curating what shows
+    // on the cash register, not a deliberate structural edit like renaming
+    // a product. Its own button is clickable directly, with or without
+    // Edit mode on, same as the Categories list's toggle button.
+    function postInlineUpdate(productId, field, value) {
+        var body = new URLSearchParams();
+        body.set('field', field);
+        body.set('value', value === null || value === undefined ? '' : String(value));
+        return fetch('/products/' + productId + '/inline-update/', {
+            method: 'POST',
+            headers: {'X-CSRFToken': getCookie('csrftoken')},
+            body: body,
+        }).then(function (response) {
+            return response.json().then(function (data) {
+                return {ok: response.ok, data: data};
+            });
+        });
+    }
+
+    function posToggleFormatter(cell) {
+        return cell.getValue()
+            ? '<button type="button" class="pos-toggle-btn pos-toggle-btn--on">On</button>'
+            : '<button type="button" class="pos-toggle-btn">Off</button>';
+    }
+
+    function posToggleCellClick(e, cell) {
+        var newValue = !cell.getValue();
+        cell.setValue(newValue);
+        postInlineUpdate(cell.getRow().getData().id, 'show_on_pos', newValue)
+            .then(function (result) {
+                if (!result.ok) {
+                    alert(result.data.error || 'Could not save the change.');
+                    cell.setValue(!newValue);
+                }
+            })
+            .catch(function () {
+                alert('Network error -- change was not saved.');
+                cell.setValue(!newValue);
+            });
+    }
+
     var table = initExcelStyleTable('#products-table', 'products-table-data', [
         {
             formatter: 'rowSelection', titleFormatter: 'rowSelection', hozAlign: 'center',
@@ -107,6 +149,10 @@ document.addEventListener('DOMContentLoaded', function () {
             title: 'Recipe', field: 'is_recipe', width: 90,
             formatter: function (cell) { return cell.getValue() ? 'Yes' : 'No'; },
             visible: false,
+        },
+        {
+            title: 'Show on POS', field: 'show_on_pos', width: 120, hozAlign: 'center',
+            formatter: posToggleFormatter, cellClick: posToggleCellClick,
         },
         {
             title: 'Sell Price', field: 'sell_price', width: 120, hozAlign: 'right', sorter: 'number',
@@ -136,14 +182,15 @@ document.addEventListener('DOMContentLoaded', function () {
     ], {placeholder: 'No products found.', selectableRows: true});
 
     // Row click opens the product -- disabled while Edit mode is on, since
-    // every editable cell removes its own editor in that state (see below)
-    // and a stray click on the selection checkbox column (no field) should
-    // just select, not navigate.
+    // every editable cell removes its own editor in that state (see below),
+    // a stray click on the selection checkbox column (no field) should just
+    // select, not navigate, and the show_on_pos toggle button handles its
+    // own click (see posToggleCellClick) regardless of Edit mode.
     table.on('rowClick', function (e, row) {
         if (editMode) return;
         var cellEl = e.target.closest('.tabulator-cell');
         var field = cellEl ? cellEl.getAttribute('tabulator-field') : null;
-        if (field === null) return; // the selection checkbox column has no field
+        if (field === null || field === 'show_on_pos') return;
         window.location = row.getData().view_url;
     });
 
@@ -171,24 +218,7 @@ document.addEventListener('DOMContentLoaded', function () {
         });
 
         table.on('cellEdited', function (cell) {
-            var field = cell.getField();
-            var productId = cell.getRow().getData().id;
-            var value = cell.getValue();
-
-            var body = new URLSearchParams();
-            body.set('field', field);
-            body.set('value', value === null || value === undefined ? '' : String(value));
-
-            fetch('/products/' + productId + '/inline-update/', {
-                method: 'POST',
-                headers: {'X-CSRFToken': getCookie('csrftoken')},
-                body: body,
-            })
-                .then(function (response) {
-                    return response.json().then(function (data) {
-                        return {ok: response.ok, data: data};
-                    });
-                })
+            postInlineUpdate(cell.getRow().getData().id, cell.getField(), cell.getValue())
                 .then(function (result) {
                     if (!result.ok) {
                         alert(result.data.error || 'Could not save the change.');

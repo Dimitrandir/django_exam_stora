@@ -6,13 +6,14 @@ from STORA.sales.models import SaleItems, SaleAttributes
 class SaleForms(forms.ModelForm):
     class Meta:
         model = SaleAttributes
-        fields = ['cashier', 'payment_method', 'amount_paid', 'change_due']
+        fields = ['cashier', 'payment_method', 'amount_paid', 'card_amount', 'change_due']
         labels = {'cashier': 'Cashier'}
         widgets = {
-            # Set by the checkout modal's JS (Фаза 2, still being built in
-            # stages) -- not rendered as visible form controls here.
+            # Set by the checkout modal's JS -- not rendered as visible
+            # form controls here.
             'payment_method': forms.HiddenInput(),
             'amount_paid': forms.HiddenInput(),
+            'card_amount': forms.HiddenInput(),
             'change_due': forms.HiddenInput(),
         }
 

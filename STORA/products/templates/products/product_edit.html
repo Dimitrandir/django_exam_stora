@@ -94,6 +94,12 @@
             {{ form.category.errors }}
         </p>
 
+        <p>
+            <label>{{ form.show_on_pos }} {{ form.show_on_pos.label }}</label>
+            <small>{{ form.show_on_pos.help_text }}</small>
+            {{ form.show_on_pos.errors }}
+        </p>
+
         <hr>
         {% include 'products/_barcode_formset.html' %}
         <hr>

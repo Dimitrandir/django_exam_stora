@@ -456,6 +456,18 @@ class ProductInlineUpdateViewTests(TestCase):
         response = self._post('category', 'Does Not Exist')
         self.assertEqual(response.status_code, 400)
 
+    def test_manager_can_toggle_show_on_pos(self):
+        self.client.force_login(self.manager)
+        response = self._post('show_on_pos', 'true')
+        self.assertEqual(response.status_code, 200)
+        self.product.refresh_from_db()
+        self.assertTrue(self.product.show_on_pos)
+
+        response = self._post('show_on_pos', 'false')
+        self.assertEqual(response.status_code, 200)
+        self.product.refresh_from_db()
+        self.assertFalse(self.product.show_on_pos)
+
     def test_quantity_field_cannot_be_edited_this_way(self):
         self.client.force_login(self.manager)
         response = self._post('quantity', '9999')
@@ -482,6 +494,45 @@ class ProductInlineUpdateViewTests(TestCase):
         self.assertEqual(entry.old_value, 'Inline Widget')
         self.assertEqual(entry.new_value, 'Renamed Via Grid')
         self.assertEqual(entry.changed_by, self.manager)
+
+
+class CategoryTogglePosViewTests(TestCase):
+    """The Categories list is still a plain HTML table (not Tabulator), so
+    show_on_pos gets one lightweight dedicated toggle endpoint instead of
+    the full inline-edit machinery Products uses."""
+
+    def setUp(self):
+        self.manager = Employee.objects.create_user(
+            username='manager23', password='pass12345', role=Employee.MANAGER
+        )
+        self.cashier = Employee.objects.create_user(
+            username='cashier22', password='pass12345', role=Employee.CASHIER
+        )
+        self.category = Category.objects.create(name='Toggle Category', show_on_pos=False)
+
+    def _post(self, value):
+        return self.client.post(
+            reverse('category_toggle_pos', kwargs={'pk': self.category.pk}), {'value': value},
+        )
+
+    def test_cashier_cannot_toggle(self):
+        self.client.force_login(self.cashier)
+        response = self._post('true')
+        self.assertEqual(response.status_code, 403)
+        self.category.refresh_from_db()
+        self.assertFalse(self.category.show_on_pos)
+
+    def test_manager_can_toggle_on_and_off(self):
+        self.client.force_login(self.manager)
+        response = self._post('true')
+        self.assertEqual(response.status_code, 200)
+        self.category.refresh_from_db()
+        self.assertTrue(self.category.show_on_pos)
+
+        response = self._post('false')
+        self.assertEqual(response.status_code, 200)
+        self.category.refresh_from_db()
+        self.assertFalse(self.category.show_on_pos)
 
 
 class ProductBulkActionViewTests(TestCase):

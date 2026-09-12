@@ -7,12 +7,13 @@ from django.core.validators import MinValueValidator
 
 
 from STORA.accounts.models import Employee
-from STORA.products.models import Product
+from STORA.products.models import Product, Category
 
 class SaleAttributes(models.Model):
     CASH = 'CASH'
     CARD = 'CARD'
-    PAYMENT_METHOD_CHOICES = [(CASH, 'Cash'), (CARD, 'Card')]
+    MIXED = 'MIXED'
+    PAYMENT_METHOD_CHOICES = [(CASH, 'Cash'), (CARD, 'Card'), (MIXED, 'Mixed')]
 
     cashier = models.ForeignKey(Employee, on_delete=models.PROTECT, related_name='sales',
                                 verbose_name='Cashier')
@@ -22,13 +23,20 @@ class SaleAttributes(models.Model):
     # sets these. New sales always get one via the checkout modal's own
     # client-side requirement, not a DB-level NOT NULL, so nothing here
     # breaks mid-rollout while that screen is still being built in stages.
-    payment_method = models.CharField(max_length=4, choices=PAYMENT_METHOD_CHOICES, null=True, blank=True,
+    payment_method = models.CharField(max_length=5, choices=PAYMENT_METHOD_CHOICES, null=True, blank=True,
                                       verbose_name='Payment Method')
-    # Stored for both CASH and CARD (card just gets paid=total, change=0)
-    # so a later report never has to branch on payment_method to know what
-    # was tendered.
+    # `amount_paid` is always the CASH portion (gross cash handed over --
+    # for CASH it can exceed the total, giving change; for MIXED it's just
+    # the cash remainder after `card_amount`, paid exactly, no change; for
+    # CARD it's 0). `card_amount` is the portion charged to card (0 for
+    # CASH, the full total for CARD, a partial amount for MIXED). Storing
+    # both this way means `card_amount + amount_paid - change_due ==
+    # total_amount` always holds, regardless of method -- no branching by
+    # payment_method needed in a later report.
     amount_paid = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True,
-                                      verbose_name='Amount Paid')
+                                      verbose_name='Amount Paid (Cash)')
+    card_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True,
+                                      verbose_name='Amount Paid (Card)')
     change_due = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True,
                                      verbose_name='Change Due')
 
@@ -145,3 +153,34 @@ def _restore_stock_on_delete(sender, instance, **kwargs):
         product = Product.objects.select_for_update().get(pk=instance.sale_item_id)
         adjust_stock_for_sale(product, -instance.sale_quantity)
     instance.sale.recalculate_total()
+
+
+class PosPin(models.Model):
+    """One button in the fixed top bar of the POS category panel -- either
+    a category-folder shortcut or a single-product shortcut, in a cashier-
+    chosen order. Exactly one of category/product is set (DB constraint
+    below); "edit mode" on the POS screen (sale_add.html) only offers
+    items with `show_on_pos=True` to pin, but this model doesn't enforce
+    that itself -- it's a picker-time rule, not a data invariant (unpinning
+    is always allowed even if show_on_pos was later turned off)."""
+    category = models.ForeignKey(Category, on_delete=models.CASCADE, null=True, blank=True, related_name='pos_pins')
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, null=True, blank=True, related_name='pos_pins')
+    position = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        verbose_name = 'POS Pin'
+        verbose_name_plural = 'POS Pins'
+        ordering = ['position']
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(category__isnull=False, product__isnull=True)
+                    | models.Q(category__isnull=True, product__isnull=False)
+                ),
+                name='pospin_exactly_one_of_category_or_product',
+            ),
+        ]
+
+    def __str__(self):
+        target = self.category or self.product
+        return f"Pin #{self.position}: {target}"

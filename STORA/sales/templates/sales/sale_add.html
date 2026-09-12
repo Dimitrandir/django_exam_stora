@@ -41,6 +41,7 @@
                 {# Populated by the checkout modal's JS (Фаза 2, staged build) before submit. #}
                 {{ form.payment_method }}
                 {{ form.amount_paid }}
+                {{ form.card_amount }}
                 {{ form.change_due }}
             </div>
         </section>
@@ -114,10 +115,35 @@
         <section class="sale-form__categories">
             <header class="section-header">
                 <h2>Categories</h2>
+                <button type="button" id="category-edit-mode-btn" class="category-edit-btn">Edit shortcuts</button>
             </header>
+
+            {% comment %}
+            Fixed shortcut bar -- stays visible regardless of how deep the
+            cashier has drilled into the folder browser below. Holds a
+            cashier-curated mix of category-folder and individual-product
+            buttons (PosPin model). Empty unless "Edit shortcuts" has been
+            used to pin something. In edit mode, each tile gets a remove
+            (x) button and an extra "+ Add shortcut" tile appears.
+            {% endcomment %}
+            <div id="category-pinned-bar" class="category-pinned-bar"></div>
+
+            <div id="category-pin-picker" class="category-pin-picker" style="display:none;">
+                <select id="category-pin-picker-select"></select>
+                <button type="button" id="category-pin-picker-add-btn">Add</button>
+                <button type="button" id="category-pin-picker-cancel-btn">Cancel</button>
+            </div>
+
+            {% comment %}
+            Only shown when the open category's own content doesn't fit on
+            one page -- click advances to the next page (wraps back to 1
+            after the last). Same idea as tapping an already-open pinned
+            folder again (see the script below). No separate "current
+            folder" label here -- the open pin's own .is-open styling
+            (a slightly different color) is the only "you are here" cue.
+            {% endcomment %}
             <div class="category-breadcrumb">
-                <button type="button" id="category-back-btn" class="category-back-btn" style="display:none;">&larr; Back</button>
-                <span id="category-breadcrumb-label"></span>
+                <button type="button" id="category-page-indicator" class="category-page-indicator" style="display:none;"></button>
             </div>
             <div id="category-folders" class="category-grid"></div>
             <div id="category-products" class="category-grid"></div>
@@ -138,23 +164,88 @@
     inside the real one anyway) -- just plain controls.
     {% endcomment %}
     <div class="modal fade" id="checkoutModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog">
+        <div class="modal-dialog checkout-modal-dialog">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title">Complete Sale</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <div class="modal-body">
-                    <div class="payment-method-buttons mb-3">
+                <div class="modal-body checkout-modal-body">
+                    {% comment %}
+                    Three columns, per the design plan (till-display tiles
+                    for the amounts, separate from both the method buttons
+                    and the keypad): methods left, Total/Paid-or-Card/Change
+                    tiles middle, keypad right.
+                    {% endcomment %}
+                    <div class="checkout-methods-col">
                         <button type="button" class="payment-method-btn" data-method="CASH">Cash</button>
                         <button type="button" class="payment-method-btn" data-method="CARD">Card</button>
+                        <button type="button" class="payment-method-btn" data-method="MIXED">Mixed</button>
                     </div>
-                    <p class="checkout-total-row"><strong>Total:</strong> <span id="checkout-total">0.00</span></p>
-                    <div class="mb-3" id="checkout-paid-row">
-                        <label for="checkout-paid-input" class="form-label">Paid</label>
-                        <input type="number" id="checkout-paid-input" class="form-control" step="0.01" min="0">
+
+                    <div class="checkout-tiles-col" id="checkout-tiles-col">
+                        <div class="checkout-tile checkout-tile--total">
+                            <span class="checkout-tile__label">Total</span>
+                            <span class="checkout-tile__value" id="checkout-total">0.00</span>
+                        </div>
+
+                        <div class="checkout-tile checkout-tile--input" id="checkout-paid-row">
+                            <label class="checkout-tile__label" for="checkout-paid-input">Paid</label>
+                            {% comment %}
+                            type="text" + inputmode="decimal", not
+                            type="number" -- a number input silently blanks
+                            its value if it's ever SET (not typed -- e.g.
+                            from the keypad on the right) to something that
+                            isn't yet a complete valid float, like "2."
+                            mid-way through typing "2.50". The on-screen
+                            keypad is our own numeric input anyway, so the
+                            native spinner isn't needed; inputmode="decimal"
+                            still brings up a numeric keyboard on touch
+                            devices if the tile is ever tapped directly.
+                            {% endcomment %}
+                            <input type="text" inputmode="decimal" id="checkout-paid-input" class="checkout-tile__input">
+                        </div>
+
+                        <div class="checkout-tile checkout-tile--input" id="checkout-card-row" style="display: none;">
+                            <label class="checkout-tile__label" for="checkout-card-input">Card amount</label>
+                            <input type="text" inputmode="decimal" id="checkout-card-input" class="checkout-tile__input">
+                        </div>
+
+                        <div class="checkout-tile checkout-tile--change" id="checkout-cash-remainder-row" style="display: none;">
+                            <span class="checkout-tile__label">Cash (remainder)</span>
+                            <span class="checkout-tile__value" id="checkout-cash-remainder">0.00</span>
+                        </div>
+
+                        <div class="checkout-tile checkout-tile--change" id="checkout-change-row">
+                            <span class="checkout-tile__label">Change</span>
+                            <span class="checkout-tile__value" id="checkout-change">0.00</span>
+                        </div>
                     </div>
-                    <p><strong>Change:</strong> <span id="checkout-change">0.00</span></p>
+
+                    {% comment %}
+                    On-screen keypad -- most shops run this on a touchscreen
+                    with no physical keyboard attached, so typing directly
+                    can't be the only way to enter an amount. Writes into
+                    whichever tile is the active input for the current
+                    method (Paid for Cash, Card amount for Mixed) -- see
+                    keypadTarget in the script.
+                    {% endcomment %}
+                    <div class="checkout-keypad-col">
+                        <div class="checkout-keypad" id="checkout-keypad">
+                            <button type="button" class="keypad-btn" data-key="7">7</button>
+                            <button type="button" class="keypad-btn" data-key="8">8</button>
+                            <button type="button" class="keypad-btn" data-key="9">9</button>
+                            <button type="button" class="keypad-btn" data-key="4">4</button>
+                            <button type="button" class="keypad-btn" data-key="5">5</button>
+                            <button type="button" class="keypad-btn" data-key="6">6</button>
+                            <button type="button" class="keypad-btn" data-key="1">1</button>
+                            <button type="button" class="keypad-btn" data-key="2">2</button>
+                            <button type="button" class="keypad-btn" data-key="3">3</button>
+                            <button type="button" class="keypad-btn" data-key="0">0</button>
+                            <button type="button" class="keypad-btn" data-key=".">.</button>
+                            <button type="button" class="keypad-btn keypad-btn--del" data-key="del">&larr;</button>
+                        </div>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -167,12 +258,14 @@
     {{ products_data|json_script:"products-data" }}
     {{ barcodes_data|json_script:"barcodes-data" }}
     {{ categories_data|json_script:"categories-data" }}
+    {{ pos_pins_data|json_script:"pos-pins-data" }}
     {{ sale_draft|json_script:"sale-draft" }}
 
     <script>
         const productsData = JSON.parse(document.getElementById('products-data').textContent);
         const barcodesData = JSON.parse(document.getElementById('barcodes-data').textContent);
         const categoriesData = JSON.parse(document.getElementById('categories-data').textContent);
+        let posPinsData = JSON.parse(document.getElementById('pos-pins-data').textContent);
         const saleDraftElement = document.getElementById('sale-draft');
         const saleDraft = saleDraftElement ? JSON.parse(saleDraftElement.textContent || 'null') : null;
 
@@ -550,61 +643,267 @@
         // -- Category/subcategory quick-pick panel -- clicking a folder
         // drills in, showing its subcategories AND its own directly-
         // assigned products (a product can be tagged at any level, not
-        // just a leaf category, same as the Products screen). --
+        // just a leaf category, same as the Products screen). Only items
+        // flagged show_on_pos appear here at all -- findProductByCode
+        // above still searches the FULL productsData regardless, so a
+        // barcode scan or typed code always works even for a product
+        // that's hidden from this browsing panel on purpose. --
         (function () {
+            // How many folder tiles / product tiles show per page of an
+            // opened category -- a fixed count, not a measured grid fit,
+            // to keep this simple. Folders and products page together
+            // (same currentPage), each sliced independently.
+            const PAGE_SIZE = 8;
+
             const foldersEl = document.getElementById('category-folders');
             const productsEl = document.getElementById('category-products');
-            const backBtn = document.getElementById('category-back-btn');
-            const breadcrumbLabel = document.getElementById('category-breadcrumb-label');
-            const categoriesById = {};
-            categoriesData.forEach(c => { categoriesById[String(c.id)] = c; });
+            const pageIndicator = document.getElementById('category-page-indicator');
+            const pinnedBarEl = document.getElementById('category-pinned-bar');
+            const editModeBtn = document.getElementById('category-edit-mode-btn');
+            const pinPickerEl = document.getElementById('category-pin-picker');
+            const pinPickerSelect = document.getElementById('category-pin-picker-select');
+            const pinPickerAddBtn = document.getElementById('category-pin-picker-add-btn');
+            const pinPickerCancelBtn = document.getElementById('category-pin-picker-cancel-btn');
+            // "/sales/pos-pins/remove/999999/" with a placeholder pk, so the
+            // real id can be swapped in -- keeps the URL derived from the
+            // url template tag (not hand-typed) without needing a per-row tag.
+            const pinRemoveUrlTemplate = "{% url 'pos_pin_remove' pk=999999 %}";
+
+            const posCategories = categoriesData.filter(c => c.show_on_pos);
+            const posProducts = productsData.filter(p => p.show_on_pos);
+            // Anything pinned is reachable from the fixed bar already --
+            // the regular folder/product grid below excludes it, so the
+            // same folder/product never shows twice on screen at once
+            // (top = shortcuts, bottom = the rest of that level's content).
+            const pinnedCategoryIds = new Set(posPinsData.filter(p => p.type === 'category').map(p => String(p.target_id)));
+            const pinnedProductIds = new Set(posPinsData.filter(p => p.type === 'product').map(p => String(p.target_id)));
 
             let currentParentId = null; // null = top level
+            let currentPage = 0;
+            let editMode = false;
+
+            function csrfToken() {
+                return document.querySelector('[name=csrfmiddlewaretoken]').value;
+            }
+
+            // At the top level, show_on_pos alone is NOT enough to appear --
+            // it only makes a category *eligible* to be pinned (offered in
+            // the picker). The pinned bar is the only top-level entry point;
+            // a flagged-but-unpinned category (e.g. checked "Show on POS
+            // screen" but never added to the bar) simply isn't reachable.
+            // One level down (inside an opened category), show_on_pos goes
+            // back to curating that category's own subcategories normally --
+            // matching a pinned child is still excluded here, so it isn't
+            // shown twice (once in the bar, once in this grid).
+            function foldersAt(parentId) {
+                if (parentId === null) return [];
+                return posCategories.filter(c => (
+                    String(c.parent_id || '') === String(parentId) && !pinnedCategoryIds.has(String(c.id))
+                ));
+            }
+
+            // First 3 slots go to whatever's sold most in the last few
+            // days (recent_qty, computed server-side in sales_add) -- the
+            // rest follow alphabetically. Falls back to plain alphabetical
+            // if nothing here has sold recently.
+            function productsAt(parentId) {
+                const items = posProducts.filter(p => (
+                    String(p.category_id || '') === String(parentId) && !pinnedProductIds.has(String(p.id))
+                ));
+                const topRecent = items
+                    .filter(p => (p.recent_qty || 0) > 0)
+                    .sort((a, b) => (b.recent_qty || 0) - (a.recent_qty || 0))
+                    .slice(0, 3);
+                const topIds = new Set(topRecent.map(p => p.id));
+                const rest = items.filter(p => !topIds.has(p.id)).sort((a, b) => a.name.localeCompare(b.name));
+                return topRecent.concat(rest);
+            }
+
+            function totalPagesFor(parentId) {
+                return Math.max(
+                    Math.ceil(foldersAt(parentId).length / PAGE_SIZE),
+                    Math.ceil(productsAt(parentId).length / PAGE_SIZE),
+                    1
+                );
+            }
+
+            // Opening a category that's already open (same id as
+            // currentParentId) pages its own content instead of doing
+            // nothing -- this is "tap the already-open folder again" from
+            // the pinned bar, where the tile stays visible/tappable the
+            // whole time it's open.
+            function openCategory(categoryId) {
+                if (String(categoryId) === String(currentParentId)) {
+                    currentPage = (currentPage + 1) % totalPagesFor(currentParentId);
+                } else {
+                    currentParentId = categoryId;
+                    currentPage = 0;
+                }
+                render();
+            }
 
             function render() {
                 foldersEl.innerHTML = '';
                 productsEl.innerHTML = '';
 
-                const currentCategory = currentParentId ? categoriesById[String(currentParentId)] : null;
-                backBtn.style.display = currentCategory ? '' : 'none';
-                breadcrumbLabel.textContent = currentCategory ? currentCategory.name : '';
+                const folders = foldersAt(currentParentId);
+                const products = currentParentId ? productsAt(currentParentId) : [];
+                const pages = totalPagesFor(currentParentId);
+                if (currentPage >= pages) currentPage = 0;
 
-                categoriesData
-                    .filter(c => String(c.parent_id || '') === String(currentParentId || ''))
-                    .forEach(cat => {
-                        const btn = document.createElement('button');
-                        btn.type = 'button';
-                        btn.className = 'category-folder-btn';
-                        btn.textContent = cat.name;
-                        btn.addEventListener('click', () => { currentParentId = cat.id; render(); });
-                        foldersEl.appendChild(btn);
+                pageIndicator.style.display = pages > 1 ? '' : 'none';
+                pageIndicator.textContent = `Page ${currentPage + 1}/${pages} →`;
+
+                folders.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE).forEach(cat => {
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'category-folder-btn';
+                    btn.textContent = cat.name;
+                    btn.addEventListener('click', () => openCategory(cat.id));
+                    foldersEl.appendChild(btn);
+                });
+
+                products.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE).forEach(product => {
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'category-product-btn';
+                    btn.textContent = product.name;
+                    btn.addEventListener('click', () => addProductToCart(product));
+                    productsEl.appendChild(btn);
+                });
+
+                renderPinnedBar();
+            }
+
+            pageIndicator.addEventListener('click', () => openCategory(currentParentId));
+
+            // -- Fixed shortcut bar (PosPin rows) -- stays visible no
+            // matter how deep currentParentId has drilled in. --
+            function renderPinnedBar() {
+                pinnedBarEl.innerHTML = '';
+
+                posPinsData.forEach(pin => {
+                    const tile = document.createElement('button');
+                    tile.type = 'button';
+                    tile.className = 'category-pin-btn ' + (pin.type === 'category' ? 'category-folder-btn' : 'category-product-btn');
+                    if (pin.type === 'category' && String(pin.target_id) === String(currentParentId)) {
+                        tile.classList.add('is-open');
+                    }
+                    tile.textContent = pin.name;
+                    tile.addEventListener('click', () => {
+                        if (pin.type === 'category') {
+                            openCategory(pin.target_id);
+                        } else {
+                            const product = productsData.find(p => String(p.id) === String(pin.target_id));
+                            if (product) addProductToCart(product);
+                        }
                     });
 
-                if (currentParentId) {
-                    productsData
-                        .filter(p => String(p.category_id || '') === String(currentParentId))
-                        .forEach(product => {
-                            const btn = document.createElement('button');
-                            btn.type = 'button';
-                            btn.className = 'category-product-btn';
-                            btn.textContent = product.name;
-                            btn.addEventListener('click', () => addProductToCart(product));
-                            productsEl.appendChild(btn);
-                        });
+                    if (!editMode) {
+                        pinnedBarEl.appendChild(tile);
+                        return;
+                    }
+
+                    const wrapper = document.createElement('span');
+                    wrapper.className = 'category-pin-wrapper';
+                    wrapper.appendChild(tile);
+                    const removeBtn = document.createElement('button');
+                    removeBtn.type = 'button';
+                    removeBtn.className = 'category-pin-remove-btn';
+                    removeBtn.textContent = '×';
+                    removeBtn.title = 'Remove shortcut';
+                    removeBtn.addEventListener('click', (e) => { e.stopPropagation(); removePin(pin.id); });
+                    wrapper.appendChild(removeBtn);
+                    pinnedBarEl.appendChild(wrapper);
+                });
+
+                if (editMode) {
+                    const addBtn = document.createElement('button');
+                    addBtn.type = 'button';
+                    addBtn.className = 'category-pin-add-btn';
+                    addBtn.textContent = '+ Add shortcut';
+                    addBtn.addEventListener('click', openPinPicker);
+                    pinnedBarEl.appendChild(addBtn);
                 }
             }
 
-            backBtn.addEventListener('click', () => {
-                const currentCategory = currentParentId ? categoriesById[String(currentParentId)] : null;
-                currentParentId = currentCategory ? currentCategory.parent_id : null;
-                render();
+            // Edit mode: picker only ever offers items flagged
+            // show_on_pos and not already pinned -- "показва всички
+            // разрешени" (shows everything allowed).
+            function openPinPicker() {
+                pinPickerSelect.innerHTML = '';
+
+                const categoryGroup = document.createElement('optgroup');
+                categoryGroup.label = 'Categories';
+                posCategories.filter(c => !pinnedCategoryIds.has(String(c.id))).forEach(c => {
+                    const opt = document.createElement('option');
+                    opt.value = `category:${c.id}`;
+                    opt.textContent = c.name;
+                    categoryGroup.appendChild(opt);
+                });
+
+                const productGroup = document.createElement('optgroup');
+                productGroup.label = 'Products';
+                posProducts.filter(p => !pinnedProductIds.has(String(p.id))).forEach(p => {
+                    const opt = document.createElement('option');
+                    opt.value = `product:${p.id}`;
+                    opt.textContent = p.name;
+                    productGroup.appendChild(opt);
+                });
+
+                if (categoryGroup.children.length) pinPickerSelect.appendChild(categoryGroup);
+                if (productGroup.children.length) pinPickerSelect.appendChild(productGroup);
+
+                if (!pinPickerSelect.options.length) {
+                    alert('Nothing left to pin -- flag more categories/products as "Show on POS screen" first.');
+                    return;
+                }
+                pinPickerEl.style.display = '';
+            }
+
+            pinPickerCancelBtn.addEventListener('click', () => { pinPickerEl.style.display = 'none'; });
+
+            pinPickerAddBtn.addEventListener('click', async () => {
+                const value = pinPickerSelect.value;
+                if (!value) return;
+                const [type, targetId] = value.split(':');
+                const response = await fetch("{% url 'pos_pin_add' %}", {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() },
+                    body: JSON.stringify({ type: type, target_id: targetId }),
+                });
+                if (!response.ok) {
+                    alert('Could not add this shortcut.');
+                    return;
+                }
+                location.reload();
+            });
+
+            async function removePin(pinId) {
+                const response = await fetch(pinRemoveUrlTemplate.replace('999999', pinId), {
+                    method: 'POST',
+                    headers: { 'X-CSRFToken': csrfToken() },
+                });
+                if (!response.ok) {
+                    alert('Could not remove this shortcut.');
+                    return;
+                }
+                location.reload();
+            }
+
+            editModeBtn.addEventListener('click', () => {
+                editMode = !editMode;
+                editModeBtn.classList.toggle('is-active', editMode);
+                editModeBtn.textContent = editMode ? 'Done editing' : 'Edit shortcuts';
+                pinPickerEl.style.display = 'none';
+                renderPinnedBar();
             });
 
             render();
         })();
 
-        // -- Checkout modal: payment method (Cash/Card) + Paid/Change
-        // calculator. Bootstrap's Modal JS is loaded at the bottom of
+        // -- Checkout modal: payment method (Cash/Card/Mixed) + amounts +
+        // on-screen keypad. Bootstrap's Modal JS is loaded at the bottom of
         // base.html, AFTER this inline script -- only referencing
         // `bootstrap.*` lazily inside event handlers (not at parse time)
         // avoids a ReferenceError from that ordering. --
@@ -612,39 +911,98 @@
             const modalEl = document.getElementById('checkoutModal');
             const completeSaleBtn = document.getElementById('complete-sale-btn');
             const methodButtons = Array.from(document.querySelectorAll('.payment-method-btn'));
+            const tilesCol = document.getElementById('checkout-tiles-col');
             const totalEl = document.getElementById('checkout-total');
+            const changeEl = document.getElementById('checkout-change');
+            const changeRow = document.getElementById('checkout-change-row');
             const paidInput = document.getElementById('checkout-paid-input');
             const paidRow = document.getElementById('checkout-paid-row');
-            const changeEl = document.getElementById('checkout-change');
+            const cardInput = document.getElementById('checkout-card-input');
+            const cardRow = document.getElementById('checkout-card-row');
+            const cashRemainderRow = document.getElementById('checkout-cash-remainder-row');
+            const cashRemainderEl = document.getElementById('checkout-cash-remainder');
             const confirmBtn = document.getElementById('checkout-confirm-btn');
+            const keypadButtons = Array.from(document.querySelectorAll('.keypad-btn'));
             let selectedMethod = null;
+            // Which input the keypad currently writes into -- Paid for
+            // Cash, Card amount for Mixed, nothing for Card (nothing to
+            // enter, it's always the full total).
+            let keypadTarget = null;
+            // True right after the modal opens (or the method changes)
+            // until the cashier's first keypad tap -- that first tap
+            // clears the pre-filled value instead of appending onto it
+            // (typing "2" "0" after a pre-filled "15.00" would otherwise
+            // produce "15.0020"). Typing into the field directly (a real
+            // keyboard, when one happens to be attached) clears it too.
+            let keypadNeedsReset = true;
 
             function currentTotal() {
                 return parseFloat(document.getElementById('transaction-total').textContent) || 0;
             }
 
-            function updateChange() {
+            function recompute() {
                 const total = currentTotal();
-                const paid = parseFloat(paidInput.value || 0);
-                changeEl.textContent = (selectedMethod === 'CASH' ? Math.max(paid - total, 0) : 0).toFixed(2);
+                if (selectedMethod === 'CASH') {
+                    const paid = parseFloat(paidInput.value || 0);
+                    changeEl.textContent = Math.max(paid - total, 0).toFixed(2);
+                } else if (selectedMethod === 'MIXED') {
+                    const card = parseFloat(cardInput.value || 0);
+                    cashRemainderEl.textContent = Math.max(total - card, 0).toFixed(2);
+                    changeEl.textContent = '0.00';
+                } else {
+                    changeEl.textContent = '0.00';
+                }
             }
 
             function selectMethod(method) {
                 selectedMethod = method;
+                const total = currentTotal();
                 methodButtons.forEach(b => b.classList.toggle('is-selected', b.dataset.method === method));
+                // Drives the tiles' accent color (see [data-method] rules in
+                // style.css) -- Paid/Change tint cash-green, Card amount
+                // tints card-blue, so the amount tiles visually thread back
+                // to whichever method button is selected.
+                tilesCol.dataset.method = method;
+
+                paidRow.style.display = method === 'CASH' ? '' : 'none';
+                cardRow.style.display = method === 'MIXED' ? '' : 'none';
+                cashRemainderRow.style.display = method === 'MIXED' ? '' : 'none';
+                changeRow.style.display = method === 'MIXED' ? 'none' : '';
+
                 if (method === 'CASH') {
-                    paidRow.style.display = '';
-                    paidInput.disabled = false;
+                    paidInput.value = total.toFixed(2);
+                    keypadTarget = paidInput;
+                } else if (method === 'MIXED') {
+                    cardInput.value = '0.00';
+                    keypadTarget = cardInput;
                 } else {
-                    // Card always pays exactly the total -- no change concept.
-                    paidRow.style.display = 'none';
-                    paidInput.value = currentTotal().toFixed(2);
+                    // Card: always pays exactly the total, nothing to enter.
+                    keypadTarget = null;
                 }
-                updateChange();
+                keypadNeedsReset = true;
+                recompute();
             }
 
             methodButtons.forEach(btn => btn.addEventListener('click', () => selectMethod(btn.dataset.method)));
-            paidInput.addEventListener('input', updateChange);
+            paidInput.addEventListener('input', () => { keypadNeedsReset = false; recompute(); });
+            cardInput.addEventListener('input', () => { keypadNeedsReset = false; recompute(); });
+
+            keypadButtons.forEach(btn => btn.addEventListener('click', () => {
+                if (!keypadTarget) return; // Card method -- nothing editable
+                const key = btn.dataset.key;
+                if (keypadNeedsReset && key !== 'del') {
+                    keypadTarget.value = '';
+                    keypadNeedsReset = false;
+                }
+                if (key === 'del') {
+                    keypadTarget.value = keypadTarget.value.slice(0, -1);
+                } else if (key === '.') {
+                    if (!keypadTarget.value.includes('.')) keypadTarget.value += '.';
+                } else {
+                    keypadTarget.value += key;
+                }
+                recompute();
+            }));
 
             completeSaleBtn.addEventListener('click', () => {
                 const hasItem = Array.from(document.querySelectorAll('.sale-row')).some(row => {
@@ -657,8 +1015,6 @@
                 }
                 totalEl.textContent = currentTotal().toFixed(2);
                 selectMethod('CASH');
-                paidInput.value = currentTotal().toFixed(2);
-                updateChange();
                 bootstrap.Modal.getOrCreateInstance(modalEl).show();
             });
 
@@ -668,14 +1024,34 @@
                     return;
                 }
                 const total = currentTotal();
-                const paid = parseFloat(paidInput.value || 0);
-                if (selectedMethod === 'CASH' && paid < total) {
-                    alert('Paid amount is less than the total.');
-                    return;
+                let cashAmount = 0;
+                let cardAmount = 0;
+                let change = 0;
+
+                if (selectedMethod === 'CASH') {
+                    cashAmount = parseFloat(paidInput.value || 0);
+                    if (cashAmount < total) {
+                        alert('Paid amount is less than the total.');
+                        return;
+                    }
+                    change = cashAmount - total;
+                } else if (selectedMethod === 'CARD') {
+                    cardAmount = total;
+                } else {
+                    // Mixed -- card amount is what the cashier entered, the
+                    // rest is assumed paid exactly in cash (no change).
+                    cardAmount = parseFloat(cardInput.value || 0);
+                    if (cardAmount <= 0 || cardAmount >= total) {
+                        alert('Card amount must be more than 0 and less than the total for a mixed payment.');
+                        return;
+                    }
+                    cashAmount = total - cardAmount;
                 }
+
                 document.getElementById('id_payment_method').value = selectedMethod;
-                document.getElementById('id_amount_paid').value = paid.toFixed(2);
-                document.getElementById('id_change_due').value = (selectedMethod === 'CASH' ? paid - total : 0).toFixed(2);
+                document.getElementById('id_amount_paid').value = cashAmount.toFixed(2);
+                document.getElementById('id_card_amount').value = cardAmount.toFixed(2);
+                document.getElementById('id_change_due').value = change.toFixed(2);
                 bootstrap.Modal.getInstance(modalEl).hide();
                 document.querySelector('.sale-form__form').requestSubmit();
             });
