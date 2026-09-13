@@ -297,6 +297,17 @@ Tabulator patтern-ът (sort по клик, Excel-style checkbox филтър �
     supplier/batch pickers, касовата количка). Виж CLAUDE.md за
     `multi_token_icontains_q()`. Потвърдено безопасно за баркод
     сканиране (единична "дума", идентично поведение на старото).
+  - **Products списък (направено):** запомнящ се изглед на колоните
+    (ред/видимост/ширина) през localStorage, активна редактируема
+    Markup % колонка (двупосочно свързана със Sell/Delivery Price),
+    почистено форматиране (без "eur", pcs/kg, чисти числа), брояч на
+    продукти под Code колонката. Опцията за запомнящ се изглед
+    (`persist` в `initExcelStyleTable`) сега съществува като споделен
+    helper за всяка таблица, но е включена само тук — Suppliers/
+    Categories/Employees/Sales/Deliveries/Reports от Фаза 1.5 по-долу
+    могат да я вземат наготово, когато им дойде редът. Виж CLAUDE.md за
+    трите Tabulator re-entrancy капана + persistence merge бъга,
+    открити по пътя.
 - Запази/подобри draft-save механизма (в момента през JS + fetch към  
  sale_draft_save) — работи, но да се прегледа за race conditions при  
    
