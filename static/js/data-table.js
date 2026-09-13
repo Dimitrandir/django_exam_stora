@@ -258,7 +258,7 @@
             col.headerFilterFunc = excelStyleFilterFunc;
         });
 
-        var table = new Tabulator(elementSelector, {
+        var tableConfig = {
             data: data,
             layout: 'fitColumns',
             columns: columns,
@@ -269,7 +269,36 @@
             // (table.getColumns() reflects it afterwards); nothing here
             // needs to persist it.
             movableColumns: true,
-        });
+        };
+
+        // Opt-in per table (options.persist: true, or a string to use as
+        // the storage key instead of deriving one from elementSelector) --
+        // remembers column order/visibility/width in localStorage across
+        // visits, using Tabulator's own built-in persistence module. Off
+        // by default: turning this on for every table at once would be a
+        // bigger behavior change than whatever one table actually asked
+        // for it.
+        if (options.persist) {
+            // `{columns: true}` looks equivalent to explicitly listing the
+            // properties, but isn't: Tabulator's persistence module only
+            // restores a saved property if that key ALREADY exists on the
+            // column's original static definition object (it merges by
+            // walking Object.keys(originalDef), not the saved data). Most
+            // columns here never write `visible: true` explicitly (it's
+            // just the default when the key is absent), so a saved
+            // `visible: false` for one of THOSE columns was silently
+            // dropped on reload -- confirmed live: exactly the columns
+            // with no explicit `visible` in their definition were the ones
+            // that wouldn't stay hidden after a refresh. Naming the
+            // properties explicitly forces the merge to always consider
+            // them, regardless of what the original definition happens to
+            // declare.
+            tableConfig.persistence = {columns: ['title', 'width', 'visible']};
+            tableConfig.persistenceID = typeof options.persist === 'string'
+                ? options.persist : elementSelector.replace(/^#/, '');
+        }
+
+        var table = new Tabulator(elementSelector, tableConfig);
 
         if (options.columnChooser !== false) {
             table.on('tableBuilt', function () {

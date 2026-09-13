@@ -55,10 +55,10 @@
 document.addEventListener('DOMContentLoaded', function () {
     function currencyFormatter(cell) {
         var v = Number(cell.getValue());
-        return isNaN(v) ? '' : v.toFixed(2) + ' eur';
+        return isNaN(v) ? '' : v.toFixed(2);
     }
 
-    var unitTypeLabels = {piece: 'Piece (pcs)', weight: 'Weight (kg)'};
+    var unitTypeLabels = {piece: 'pcs', weight: 'kg'};
     function unitTypeFormatter(cell) {
         return unitTypeLabels[cell.getValue()] || cell.getValue();
     }
@@ -67,7 +67,19 @@ document.addEventListener('DOMContentLoaded', function () {
         var v = Number(cell.getValue());
         if (isNaN(v)) return '';
         var row = cell.getRow().getData();
-        return row.unit_type === 'weight' ? v.toFixed(3) + ' kg' : Math.round(v) + ' pcs';
+        return row.unit_type === 'weight' ? v.toFixed(2) : Math.round(v);
+    }
+
+    // markup_percent arrives precomputed from the view (see
+    // ProductListView) -- NOT a Tabulator mutator, deliberately: a mutator
+    // also re-runs on every edit commit for this column, which would
+    // silently overwrite whatever the user just typed back to the
+    // recomputed-from-current-prices value before it could ever be saved
+    // (see the cellEdited handler below for the actual edit -> Sell Price
+    // link).
+    function markupFormatter(cell) {
+        var v = cell.getValue();
+        return v === null || v === undefined || isNaN(v) ? '' : v.toFixed(1) + '%';
     }
 
     function getCookie(name) {
@@ -91,6 +103,10 @@ document.addEventListener('DOMContentLoaded', function () {
         unit_type: {editor: 'list', editorParams: {values: unitTypeLabels}},
         sell_price: {editor: 'number', editorParams: {min: 0, step: 0.01}},
         delivery_price: {editor: 'number', editorParams: {min: 0, step: 0.01}},
+        // No min -- selling below cost (negative markup) is unusual but
+        // not invalid, same as the product create/edit forms' own markup
+        // field.
+        markup_percent: {editor: 'number', editorParams: {step: 0.1}},
     };
 
     // show_on_pos isn't part of editorConfig/"Enable Edit" -- it's a quick,
@@ -141,7 +157,7 @@ document.addEventListener('DOMContentLoaded', function () {
             width: 40, headerSort: false, headerFilter: false, hideable: false,
             cellClick: function (e, cell) { cell.getRow().toggleSelect(); },
         },
-        {title: 'Code', field: 'internal_code', width: 120},
+        {title: 'Code', field: 'internal_code', width: 90, bottomCalc: 'count'},
         {title: 'Name', field: 'name', width: 300},
         {title: 'Category', field: 'category', width: 130},
         {title: 'Sold By', field: 'unit_type', width: 130, formatter: unitTypeFormatter},
@@ -155,12 +171,16 @@ document.addEventListener('DOMContentLoaded', function () {
             formatter: posToggleFormatter, cellClick: posToggleCellClick,
         },
         {
-            title: 'Sell Price', field: 'sell_price', width: 120, hozAlign: 'right', sorter: 'number',
+            title: 'Sell Price', field: 'sell_price', width: 90, hozAlign: 'right', sorter: 'number',
             formatter: currencyFormatter,
         },
         {
-            title: 'Delivery Price', field: 'delivery_price', width: 130, hozAlign: 'right', sorter: 'number',
+            title: 'Delivery Price', field: 'delivery_price', width: 90, hozAlign: 'right', sorter: 'number',
             formatter: currencyFormatter, visible: false,
+        },
+        {
+            title: 'Markup %', field: 'markup_percent', width: 80, hozAlign: 'right', sorter: 'number',
+            formatter: markupFormatter,
         },
         {
             // bottomCalc sums the raw numbers regardless of unit -- fine
@@ -179,7 +199,7 @@ document.addEventListener('DOMContentLoaded', function () {
         {title: 'Supplier (Primary)', field: 'supplier_1', width: 160},
         {title: 'Alt Supplier 1', field: 'supplier_2', width: 160, visible: false},
         {title: 'Alt Supplier 2', field: 'supplier_3', width: 160, visible: false},
-    ], {placeholder: 'No products found.', selectableRows: true});
+    ], {placeholder: 'No products found.', selectableRows: true, persist: 'products-list'});
 
     // Row click opens the product -- disabled while Edit mode is on, since
     // every editable cell removes its own editor in that state (see below),
@@ -209,21 +229,118 @@ document.addEventListener('DOMContentLoaded', function () {
 
             Object.keys(editorConfig).forEach(function (field) {
                 var column = table.getColumn(field);
+                // updateDefinition() rebuilds the column from its ORIGINAL
+                // definition (as passed to initExcelStyleTable), not its
+                // current live state -- a column shown/hidden afterwards
+                // via the Columns dropdown (column.show()/hide(), which
+                // only ever touches the live column, never that original
+                // definition object) would otherwise silently snap back to
+                // its initial visibility every time Edit mode is toggled.
+                // Carrying the column's actual current visibility forward
+                // explicitly avoids that.
+                var visible = column.isVisible();
                 if (editMode) {
-                    column.updateDefinition(editorConfig[field]);
+                    column.updateDefinition(Object.assign({visible: visible}, editorConfig[field]));
                 } else {
-                    column.updateDefinition({editor: false});
+                    column.updateDefinition({editor: false, visible: visible});
                 }
             });
         });
 
+        // Markup % has no Product field of its own -- editing it instead
+        // recomputes and saves Sell Price (same cost-based formula as
+        // markupMutator/the create-edit forms' calculator), while editing
+        // Sell Price or Delivery Price directly recomputes the displayed
+        // Markup % the other way. row.update() (not cell.setValue()) is
+        // what carries the recomputed sibling value across -- it updates
+        // the row's data/rendered cell WITHOUT re-firing cellEdited, so
+        // the two directions can't bounce off each other in a loop.
+        function refreshMarkupDisplay(row) {
+            // Deferred a tick -- Tabulator is still tearing down the just-
+            // committed editor when cellEdited fires; row.update() touches
+            // that same row's DOM and, called synchronously from inside
+            // this handler, has been seen to crash mid-teardown (same
+            // class of issue as focusCellEditor's setTimeout(0), see
+            // CLAUDE.md).
+            setTimeout(function () {
+                var data = row.getData();
+                var cost = Number(data.delivery_price);
+                var sell = Number(data.sell_price);
+                row.update({markup_percent: cost ? Math.round((sell - cost) / cost * 1000) / 10 : null});
+            }, 0);
+        }
+
+        // Reverting a cell (cell.setValue()) fires cellEdited again, same
+        // as any other edit -- without this guard, the !cost check below
+        // would see its own revert as a fresh edit, fail the same way, and
+        // revert AGAIN, forever (confirmed live: an endless setTimeout
+        // loop flipping the cell between two values). Set right before a
+        // revert's setValue() call, cleared right after, so only that one
+        // re-entrant cellEdited gets ignored -- a genuine subsequent edit
+        // from the user still goes through normally.
+        var suppressRevertEdit = false;
+
         table.on('cellEdited', function (cell) {
-            postInlineUpdate(cell.getRow().getData().id, cell.getField(), cell.getValue())
+            if (suppressRevertEdit) return;
+            var field = cell.getField();
+            var row = cell.getRow();
+
+            if (field === 'markup_percent') {
+                var data = row.getData();
+                var cost = Number(data.delivery_price);
+                var oldSellPrice = data.sell_price;
+                // Captured up front, used by every revert path below --
+                // getOldValue() only reflects the pre-edit value for the
+                // current tick; by the time a setTimeout callback or a
+                // fetch .then()/.catch() runs, it would already report the
+                // just-committed value instead.
+                var revertTo = cell.getOldValue();
+                if (!cost) {
+                    alert('Set a Delivery Price for this product first.');
+                    // Deferred -- this cellEdited handler is itself running
+                    // synchronously inside the ORIGINAL cell.setValue()
+                    // call that triggered it; calling setValue() again on
+                    // the same cell right now re-enters Tabulator's own
+                    // render pipeline mid-flight and stack-overflows in
+                    // markupFormatter (confirmed in testing).
+                    setTimeout(function () {
+                        suppressRevertEdit = true;
+                        cell.setValue(revertTo);
+                        suppressRevertEdit = false;
+                    }, 0);
+                    return;
+                }
+                var newSellPrice = Math.round(cost * (1 + Number(cell.getValue()) / 100) * 100) / 100;
+                // Same deferral as refreshMarkupDisplay -- this is the
+                // markup_percent cell's OWN cellEdited handler, so
+                // Tabulator is mid-teardown of THIS cell's editor right
+                // now; updating the row synchronously here is what
+                // actually crashed in testing.
+                setTimeout(function () { row.update({sell_price: newSellPrice}); }, 0);
+                postInlineUpdate(data.id, 'sell_price', newSellPrice)
+                    .then(function (result) {
+                        if (!result.ok) {
+                            alert(result.data.error || 'Could not save the change.');
+                            row.update({sell_price: oldSellPrice});
+                            cell.setValue(revertTo);
+                        }
+                    })
+                    .catch(function () {
+                        alert('Network error -- change was not saved.');
+                        row.update({sell_price: oldSellPrice});
+                        cell.setValue(revertTo);
+                    });
+                return;
+            }
+
+            postInlineUpdate(row.getData().id, field, cell.getValue())
                 .then(function (result) {
                     if (!result.ok) {
                         alert(result.data.error || 'Could not save the change.');
                         cell.setValue(cell.getOldValue());
+                        return;
                     }
+                    if (field === 'sell_price' || field === 'delivery_price') refreshMarkupDisplay(row);
                 })
                 .catch(function () {
                     alert('Network error -- change was not saved.');

@@ -506,6 +506,33 @@ input[type="text"], input[type="number"], input[type="email"], select, textarea 
     font-size: 0.85rem;
 }
 
+/* Applies to every Tabulator table in the project with a bottomCalc row,
+   not just one screen. The vendor bootstrap5 theme sets
+   .tabulator-calcs-holder { width: 100% !important }, which paints its
+   solid gray background across the table's full (stretched) width --
+   whenever the actual columns don't add up to that full width (e.g. this
+   table's columns are narrower than a wide "main-wide" page container),
+   the header and body rows leave that leftover strip transparent (blends
+   with the page), but the calc/totals row's opaque background fills it,
+   making that one row visibly wider than everything else. Sizing it to
+   its own content instead keeps the gray bar the same width as the rest
+   of the table.  */
+.tabulator-calcs-holder {
+    width: fit-content !important;
+}
+
+/* Same reasoning as .tabulator-calcs-holder above, one level up: the
+   wrapping .tabulator-footer is a plain block element, so it naturally
+   fills the table's full stretched width too, and its own background
+   color shows through in that same leftover strip once the calcs-holder
+   above stops covering it. No pagination controls anywhere in this
+   project (that's the only thing inside .tabulator-footer that actually
+   needs the full width, for right-aligning page controls) -- safe to
+   size it to content everywhere. */
+.tabulator-footer {
+    width: fit-content !important;
+}
+
 
 .sale-form__categories {
     flex: 1;

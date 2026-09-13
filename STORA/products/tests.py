@@ -679,6 +679,29 @@ class ProductPositionOrderingTests(TestCase):
         self.assertEqual(row['supplier_2'], 'Supplier B')
         self.assertEqual(row['supplier_3'], '')
 
+    def test_products_list_grid_exposes_markup_percent(self):
+        manager = Employee.objects.create_user(
+            username='manager-markup', password='pass12345', role=Employee.MANAGER
+        )
+        self.client.force_login(manager)
+
+        priced = Product.objects.create(
+            internal_code='MRKUP001', name='Markup Product',
+            sell_price=Decimal('9.00'), delivery_price=Decimal('5.00'), quantity=1,
+        )
+        no_cost = Product.objects.create(
+            internal_code='MRKUP002', name='No Delivery Price Product',
+            sell_price=Decimal('3.00'), delivery_price=None, quantity=1,
+        )
+
+        response = self.client.get(reverse('product_list'))
+        rows = {r['id']: r for r in response.context['products_data']}
+
+        # (9.00 - 5.00) / 5.00 * 100 = 80.0
+        self.assertEqual(rows[priced.pk]['markup_percent'], 80.0)
+        # No delivery price -- nothing to compute markup against.
+        self.assertIsNone(rows[no_cost.pk]['markup_percent'])
+
     def test_duplicate_supplier_on_same_product_rejected(self):
         ProductSupplier.objects.create(product=self.product, supplier=self.supplier_a, position=1)
         with self.assertRaises(IntegrityError):

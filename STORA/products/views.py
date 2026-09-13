@@ -65,6 +65,17 @@ class ProductListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListView
         for product in context['products']:
             barcodes = list(product.barcode.all())
             suppliers = list(product.product_suppliers.all())
+            # Computed server-side (like everything else in this row) rather
+            # than as a Tabulator mutator -- a mutator would also re-run on
+            # every edit COMMIT for this column, silently overwriting
+            # whatever markup % the user just typed with the recomputed-
+            # from-current-prices value before the edit could ever be saved.
+            markup_percent = None
+            if product.delivery_price:
+                markup_percent = round(
+                    (float(product.sell_price or 0) - float(product.delivery_price)) / float(product.delivery_price) * 100,
+                    1,
+                )
             row = {
                 'id': product.pk,
                 'internal_code': product.internal_code,
@@ -76,6 +87,7 @@ class ProductListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListView
                 'quantity': float(product.quantity),
                 'sell_price': float(product.sell_price) if product.sell_price is not None else None,
                 'delivery_price': float(product.delivery_price) if product.delivery_price is not None else None,
+                'markup_percent': markup_percent,
                 'view_url': reverse('product_details', kwargs={'pk': product.pk}),
             }
             for i in range(self.GRID_SLOT_COUNT):
