@@ -490,6 +490,29 @@ class SaleTabsTests(TestCase):
         response = self.client.get(reverse('sale_add'))
         self.assertEqual(len(response.context['sale_items_initial']), 1)  # tab 1's draft untouched
 
+    def test_ghost_draft_row_does_not_trip_validation_on_a_plain_page_load(self):
+        # A stray draft-save with no product attached (sale_item empty) --
+        # whatever caused it, it must never be restored as if it were a
+        # real cart line. Before the fix, GET unconditionally bound the
+        # formset from ANY "active" draft, so BaseSaleItemFormSet.clean()'s
+        # "must add at least one sale item" fired on a plain page load,
+        # before the cashier had touched anything.
+        self.client.post(
+            reverse('sale_draft_save'),
+            data=json.dumps({'formset_data': {'forms': [{
+                'sale_item': '', 'sale_quantity': '1', 'product_name': '',
+                'price_at_sale': '0', 'total_price_row': '0', 'DELETE': '',
+            }]}}),
+            content_type='application/json',
+        )
+
+        response = self.client.get(reverse('sale_add'))
+        self.assertFalse(response.context['formset'].non_form_errors())
+        self.assertEqual(response.context['sale_items_initial'], [])
+        # Self-healing -- the ghost draft doesn't linger to break the next
+        # load too.
+        self.assertIsNone(self.client.get(reverse('sale_add')).context.get('sale_draft'))
+
     def test_cancel_sale_clears_active_tab_and_redirects_to_sale_add(self):
         self._save_draft(self.product_a)
         response = self.client.get(reverse('cancel_sale'))

@@ -121,9 +121,19 @@ def sales_add(request):
             initial=formset_initial,
         )
     else:
-        if tab_draft and tab_draft.get('active'):
+        draft_forms = tab_draft.get('formset_data', {}).get('forms', []) if tab_draft and tab_draft.get('active') else []
+        # A row with no sale_item is a ghost -- e.g. a stray draft-save
+        # firing before a product actually landed in the cart -- and must
+        # never be restored as if it were real. Binding the formset from
+        # ghost-only data would otherwise trip BaseSaleItemFormSet.clean()'s
+        # "must add at least one sale item" the moment this page loads,
+        # before the cashier has touched anything -- that error belongs
+        # only to a genuinely failed Complete Sale submit, never to a
+        # plain GET.
+        formset_initial = [row for row in draft_forms if row.get('sale_item')]
+
+        if formset_initial:
             form = SaleForms(current_user=request.user)
-            formset_initial = tab_draft.get('formset_data', {}).get('forms', []) or [{}]
             restore_post_data = build_restore_formset_data(formset_prefix, formset_initial)
 
             formset = SaleItemFormSet(
@@ -133,6 +143,8 @@ def sales_add(request):
             )
             sale_draft = tab_draft
         else:
+            if tab_draft and tab_draft.get('active'):
+                clear_tab_draft(request, active_tab)
             form = SaleForms(current_user=request.user)
             formset = SaleItemFormSet(instance=sale_instance, prefix=formset_prefix)
 
