@@ -10,22 +10,28 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+import os
 from pathlib import Path
+
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
+# Real secrets (SECRET_KEY, DB password, ...) live in a local .env file, never
+# in git. On a dev machine with no .env, every os.environ.get() below falls
+# back to the old hardcoded dev values, so nothing changes for that workflow.
+load_dotenv(BASE_DIR / '.env')
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-b55d(03n2a=%bcefdf&nr@t!g(4oujyye@_ats)#w#sgf7)a*u'
+SECRET_KEY = os.environ.get(
+    'SECRET_KEY', 'django-insecure-b55d(03n2a=%bcefdf&nr@t!g(4oujyye@_ats)#w#sgf7)a*u'
+)
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '*').split(',')
 
 
 # Application definition
@@ -50,6 +56,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -86,11 +93,11 @@ WSGI_APPLICATION = 'STORA.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'stora_db',
-        'USER': 'stora_usr',
-        'PASSWORD': 'stora_psswd',
-        'HOST': '127.0.0.1',
-        'PORT': '5432',
+        'NAME': os.environ.get('DB_NAME', 'stora_db'),
+        'USER': os.environ.get('DB_USER', 'stora_usr'),
+        'PASSWORD': os.environ.get('DB_PASSWORD', 'stora_psswd'),
+        'HOST': os.environ.get('DB_HOST', '127.0.0.1'),
+        'PORT': os.environ.get('DB_PORT', '5432'),
     }
 }
 
@@ -138,6 +145,21 @@ STATIC_URL = 'static/'
 STATICFILES_DIRS = [
     BASE_DIR / 'static',
 ]
+# Target for `collectstatic`; WhiteNoise serves everything from here once
+# DEBUG=False, so runserver's own static-file shortcut is no longer needed.
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+STORAGES = {
+    'default': {
+        'BACKEND': 'django.core.files.storage.FileSystemStorage',
+    },
+    'staticfiles': {
+        # Not the Manifest variant -- that needs `collectstatic` to have run
+        # first (breaks tests/dev) and would duplicate the cache-busting the
+        # project already does itself via {% static_v %} (core/templatetags/
+        # cache_bust.py).
+        'BACKEND': 'whitenoise.storage.CompressedStaticFilesStorage',
+    },
+}
 
 SESSION_EXPIRE_AT_BROWSER_CLOSE = False
 SESSION_COOKIE_AGE = 60 * 60 * 24 * 7  # 7 days
@@ -148,3 +170,44 @@ CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'Europe/Sofia'
+
+# With DEBUG=False the browser no longer shows a traceback -- this is the
+# only place a real error is still visible. Rotates so it can't grow
+# unbounded on a machine nobody is watching.
+(BASE_DIR / 'logs').mkdir(exist_ok=True)
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{asctime} {levelname} {name}: {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'file': {
+            'level': 'INFO',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': BASE_DIR / 'logs' / 'stora.log',
+            'maxBytes': 5 * 1024 * 1024,  # 5 MB
+            'backupCount': 5,
+            'formatter': 'verbose',
+        },
+        'console': {
+            'level': 'INFO',
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+    'root': {
+        'handlers': ['file', 'console'],
+        'level': 'WARNING',
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['file', 'console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+    },
+}

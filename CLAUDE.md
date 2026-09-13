@@ -1455,6 +1455,15 @@ reports app в момента има почти нулево тестово по
 - Celery изисква Redis на localhost:6379 само за реално изпълнение на  
    
  задачи (worker) — не е нужен за migrate/makemigrations.  
+- **Реални тайни (SECRET_KEY, DB парола, DEBUG, ALLOWED_HOSTS) се четат от
+  .env файл (python-dotenv, зареден в началото на settings.py), не са
+  хардкоднати.** .env е в .gitignore, никога не се комитва -- .env.example
+  показва какви променливи трябват. На dev машина без .env всичко пада
+  обратно на старите dev-стойности (DEBUG=True, старите dev DB
+  credentials), значи обикновена dev сесия не се пипа от тази промяна. За
+  реално качване на обект (1 Windows машина, waitress + NSSM + PostgreSQL +
+  дневен pg_dump бекъп, без Redis/Celery за пилота) виж пълния чеклист в
+  DEPLOYMENT.md.
 **Комуникация**  
 Пиши на български, освен ако потребителят изрично не поиска друго. Кратко и  
    
