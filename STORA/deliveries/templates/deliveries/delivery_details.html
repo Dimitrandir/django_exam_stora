@@ -1,4 +1,6 @@
 {% extends 'base.html' %}
+
+{% block title %}STORA - {% if delivery.movement_type == 'WRITE_OFF' %}Write-off{% elif delivery.movement_type == 'SCRAP' %}Scrap{% else %}Delivery{% endif %} #{{ delivery.id }}{% endblock %}
 {% load static cache_bust currency_filters %}
 
 {% block main_class %}main-wide{% endblock %}

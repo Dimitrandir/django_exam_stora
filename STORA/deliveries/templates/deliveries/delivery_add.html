@@ -1,4 +1,6 @@
 {% extends 'base.html' %}
+
+{% block title %}STORA - {% if is_write_off %}New Write-off{% elif is_scrap %}New Scrap{% else %}New Delivery{% endif %}{% endblock %}
 {% load static cache_bust %}
 
 {% block main_class %}main-wide{% endblock %}

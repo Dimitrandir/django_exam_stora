@@ -1,5 +1,7 @@
 {% extends 'base.html' %}
 
+{% block title %}STORA - {% if tax_group %}Edit Tax Group{% else %}New Tax Group{% endif %}{% endblock %}
+
 {% block content %}
 
     {% if tax_group %}

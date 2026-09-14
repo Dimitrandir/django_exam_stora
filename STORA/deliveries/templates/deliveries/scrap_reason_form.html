@@ -1,5 +1,7 @@
 {% extends 'base.html' %}
 
+{% block title %}STORA - {% if scrap_reason %}Edit Scrap Reason{% else %}New Scrap Reason{% endif %}{% endblock %}
+
 {% block content %}
 
     {% if scrap_reason %}

@@ -1,5 +1,7 @@
 {% extends 'base.html' %}
 
+{% block title %}STORA - {% if category %}Edit Category{% else %}New Category{% endif %}{% endblock %}
+
 {% block content %}
 
     {% if category %}

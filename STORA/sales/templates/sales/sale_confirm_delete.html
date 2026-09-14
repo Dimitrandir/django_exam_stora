@@ -1,5 +1,7 @@
 {% extends 'base.html' %}
 
+{% block title %}STORA - Delete Sale #{{ sale.id }}{% endblock %}
+
 {% block content %}
 
 <h1>Are you sure you want to delete Sale ID: {{ sale.id }} of {{ sale.time_of_sale | date:"d.m.Y H:i"}}</h1>
