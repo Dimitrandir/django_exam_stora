@@ -1,4 +1,6 @@
 {% extends 'base.html' %}
+
+{% block title %}STORA - Products List{% endblock %}
 {% load static cache_bust %}
 
 {% block main_class %}main-wide{% endblock %}
@@ -160,6 +162,7 @@ document.addEventListener('DOMContentLoaded', function () {
         {title: 'Code', field: 'internal_code', width: 90, bottomCalc: 'count'},
         {title: 'Name', field: 'name', width: 300},
         {title: 'Category', field: 'category', width: 130},
+        {title: 'Tax Group', field: 'tax_group', width: 110, visible: false},
         {title: 'Sold By', field: 'unit_type', width: 130, formatter: unitTypeFormatter},
         {
             title: 'Recipe', field: 'is_recipe', width: 90,

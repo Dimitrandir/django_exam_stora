@@ -1,5 +1,7 @@
 {% extends 'base.html' %}
 
+{% block title %}STORA - New Product{% endblock %}
+
 {% block content %}
 
     <h1>Add a new product</h1>
@@ -35,6 +37,12 @@
             <label>{{ form.is_recipe }} {{ form.is_recipe.label }}</label>
             <small>{{ form.is_recipe.help_text }}</small>
             {{ form.is_recipe.errors }}
+        </p>
+
+        <p>
+            <label>{{ form.show_on_pos }} {{ form.show_on_pos.label }}</label>
+            <small>Makes this product appear as a button when browsing its category on the Sales screen (it can also be pinned there as its own shortcut).</small>
+            {{ form.show_on_pos.errors }}
         </p>
 
         <div id="recipe-section">
@@ -102,6 +110,7 @@
         <hr>
 
         <button type="submit">Save</button>
+        <button type="submit" name="save_and_new" value="1">Save and New</button>
         <a href="{% url 'product_list' %}">Cancel</a>
 
     </form>
@@ -115,6 +124,14 @@
     document.getElementById('suggest-next-free-code-btn').addEventListener('click', function () {
         document.getElementById('id_internal_code').value = '{{ next_free_code }}';
     });
+
+    // Empty only on a fresh page load -- if this is a re-render after a
+    // validation error, Django already filled it back in with what the user
+    // submitted, and that must not be overwritten.
+    (function () {
+        var codeInput = document.getElementById('id_internal_code');
+        if (!codeInput.value) codeInput.value = '{{ first_free_code }}';
+    })();
 
     (function () {
         var checkbox = document.getElementById('id_is_recipe');

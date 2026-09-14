@@ -1,4 +1,6 @@
 {% extends 'base.html' %}
+
+{% block title %}STORA - New Sale{% endblock %}
 {% load static cache_bust %}
 
 {% block main_class %}main-wide{% endblock %}
@@ -1024,8 +1026,12 @@
             // How many folder tiles / product tiles show per page of an
             // opened category -- a fixed count, not a measured grid fit,
             // to keep this simple. Folders and products page together
-            // (same currentPage), each sliced independently.
-            const PAGE_SIZE = 8;
+            // (same currentPage), each sliced independently. 24 is a rough
+            // guess at "at least 5 rows" on the real POS screen -- tiles
+            // wrap based on container width (flex-wrap, not a fixed grid),
+            // so the exact row count isn't knowable from here; adjust this
+            // number after checking it live on the touchscreen.
+            const PAGE_SIZE = 24;
 
             const foldersEl = document.getElementById('category-folders');
             const productsEl = document.getElementById('category-products');

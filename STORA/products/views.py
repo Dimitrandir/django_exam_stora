@@ -10,6 +10,7 @@ from django.http import HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
+from django.utils.http import urlencode
 from django.views import View
 from django.views.generic import CreateView, ListView, DetailView, UpdateView, DeleteView
 
@@ -55,7 +56,7 @@ class ProductListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListView
     GRID_SLOT_COUNT = 3
 
     def get_queryset(self):
-        return Product.objects.select_related('category').prefetch_related(
+        return Product.objects.select_related('category', 'tax_group').prefetch_related(
             'barcode', 'product_suppliers__supplier'
         )
 
@@ -81,6 +82,7 @@ class ProductListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListView
                 'internal_code': product.internal_code,
                 'name': product.name,
                 'category': product.category.name if product.category else '',
+                'tax_group': product.tax_group.name if product.tax_group else '',
                 'unit_type': product.unit_type,
                 'is_recipe': product.is_recipe,
                 'show_on_pos': product.show_on_pos,
@@ -427,6 +429,17 @@ class ProductCreateView(LoginRequiredMixin, StaffPermissionRequiredMixin, Create
     template_name = 'products/product_create.html'
     success_url = reverse_lazy('product_list')
 
+    def get_initial(self):
+        # "Save and New" (see form_valid) redirects back here with these in
+        # the query string, so the next product in the same batch doesn't
+        # need them re-picked by hand.
+        initial = super().get_initial()
+        if 'category' in self.request.GET:
+            initial['category'] = self.request.GET['category']
+        if 'tax_group' in self.request.GET:
+            initial['tax_group'] = self.request.GET['tax_group']
+        return initial
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         if self.request.POST:
@@ -464,6 +477,20 @@ class ProductCreateView(LoginRequiredMixin, StaffPermissionRequiredMixin, Create
         # place conceptually).
         if self.object.is_recipe and self.object.ingredients_backfilled_at is None:
             dispatch_task(backfill_recipe_ingredient_stock, self.object.pk)
+
+        if 'save_and_new' in self.request.POST:
+            # Category/Tax Group carry over via the query string (read back
+            # in get_initial) -- handy when adding a batch of products from
+            # the same delivery/category one after another.
+            params = {}
+            if self.object.category_id:
+                params['category'] = self.object.category_id
+            if self.object.tax_group_id:
+                params['tax_group'] = self.object.tax_group_id
+            url = reverse('product_create')
+            if params:
+                url += '?' + urlencode(params)
+            return HttpResponseRedirect(url)
 
         return super().form_valid(form)
 
