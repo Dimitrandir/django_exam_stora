@@ -1,0 +1,34 @@
+{% extends 'base.html' %}
+
+{% block title %}STORA - Refund #{{ refund.id }}{% endblock %}
+{% load currency_filters %}
+{% block content %}
+
+<h1>Refund #{{ refund.id }} of Sale #{{ refund.original_sale_id }}</h1>
+<p>{{ refund.time_of_refund|date:"d.m.Y H:i" }} -- {{ refund.cashier }} -- {{ refund.get_reason_display }}</p>
+
+<table border="2">
+    <thead>
+        <tr>
+            <th>Product</th>
+            <th>Refunded Qty</th>
+            <th>Price per unit</th>
+            <th>Total price</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for line in refund_items %}
+        <tr>
+            <td>{{ line.original_item.sale_item.name }}</td>
+            <td>{{ line.refund_quantity }}</td>
+            <td>{{ line.price_at_refund }}</td>
+            <td>{{ line.total_price_row }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+<h2 align="center">Total Refunded: {{ refund.total_amount|currency }}</h2>
+
+<a href="{% url 'sale_details' refund.original_sale_id %}">View Original Sale</a>
+
+{% endblock %}

@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+
+{% block title %}STORA - Refund{% endblock %}
+
+{% block content %}
+
+<h1>Refund a Sale</h1>
+<p>Pick from the recent receipts below, or narrow the search by sale ID/cashier, date, or amount.</p>
+
+<form method="get">
+    <input type="text" name="q" value="{{ query }}" placeholder="Sale ID or cashier name" autofocus>
+    <input type="date" name="date" value="{{ date }}">
+    <input type="number" name="amount" value="{{ amount }}" step="0.01" placeholder="Amount">
+    <button type="submit">Search</button>
+    {% if any_filter %}<a href="{% url 'refund_find' %}">Clear</a>{% endif %}
+</form>
+
+<p>{% if any_filter %}Search results{% else %}Recent receipts{% endif %}</p>
+
+<table border="2">
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Time</th>
+            <th>Cashier</th>
+            <th>Amount</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for sale in results %}
+        <tr>
+            <td>{{ sale.id }}</td>
+            <td>{{ sale.time_of_sale|date:"d.m.Y H:i" }}</td>
+            <td>{{ sale.cashier }}</td>
+            <td>{{ sale.total_amount }}</td>
+            <td><a href="{% url 'refund_new' sale.pk %}">Refund</a></td>
+        </tr>
+        {% empty %}
+        <tr>
+            <td colspan="5">No sales found.</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+{% endblock %}

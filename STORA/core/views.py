@@ -12,7 +12,7 @@ from STORA.core.utils import multi_token_icontains_q
 
 def clear_cashier_operation(request):
     clear_cashier_operation_state(request)
-    return redirect('sales_list')
+    return redirect('sales_report')
 
 
 class GlobalSearchView(LoginRequiredMixin, View):

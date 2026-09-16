@@ -8,7 +8,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from STORA.products.models import Category, Product, RecipeIngredient
-from STORA.sales.models import SaleAttributes, SaleItems, PosPin, SaleItemVoidLog
+from STORA.sales.models import SaleAttributes, SaleItems, PosPin, SaleItemVoidLog, RefundAttributes, RefundItems
 from STORA.sales.forms import SaleItemForm
 from STORA.sales.tasks import backfill_recipe_ingredient_stock
 
@@ -34,10 +34,6 @@ class SalesViewTests(TestCase):
 
     def test_sales_add_page_loads(self):
         response = self.client.get(reverse('sale_add'))
-        self.assertEqual(response.status_code, 200)
-
-    def test_sales_list_page_loads(self):
-        response = self.client.get(reverse('sales_list'))
         self.assertEqual(response.status_code, 200)
 
     def test_sale_details_page_loads(self):
@@ -90,7 +86,7 @@ class SalesPermissionTests(TestCase):
         self.sale = SaleAttributes.objects.create(cashier=self.cashier)
 
     def test_anonymous_is_redirected_to_login_not_500(self):
-        for url in [reverse('sale_add'), reverse('sales_list'), reverse('sale_details', args=[self.sale.pk]),
+        for url in [reverse('sale_add'), reverse('sale_details', args=[self.sale.pk]),
                     reverse('sale_delete', args=[self.sale.pk])]:
             response = self.client.get(url)
             self.assertEqual(response.status_code, 302, url)
@@ -99,41 +95,18 @@ class SalesPermissionTests(TestCase):
     def test_warehouse_has_no_sales_access(self):
         self.client.force_login(self.warehouse)
         self.assertEqual(self.client.get(reverse('sale_add')).status_code, 403)
-        self.assertEqual(self.client.get(reverse('sales_list')).status_code, 403)
         self.assertEqual(self.client.get(reverse('sale_details', args=[self.sale.pk])).status_code, 403)
         self.assertEqual(self.client.get(reverse('sale_delete', args=[self.sale.pk])).status_code, 403)
 
     def test_cashier_has_full_sales_access(self):
         self.client.force_login(self.cashier)
         self.assertEqual(self.client.get(reverse('sale_add')).status_code, 200)
-        self.assertEqual(self.client.get(reverse('sales_list')).status_code, 200)
         self.assertEqual(self.client.get(reverse('sale_details', args=[self.sale.pk])).status_code, 200)
         self.assertEqual(self.client.get(reverse('sale_delete', args=[self.sale.pk])).status_code, 200)
 
     def test_manager_has_full_sales_access(self):
         self.client.force_login(self.manager)
         self.assertEqual(self.client.get(reverse('sale_add')).status_code, 200)
-        self.assertEqual(self.client.get(reverse('sales_list')).status_code, 200)
-
-
-class SalesListDisplayTests(TestCase):
-    """sales_list.html had a malformed {% for %}/{% empty %} (a dangling
-    <tr> after every real row, and the 'no sales' message never rendering
-    at all) -- same shape of bug fixed earlier for deliveries_list.html."""
-
-    def setUp(self):
-        self.manager = User.objects.create_user(username='list-manager', password='pass12345', role=User.MANAGER)
-        self.client.force_login(self.manager)
-
-    def test_empty_state_message_renders(self):
-        response = self.client.get(reverse('sales_list'))
-        self.assertContains(response, 'No sales found.')
-
-    def test_real_row_does_not_duplicate_into_a_stray_empty_row(self):
-        sale = SaleAttributes.objects.create(cashier=self.manager)
-        response = self.client.get(reverse('sales_list'))
-        self.assertContains(response, str(sale.id))
-        self.assertNotContains(response, 'No sales found.')
 
 
 class SalesFormSubmissionTests(TestCase):
@@ -811,3 +784,140 @@ class RecipeBackfillTaskTests(TestCase):
 
         plain_product.refresh_from_db()
         self.assertIsNone(plain_product.ingredients_backfilled_at)
+
+
+class RefundViewTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='refund-cashier', password='pass12345')
+        self.client.login(username='refund-cashier', password='pass12345')
+
+        self.product = Product.objects.create(
+            internal_code='RF000001', name='Refund Product', sell_price=Decimal('4.00'), quantity=10,
+        )
+        self.sale = SaleAttributes.objects.create(cashier=self.user)
+        self.item = SaleItems.objects.create(
+            sale=self.sale, sale_item=self.product, sale_quantity=Decimal('3.000'), price_at_sale=Decimal('4.00'),
+        )
+        # Stock after the sale: 10 - 3 = 7.
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.quantity, 7)
+
+    def test_refund_find_page_loads(self):
+        response = self.client.get(reverse('refund_find'))
+        self.assertEqual(response.status_code, 200)
+
+    def test_refund_find_locates_sale_by_id(self):
+        response = self.client.get(reverse('refund_find'), {'q': str(self.sale.pk)})
+        self.assertIn(self.sale, response.context['results'])
+
+    def test_refund_find_shows_recent_receipts_with_no_filters(self):
+        response = self.client.get(reverse('refund_find'))
+        self.assertFalse(response.context['any_filter'])
+        self.assertIn(self.sale, response.context['results'])
+
+    def test_refund_find_filters_by_date(self):
+        today = self.sale.time_of_sale.date().isoformat()
+        response = self.client.get(reverse('refund_find'), {'date': today})
+        self.assertTrue(response.context['any_filter'])
+        self.assertIn(self.sale, response.context['results'])
+
+        response = self.client.get(reverse('refund_find'), {'date': '2000-01-01'})
+        self.assertNotIn(self.sale, response.context['results'])
+
+    def test_refund_find_filters_by_amount(self):
+        response = self.client.get(reverse('refund_find'), {'amount': '12.00'})
+        self.assertIn(self.sale, response.context['results'])
+
+        response = self.client.get(reverse('refund_find'), {'amount': '999.99'})
+        self.assertNotIn(self.sale, response.context['results'])
+
+    def test_refund_new_page_loads(self):
+        response = self.client.get(reverse('refund_new', kwargs={'pk': self.sale.pk}))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['lines'][0]['remaining'], Decimal('3.000'))
+
+    def test_partial_refund_restores_stock_and_records_refund(self):
+        response = self.client.post(reverse('refund_new', kwargs={'pk': self.sale.pk}), {
+            'reason': RefundAttributes.RETURN_COMPLAINT,
+            f'refund_qty_{self.item.pk}': '2',
+        })
+
+        refund = RefundAttributes.objects.get(original_sale=self.sale)
+        self.assertRedirects(response, reverse('refund_details', kwargs={'pk': refund.pk}))
+        self.assertEqual(refund.cashier, self.user)
+        self.assertEqual(refund.reason, RefundAttributes.RETURN_COMPLAINT)
+        self.assertEqual(refund.total_amount, Decimal('8.00'))
+
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.quantity, 9)  # 7 + 2 given back
+
+    def test_cannot_refund_more_than_was_sold(self):
+        response = self.client.post(reverse('refund_new', kwargs={'pk': self.sale.pk}), {
+            'reason': RefundAttributes.RETURN_COMPLAINT,
+            f'refund_qty_{self.item.pk}': '5',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNotNone(response.context['error'])
+        self.assertFalse(RefundAttributes.objects.filter(original_sale=self.sale).exists())
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.quantity, 7)  # unchanged
+
+    def test_second_refund_is_capped_by_what_the_first_already_took(self):
+        RefundItems.objects.create(
+            refund=RefundAttributes.objects.create(
+                original_sale=self.sale, cashier=self.user, reason=RefundAttributes.OPERATOR_ERROR,
+            ),
+            original_item=self.item, refund_quantity=Decimal('2.000'), price_at_refund=Decimal('4.00'),
+        )
+
+        # Only 1.000 left refundable (3 sold - 2 already refunded) -- asking
+        # for 2 more must be rejected, not silently over-refund the line.
+        response = self.client.post(reverse('refund_new', kwargs={'pk': self.sale.pk}), {
+            'reason': RefundAttributes.RETURN_COMPLAINT,
+            f'refund_qty_{self.item.pk}': '2',
+        })
+
+        self.assertIsNotNone(response.context['error'])
+        self.assertEqual(RefundAttributes.objects.filter(original_sale=self.sale).count(), 1)
+
+    def test_invalid_reason_is_rejected(self):
+        response = self.client.post(reverse('refund_new', kwargs={'pk': self.sale.pk}), {
+            'reason': 'NOT_A_REAL_REASON',
+            f'refund_qty_{self.item.pk}': '1',
+        })
+
+        self.assertIsNotNone(response.context['error'])
+        self.assertFalse(RefundAttributes.objects.filter(original_sale=self.sale).exists())
+
+    def test_refund_of_recipe_product_restores_ingredient_stock(self):
+        milk = Product.objects.create(
+            internal_code='RF000002', name='Refund Milk', sell_price=2, quantity=Decimal('5.000'),
+            unit_type=Product.WEIGHT,
+        )
+        cappuccino = Product.objects.create(
+            internal_code='RF000003', name='Refund Cappuccino', sell_price=3, quantity=0, is_recipe=True,
+        )
+        RecipeIngredient.objects.create(recipe=cappuccino, ingredient=milk, quantity=Decimal('0.050'))
+        sale = SaleAttributes.objects.create(cashier=self.user)
+        item = SaleItems.objects.create(sale=sale, sale_item=cappuccino, sale_quantity=2)
+        milk.refresh_from_db()
+        self.assertEqual(milk.quantity, Decimal('4.900'))  # 5.000 - 2*0.050
+
+        self.client.post(reverse('refund_new', kwargs={'pk': sale.pk}), {
+            'reason': RefundAttributes.RETURN_COMPLAINT,
+            f'refund_qty_{item.pk}': '1',
+        })
+
+        milk.refresh_from_db()
+        self.assertEqual(milk.quantity, Decimal('4.950'))  # 1 cappuccino refunded back = +0.050
+
+    def test_refund_details_page_loads(self):
+        refund = RefundAttributes.objects.create(
+            original_sale=self.sale, cashier=self.user, reason=RefundAttributes.RETURN_COMPLAINT,
+        )
+        RefundItems.objects.create(
+            refund=refund, original_item=self.item, refund_quantity=Decimal('1.000'), price_at_refund=Decimal('4.00'),
+        )
+        response = self.client.get(reverse('refund_details', kwargs={'pk': refund.pk}))
+        self.assertEqual(response.status_code, 200)

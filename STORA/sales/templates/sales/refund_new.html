@@ -1,0 +1,143 @@
+{% extends 'base.html' %}
+
+{% block title %}STORA - Refund Sale #{{ sale.id }}{% endblock %}
+{% load currency_filters %}
+{% block content %}
+
+<h1>Refund Sale #{{ sale.id }} ({{ sale.time_of_sale|date:"d.m.Y H:i" }})</h1>
+
+{% if error %}
+<div style="color: red;"><strong>{{ error }}</strong></div>
+{% endif %}
+
+<form method="post">
+    {% csrf_token %}
+
+    <table border="2">
+        <thead>
+            <tr>
+                <th>Product</th>
+                <th>Sold Qty</th>
+                <th>Already Refunded</th>
+                <th>Remaining</th>
+                <th>Refund Qty Now</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for line in lines %}
+            <tr>
+                <td>{{ line.item.sale_item.name }}</td>
+                <td>{{ line.item.sale_quantity }}</td>
+                <td>{{ line.already_refunded }}</td>
+                <td>{{ line.remaining }}</td>
+                <td>
+                    {% if line.remaining > 0 %}
+                    <input type="text" inputmode="decimal" readonly
+                           class="refund-qty-input" data-max="{{ line.remaining }}"
+                           name="refund_qty_{{ line.item.pk }}" value="0">
+                    {% else %}
+                    fully refunded
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <p>
+        <label for="id_reason">Reason:</label>
+        <select name="reason" id="id_reason">
+            {% for value, label in reason_choices %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+        </select>
+    </p>
+
+    <button type="submit">Confirm Refund</button>
+    <a href="{% url 'refund_find' %}">Cancel</a>
+</form>
+
+{% comment %}
+Refund Qty inputs are readonly -- tapping one opens this keypad instead of
+relying on a native number field, whose tiny spinner arrows/OS keyboard
+are awkward on the shop's touchscreen (same reasoning as the Complete Sale
+checkout keypad). Reuses the .checkout-keypad/.keypad-btn styles from
+static/style.css rather than defining new ones.
+{% endcomment %}
+<div class="refund-keypad-overlay" id="refund-keypad-overlay" style="--pos-ink:#1c2b2d;">
+    <div class="refund-keypad-popup">
+        <p id="refund-keypad-label"></p>
+        <input type="text" id="refund-keypad-display" readonly>
+        <div class="checkout-keypad">
+            <button type="button" class="keypad-btn" data-key="7">7</button>
+            <button type="button" class="keypad-btn" data-key="8">8</button>
+            <button type="button" class="keypad-btn" data-key="9">9</button>
+            <button type="button" class="keypad-btn" data-key="4">4</button>
+            <button type="button" class="keypad-btn" data-key="5">5</button>
+            <button type="button" class="keypad-btn" data-key="6">6</button>
+            <button type="button" class="keypad-btn" data-key="1">1</button>
+            <button type="button" class="keypad-btn" data-key="2">2</button>
+            <button type="button" class="keypad-btn" data-key="3">3</button>
+            <button type="button" class="keypad-btn" data-key="0">0</button>
+            <button type="button" class="keypad-btn" data-key=".">.</button>
+            <button type="button" class="keypad-btn keypad-btn--del" data-key="del">&larr;</button>
+        </div>
+        <button type="button" id="refund-keypad-done" class="button-save">Done</button>
+        <button type="button" id="refund-keypad-cancel">Cancel</button>
+    </div>
+</div>
+
+<script>
+(function () {
+    var overlay = document.getElementById('refund-keypad-overlay');
+    var display = document.getElementById('refund-keypad-display');
+    var label = document.getElementById('refund-keypad-label');
+    var target = null;
+    var needsReset = true;
+
+    function openFor(input) {
+        target = input;
+        display.value = input.value;
+        label.textContent = 'Max: ' + input.dataset.max;
+        needsReset = true;
+        overlay.classList.add('is-open');
+    }
+
+    function close() {
+        overlay.classList.remove('is-open');
+        target = null;
+    }
+
+    document.querySelectorAll('.refund-qty-input').forEach(function (input) {
+        input.addEventListener('click', function () { openFor(input); });
+    });
+
+    document.querySelectorAll('#refund-keypad-overlay .keypad-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var key = btn.dataset.key;
+            if (needsReset && key !== 'del') {
+                display.value = '';
+                needsReset = false;
+            }
+            if (key === 'del') {
+                display.value = display.value.slice(0, -1);
+            } else if (key === '.') {
+                if (!display.value.includes('.')) display.value += '.';
+            } else {
+                display.value += key;
+            }
+        });
+    });
+
+    document.getElementById('refund-keypad-done').addEventListener('click', function () {
+        if (target) target.value = display.value || '0';
+        close();
+    });
+    document.getElementById('refund-keypad-cancel').addEventListener('click', close);
+    overlay.addEventListener('click', function (e) {
+        if (e.target === overlay) close();
+    });
+})();
+</script>
+
+{% endblock %}

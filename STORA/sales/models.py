@@ -218,3 +218,83 @@ class SaleItemVoidLog(models.Model):
 
     def __str__(self):
         return f"{self.employee} {self.get_action_display()}: {self.quantity} x {self.product}"
+
+
+class RefundAttributes(models.Model):
+    """A refund (сторно) against an already-completed sale -- may cover the
+    whole sale or just some of its lines/quantities (see RefundItems). Kept
+    as its own model pair rather than reusing SaleAttributes/SaleItems with
+    a movement-type flag (the Stock Movements pattern in `deliveries`)
+    because a refund fundamentally references a specific original sale and
+    must track how much of each of its lines has already been refunded, to
+    stop the same line being refunded twice over -- bookkeeping that a bare
+    direction flag on the same table doesn't capture.
+
+    The 3 reasons mirror the fixed `Reason` values the fiscal protocol
+    (Daisy ECRCommApp, FDStartFiscRcp) expects for a storno document, so a
+    later fiscal-printer integration can pass this straight through without
+    a translation table."""
+
+    RETURN_COMPLAINT = 'RETURN_COMPLAINT'
+    OPERATOR_ERROR = 'OPERATOR_ERROR'
+    TAX_BASE_REDUCTION = 'TAX_BASE_REDUCTION'
+    REASON_CHOICES = [
+        (RETURN_COMPLAINT, 'Return / Complaint'),
+        (OPERATOR_ERROR, 'Operator Error'),
+        (TAX_BASE_REDUCTION, 'Reduction of Tax Base'),
+    ]
+
+    # PROTECT, not CASCADE -- a refund is a record of money actually handed
+    # back; it must never silently vanish because the original sale row did.
+    original_sale = models.ForeignKey(SaleAttributes, on_delete=models.PROTECT, related_name='refunds')
+    cashier = models.ForeignKey(Employee, on_delete=models.PROTECT, related_name='refunds')
+    reason = models.CharField(max_length=20, choices=REASON_CHOICES)
+    time_of_refund = models.DateTimeField(auto_now_add=True)
+    total_amount = models.DecimalField(default=0.00, decimal_places=2, max_digits=12)
+
+    class Meta:
+        verbose_name = 'Refund'
+        verbose_name_plural = 'Refunds'
+        ordering = ['-time_of_refund']
+
+    def __str__(self):
+        return f"Refund #{self.pk} of Sale #{self.original_sale_id}"
+
+    def recalculate_total(self):
+        total = self.items.aggregate(total=models.Sum('total_price_row'))['total'] or Decimal('0.00')
+        RefundAttributes.objects.filter(pk=self.pk).update(total_amount=total)
+        self.total_amount = total
+
+
+class RefundItems(models.Model):
+    # PROTECT -- same reasoning as original_sale above; also lets
+    # `refund_items` be summed against the original line (see refund_new
+    # view) to cap how much of it can still be refunded.
+    refund = models.ForeignKey(RefundAttributes, on_delete=models.CASCADE, related_name='items')
+    original_item = models.ForeignKey(SaleItems, on_delete=models.PROTECT, related_name='refund_items')
+    refund_quantity = models.DecimalField(max_digits=10, decimal_places=3,
+                                          validators=[MinValueValidator(Decimal('0.001'))])
+    price_at_refund = models.DecimalField(max_digits=9, decimal_places=2)
+    total_price_row = models.DecimalField(max_digits=9, decimal_places=2, blank=True, null=True)
+
+    class Meta:
+        verbose_name = 'Refund Item'
+        verbose_name_plural = 'Refund Items'
+
+    def __str__(self):
+        return f"{self.original_item.sale_item.name} x{self.refund_quantity}"
+
+    def save(self, *args, **kwargs):
+        with transaction.atomic():
+            # Gives stock back -- mirrors adjust_stock_for_sale with a
+            # negative delta (a refund is "un-selling"), including the
+            # recipe-ingredient case.
+            product = Product.objects.select_for_update().get(pk=self.original_item.sale_item_id)
+            self.total_price_row = self.refund_quantity * self.price_at_refund
+            adjust_stock_for_sale(product, -self.refund_quantity)
+            super().save(*args, **kwargs)
+
+
+@receiver(post_save, sender=RefundItems)
+def _update_refund_total(sender, instance, **kwargs):
+    instance.refund.recalculate_total()

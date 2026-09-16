@@ -199,6 +199,18 @@ input[type="text"], input[type="number"], input[type="email"], select, textarea 
     color: #842029;
 }
 
+/* Pushed to the far right of the footer (margin-left: auto), separate
+   from the Delete Line/Void Sale/Complete Sale cluster -- a visually
+   distinct, deliberate destination, not just another cart-correction
+   button. Solid red (not the soft pink of .button-void-sale) so it reads
+   as its own thing, not a variant of Void Sale. */
+.button-refund {
+    margin-left: auto;
+    background: #dc3545;
+    border: 1px solid #b02a37;
+    color: #ffffff;
+}
+
 .is-selected-for-delete {
     outline: 2px solid #d39e00;
     outline-offset: -2px;
@@ -823,6 +835,64 @@ input[type="text"], input[type="number"], input[type="email"], select, textarea 
     background: #f8d7da;
     border-color: #e35d6a;
     color: #842029;
+}
+
+/* Refund screen's own touch keypad (refund_new.html) -- reuses
+   .checkout-keypad/.keypad-btn above, just wrapped in a simple full-
+   screen overlay instead of a Bootstrap modal (this page doesn't use
+   Bootstrap JS components). Hidden by default, shown via .is-open. */
+.refund-keypad-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 1050;
+    align-items: center;
+    justify-content: center;
+}
+
+.refund-keypad-overlay.is-open {
+    display: flex;
+}
+
+.refund-keypad-popup {
+    background: #ffffff;
+    border-radius: 0.75rem;
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+#refund-keypad-display {
+    width: 11.5rem;
+    text-align: right;
+    font-size: 1.4rem;
+    font-variant-numeric: tabular-nums;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid #adb5bd;
+    border-radius: 0.4rem;
+}
+
+#refund-keypad-cancel {
+    background: #e9ecef;
+    border: 1px solid #adb5bd;
+    color: #212529;
+    width: 100%;
+}
+
+/* Sales Report's Refund Status column -- "Not refunded" is left plain
+   (the common case, no need to draw the eye), the other two get a color
+   so a manager scanning the report can spot them at a glance. */
+.refund-status--partial {
+    color: #b45309;
+    font-weight: 600;
+}
+
+.refund-status--full {
+    color: #b02a37;
+    font-weight: 600;
 }
 
 /* Write-off is the same screen/grid as a delivery, just moving stock the

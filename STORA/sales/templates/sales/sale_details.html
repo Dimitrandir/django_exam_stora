@@ -1,39 +1,62 @@
 {% extends 'base.html' %}
 
 {% block title %}STORA - Sale #{{ sale.id }}{% endblock %}
-{% load currency_filters %}
+{% load static cache_bust %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
+{% endblock %}
+
 {% block content %}
 
 <h1>Details for Sale ID: {{ sale.id }} of {{ sale.time_of_sale | date:"d.m.Y H:i"}} </h1>
 
- <table border="2">
+<button type="button" id="sold-items-export-btn" class="btn btn-outline-secondary btn-sm">Export to Excel</button>
 
-  <thead>
-   <tr>
-    <th>Product ID</th>
-    <th>Product Name</th>
-    <th>Quantity</th>
-    <th>Price per unit</th>
-    <th>Total price</th>
-   </tr>
-  </thead>
+{{ sold_items_data|json_script:"sold-items-data" }}
+<div id="sold-items-table" class="table-sm"></div>
 
-  <tbody>
-
-  {% for product in sold_items %}
-  <tr>
-    <td>{{ product.sale_item.id }}</td>
-    <td>{{ product.sale_item.name }}</td>
-    <td>{{ product.sale_quantity }}</td>
-    <td>{{ product.price_at_sale }}</td>
-    <td>{{ product.total_price_row }}</td>
-  </tr>
-  {% endfor %}
-  </tbody>
- </table>
-<h2 align="center">Total Amount: {{ sale.total_amount|currency }}</h2>
 <div>
-    {% if perms.sales.delete_saleattributes %}<a href="{% url 'sale_delete' sale.pk %}" class="button_delete">DELETE</a>{% endif %}
+    {% if perms.sales.add_saleattributes %}<a href="{% url 'refund_new' sale.pk %}" class="btn button-refund" role="button">Refund</a>{% endif %}
 </div>
 
 {% endblock content%}
+
+{% block extra_js %}
+<script src="{% static 'vendor/sheetjs/xlsx.full.min.js' %}"></script>
+<script src="{% static 'vendor/tabulator/tabulator.min.js' %}"></script>
+<script src="{% static_v 'js/data-table.js' %}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    function moneyFormatter(cell) {
+        var v = Number(cell.getValue());
+        return isNaN(v) ? '' : v.toFixed(2);
+    }
+
+    var table = initExcelStyleTable('#sold-items-table', 'sold-items-data', [
+        {
+            title: '#', formatter: 'rownum', width: 50, hozAlign: 'center',
+            headerSort: false, headerFilter: false, hideable: false,
+        },
+        {title: 'Product', field: 'product_name', width: 250},
+        {title: 'Quantity', field: 'quantity', width: 100, hozAlign: 'right'},
+        {title: 'Price per unit', field: 'price_at_sale', width: 130, hozAlign: 'right', formatter: moneyFormatter},
+        {
+            title: 'Total price', field: 'total_price_row', width: 130, hozAlign: 'right',
+            formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
+        },
+    ], {placeholder: 'No items on this sale.', columnChooser: false});
+
+    // Click a row to open that product -- same convention as the other
+    // Tabulator grids (view/edit lives on the record's own page).
+    table.on('rowClick', function (e, row) {
+        if (e.target.closest('.tabulator-header')) return;
+        window.location = row.getData().view_url;
+    });
+
+    document.getElementById('sold-items-export-btn').addEventListener('click', function () {
+        table.download('xlsx', 'sale_{{ sale.id }}_items.xlsx', {sheetName: 'Sale Items'});
+    });
+});
+</script>
+{% endblock %}

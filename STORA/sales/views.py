@@ -1,13 +1,16 @@
 from datetime import timedelta
+from decimal import Decimal, InvalidOperation
 
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.db import transaction
 from django.db.models import Max, Sum
 from django.http import JsonResponse
 from django.shortcuts import render, redirect, get_object_or_404
-from django.urls import reverse_lazy
+from django.urls import reverse, reverse_lazy
 from django.utils import timezone
-from django.views.generic import ListView, DetailView, DeleteView
+from django.utils.dateparse import parse_date
+from django.views.generic import DetailView, DeleteView
 from django.views.decorators.http import require_POST
 from STORA.sales.tasks import log_sale_completed
 
@@ -15,10 +18,10 @@ import json
 
 from STORA.core.mixins import StaffPermissionRequiredMixin
 from STORA.core.session_service import extract_formset_state
-from STORA.core.utils import build_restore_formset_data, dispatch_task
+from STORA.core.utils import build_restore_formset_data, dispatch_task, multi_token_icontains_q
 from STORA.products.models import Product, Barcode, Category
 from STORA.sales.forms import SaleForms, SaleItemFormSet
-from STORA.sales.models import SaleAttributes, SaleItems, PosPin, SaleItemVoidLog
+from STORA.sales.models import SaleAttributes, SaleItems, PosPin, SaleItemVoidLog, RefundAttributes, RefundItems
 from STORA.sales.tab_state import (
     TAB_IDS,
     clear_last_change,
@@ -198,15 +201,18 @@ class SalesDetailView(LoginRequiredMixin, StaffPermissionRequiredMixin, DetailVi
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['sold_items'] = self.object.items.select_related('sale_item').all()
+        context['sold_items_data'] = [
+            {
+                'product_id': item.sale_item_id,
+                'product_name': item.sale_item.name,
+                'quantity': float(item.sale_quantity),
+                'price_at_sale': float(item.price_at_sale or 0),
+                'total_price_row': float(item.total_price_row or 0),
+                'view_url': reverse('product_details', kwargs={'pk': item.sale_item_id}),
+            }
+            for item in self.object.items.select_related('sale_item').all()
+        ]
         return context
-
-
-class SalesListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListView):
-    permission_required = 'sales.view_saleattributes'
-    model = SaleAttributes
-    template_name = 'sales/sales_list.html'
-    context_object_name = 'sales'
 
 
 class SalesDeleteView(LoginRequiredMixin, StaffPermissionRequiredMixin, DeleteView):
@@ -214,7 +220,7 @@ class SalesDeleteView(LoginRequiredMixin, StaffPermissionRequiredMixin, DeleteVi
     model = SaleAttributes
     template_name = 'sales/sale_confirm_delete.html'
     context_object_name = 'sale'
-    success_url = reverse_lazy('sales_list')
+    success_url = reverse_lazy('sales_report')
 
 
 @login_required
@@ -321,3 +327,121 @@ def log_removed_sale_item(request):
     ]
     SaleItemVoidLog.objects.bulk_create(logs)
     return JsonResponse({'status': 'ok', 'count': len(logs)})
+
+
+# How many receipts to show by default (no filters entered) -- a cashier
+# picking a refund almost always means "one of the last few sales", so the
+# screen shouldn't require typing anything for the common case.
+RECENT_RECEIPTS_COUNT = 15
+
+
+@login_required
+@permission_required('sales.add_saleattributes', raise_exception=True)
+def refund_find(request):
+    """Search screen for picking which past sale to refund from. With no
+    filters at all, shows the most recent receipts (the common case). `q`
+    also takes a scanned receipt barcode once the fiscal printer prints one
+    -- a purely-numeric query is tried as an exact sale ID for that reason,
+    alongside the normal cashier-name search; `date`/`amount` narrow further."""
+    query = request.GET.get('q', '').strip()
+    date_str = request.GET.get('date', '').strip()
+    amount_str = request.GET.get('amount', '').strip()
+    date = parse_date(date_str) if date_str else None
+    amount = None
+    if amount_str:
+        try:
+            amount = Decimal(amount_str)
+        except InvalidOperation:
+            amount = None
+
+    qs = SaleAttributes.objects.select_related('cashier')
+    any_filter = False
+
+    if query:
+        any_filter = True
+        if query.isdigit():
+            qs = qs.filter(pk=query)
+        else:
+            qs = qs.filter(multi_token_icontains_q(
+                query, ['cashier__username', 'cashier__first_name', 'cashier__last_name'],
+            ))
+    if date:
+        any_filter = True
+        qs = qs.filter(time_of_sale__date=date)
+    if amount is not None:
+        any_filter = True
+        qs = qs.filter(total_amount=amount)
+
+    results = qs.order_by('-time_of_sale')[:RECENT_RECEIPTS_COUNT if not any_filter else 50]
+    return render(request, 'sales/refund_find.html', {
+        'query': query, 'date': date_str, 'amount': amount_str, 'any_filter': any_filter, 'results': results,
+    })
+
+
+@login_required
+@permission_required('sales.add_saleattributes', raise_exception=True)
+def refund_new(request, pk):
+    """Pick which lines/quantities of one sale to refund, and why. Caps
+    each line at what hasn't already been refunded from it (refunded_qty),
+    so the same item can't be refunded twice over across separate refund
+    transactions against the same sale."""
+    sale = get_object_or_404(SaleAttributes.objects.select_related('cashier'), pk=pk)
+    items = sale.items.select_related('sale_item').annotate(
+        refunded_qty=Sum('refund_items__refund_quantity')
+    )
+    lines = []
+    for item in items:
+        already = item.refunded_qty or Decimal('0')
+        lines.append({'item': item, 'already_refunded': already, 'remaining': item.sale_quantity - already})
+
+    error = None
+    if request.method == 'POST':
+        reason = request.POST.get('reason')
+        to_refund = []
+
+        if reason not in dict(RefundAttributes.REASON_CHOICES):
+            error = 'Please choose a valid reason.'
+        else:
+            for row in lines:
+                raw = request.POST.get(f'refund_qty_{row["item"].pk}', '').strip()
+                if not raw:
+                    continue
+                try:
+                    qty = Decimal(raw)
+                except InvalidOperation:
+                    error = 'Invalid quantity entered.'
+                    break
+                if qty <= 0:
+                    continue
+                if qty > row['remaining']:
+                    error = f'Cannot refund more than {row["remaining"]} of {row["item"].sale_item.name}.'
+                    break
+                to_refund.append((row['item'], qty))
+            else:
+                if not to_refund:
+                    error = 'Select at least one item to refund.'
+
+        if not error:
+            with transaction.atomic():
+                refund = RefundAttributes.objects.create(original_sale=sale, cashier=request.user, reason=reason)
+                for item, qty in to_refund:
+                    RefundItems.objects.create(
+                        refund=refund, original_item=item, refund_quantity=qty, price_at_refund=item.price_at_sale,
+                    )
+            return redirect('refund_details', pk=refund.pk)
+
+    return render(request, 'sales/refund_new.html', {
+        'sale': sale, 'lines': lines, 'reason_choices': RefundAttributes.REASON_CHOICES, 'error': error,
+    })
+
+
+class RefundDetailView(LoginRequiredMixin, StaffPermissionRequiredMixin, DetailView):
+    permission_required = 'sales.view_saleattributes'
+    model = RefundAttributes
+    template_name = 'sales/refund_details.html'
+    context_object_name = 'refund'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['refund_items'] = self.object.items.select_related('original_item__sale_item').all()
+        return context
