@@ -144,7 +144,16 @@ Tabulator patтern-ът (sort по клик, Excel-style checkbox филтър �
 - Suppliers списък (products/templates/products/suppliers_list.html)  
 - Categories списък (products/templates/products/category_list.html)  
 - Employees списък (accounts/templates/accounts/employee_list.html)  
-- Sales списък (sales)  
+- Sales списък — **направено**, но по различен път от Deliveries:
+ самостоятелният sales_list.html е **изтрит изцяло** (не остана като
+ route/redirect target), защото потребителят изрично поиска да не
+ дублира с sales_report.html — **reports/sales_report.html** вече е
+ единственият "browse all sales" екран (период + категория филтър,
+ Tabulator: #, ID, Date, Time, Cashier, Items, Total Amount, Refund
+ Status — клик на ред отваря sale_details). Всички стари линкове към
+ sales_list (navbar, index.html, SalesDeleteView.success_url,
+ clear_cashier_operation, sale_confirm_delete "NO") пренасочени към
+ sales_report.
 - Deliveries списък — вместо самостоятелния deliveries_list.html,  
  **reports/deliveries_report.html** ** пое тази роля** (Tabulator, период  
   - supplier филтър, клик на ред отваря/редактира/трие) — потребителят  
@@ -152,7 +161,7 @@ Tabulator patтern-ът (sort по клик, Excel-style checkbox филтър �
  реши да не дублира двата екрана. deliveries_list remains жив само  
    
  като route/redirect target, не се навигира до него от менюто повече.  
-- Reports таблици (останалите — sales_report.html, dashboard.html)  
+- Reports таблици (останалите — dashboard.html)  
 **Фаза 2 — Редизайн на интерфейса за продажби**  
 Ползвай `frontend-design` скила (виж `CLAUDE.md`) — да предложи визуална посока за одобрение преди писане на код.  
 - Пълен UI/UX редизайн на sales модула — вдъхновен от реален POS  
@@ -357,15 +366,27 @@ Tabulator patтern-ът (sort по клик, Excel-style checkbox филтър �
  за да не се изтрива историята при брак, ако оригиналният ред/доставка  
    
  по-късно се трие. Виж CLAUDE.md за пълната архитектура.  
-- **Справка за изписвания** — отделна справка (аналог на  
- deliveries_report.html) само за WRITE_OFF редове. Отложено изрично  
-   
- от потребителя ("после") — не е имплементирано.  
-- **Ревизии** — корекции/сторно на вече завършени продажби (различно от  
-   
- редакция на чернова) — да се дефинира точен workflow с потребителя  
-   
- преди implementation.  
+- **Справка за изписвания/брак — направено, обединено с доставките.**
+ Вместо отделна справка (както първоначално планирано),
+ reports/deliveries_report.html вече е един общ "Stock Movements
+ Report" за трите movement_type-а — селектор (Delivery/Write-off/
+ Scrap) в чузера, DeliveriesReportView филтрира по GET параметър
+ movement_type (по подразбиране Delivery, невалидна стойност пада
+ обратно на Delivery). Капан, хванат при обединението: редът, който
+ строеше deliveries_data, правеше delivery.document_type.name и
+ delivery.supplier.name безусловно — и двете са None за Write-off/
+ Scrap, значи щеше да гръмне веднага щом някой избере тях; сега е
+ ... if delivery.document_type else ''. Menu label и dashboard линка
+ преименувани на "Stock movements report".
+- **Ревизии/Сторно — направено.** RefundAttributes/RefundItems
+ (sales/models.py) — сторниране на цяла или част от вече завършена
+ продажба, ред по ред, с ограничение да не се сторнира едно и също
+ количество двукратно (refund_items сумата спрямо оригиналния ред).
+ Причините съвпадат 1:1 с фискалния протокол на Дейзи (виж CLAUDE.md
+ Наредба Н-18 бележката) — готово за директно подаване, когато дойде
+ фискалната интеграция. "Refund" бутон (червен) в касовия екран и
+ на sale_details.html вместо старото DELETE. sales_report.html
+ показва статус (Not/Partial/Fully) на колонка.
 - **AI интеграция за доставки** — асистиран анализ/предложения при  
    
  въвеждане на доставка (напр. предложения за количества по история).  
