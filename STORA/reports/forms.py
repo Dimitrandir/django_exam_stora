@@ -1,6 +1,6 @@
 from django import forms
 
-from STORA.products.models import Suppliers, Category
+from STORA.products.models import Suppliers
 
 
 class ReportPeriodForm(forms.Form):
@@ -21,12 +21,6 @@ class ReportPeriodForm(forms.Form):
         # swaps this for a search+popup-free picker in JS, same pattern as
         # the delivery form's own supplier field (see supplier_search).
         widget=forms.HiddenInput(),
-    )
-    category = forms.ModelChoiceField(
-        label='Category',
-        queryset=Category.objects.all(),
-        required=False,
-        empty_label='All categories',
     )
 
     def clean(self):

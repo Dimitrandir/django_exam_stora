@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 
-{% block title %}STORA - Deliveries Report{% endblock %}
+{% block title %}STORA - Stock Movements Report{% endblock %}
 {% load static cache_bust %}
 
 {% block extra_css %}
@@ -10,8 +10,8 @@
 {% block content %}
 <section class="reports-deliveries">
     <header class="page-header mb-4">
-        <h1 class="h2 mb-1">Deliveries Report</h1>
-        <p class="text-muted mb-0">Filtered deliveries overview for the selected period.</p>
+        <h1 class="h2 mb-1">Stock Movements Report</h1>
+        <p class="text-muted mb-0">Deliveries, write-offs and scrap -- pick which one below.</p>
     </header>
 
     <section class="report-filter card shadow-sm border-0 rounded-4 mb-4">
@@ -21,6 +21,17 @@
                     <legend class="h5 mb-3">Choose period</legend>
 
                     <div class="row g-3">
+                        <div class="col-12">
+                            <div class="report-filter__field">
+                                <label for="id_movement_type">Movement type</label>
+                                <select name="movement_type" id="id_movement_type" class="form-select" style="max-width: 220px;">
+                                    {% for value, label in movement_type_choices %}
+                                    <option value="{{ value }}" {% if value == movement_type %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+
                         <div class="col-md-6">
                             <div class="report-filter__field">
                                 {{ form.start_date.label_tag }}
@@ -55,45 +66,18 @@
         </div>
     </section>
 
-    <section class="report-summary mb-4">
-        <div class="row g-3">
-            <div class="col-md-6">
-                <article class="report-card card shadow-sm border-0 rounded-4 h-100">
-                    <div class="card-body">
-                        <h3 class="h6 text-muted mb-2">Total Deliveries</h3>
-                        <p class="report-card__value display-6 mb-0">{{ total_deliveries_count }}</p>
-                    </div>
-                </article>
-            </div>
-
-            <div class="col-md-6">
-                <article class="report-card card shadow-sm border-0 rounded-4 h-100">
-                    <div class="card-body">
-                        <h3 class="h6 text-muted mb-2">Total Delivery Amount</h3>
-                        <p class="report-card__value display-6 mb-0">{{ total_deliveries_amount }}</p>
-                    </div>
-                </article>
-            </div>
-        </div>
-    </section>
-
     <section class="report-section card shadow-sm border-0 rounded-4 mb-4">
         <div class="card-body">
             <header class="section-header d-flex justify-content-between align-items-center mb-3">
-                <h2 class="h4 mb-0">Deliveries in Period</h2>
+                <h2 class="h4 mb-0">Movements in Period</h2>
                 <button type="button" id="deliveries-export-btn" class="btn btn-outline-secondary btn-sm">Export to Excel</button>
             </header>
 
             {{ deliveries_data|json_script:"deliveries-table-data" }}
             <div id="deliveries-table" class="table-sm"></div>
-            <p class="text-muted small mt-2 mb-0">Click a row to open that delivery (edit/delete from there).</p>
+            <p class="text-muted small mt-2 mb-0">Click a row to open that record (edit/delete from there).</p>
         </div>
     </section>
-
-    <footer class="report-actions d-flex gap-2 flex-wrap">
-        <a href="{% url 'reports_dashboard' %}" class="btn btn-outline-primary">Dashboard</a>
-        <a href="{% url 'sales_report' %}" class="btn btn-outline-primary">Sales report</a>
-    </footer>
 </section>
 {% endblock %}
 

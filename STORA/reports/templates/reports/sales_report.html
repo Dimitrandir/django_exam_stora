@@ -1,12 +1,20 @@
 {% extends 'base.html' %}
 
 {% block title %}STORA - Sales Report{% endblock %}
+{% load static cache_bust %}
+
+{% block main_class %}main-wide{% endblock %}
+{% block container_class %}container-fluid{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
+{% endblock %}
 
 {% block content %}
 <section class="reports-sales">
     <header class="page-header mb-4">
         <h1 class="h2 mb-1">Sales Report</h1>
-        <p class="text-muted mb-0">Filtered sales overview for the selected period.</p>
+        <p class="text-muted mb-0">Browse and filter every sale for the selected period.</p>
     </header>
 
     <section class="report-filter card shadow-sm border-0 rounded-4 mb-4">
@@ -29,13 +37,6 @@
                                 {{ form.end_date }}
                             </div>
                         </div>
-
-                        <div class="col-12">
-                            <div class="report-filter__field">
-                                {{ form.category.label_tag }}
-                                {{ form.category }}
-                            </div>
-                        </div>
                     </div>
 
                     <div class="mt-3">
@@ -46,99 +47,65 @@
         </div>
     </section>
 
-    <section class="report-summary mb-4">
-        <div class="row g-3">
-            <div class="col-md-6">
-                <article class="report-card card shadow-sm border-0 rounded-4 h-100">
-                    <div class="card-body">
-                        <h3 class="h6 text-muted mb-2">Total Sales</h3>
-                        <p class="report-card__value display-6 mb-0">{{ total_sales_count }}</p>
-                    </div>
-                </article>
-            </div>
-
-            <div class="col-md-6">
-                <article class="report-card card shadow-sm border-0 rounded-4 h-100">
-                    <div class="card-body">
-                        <h3 class="h6 text-muted mb-2">Total Revenue</h3>
-                        <p class="report-card__value display-6 mb-0">{{ total_sales_amount }}</p>
-                    </div>
-                </article>
-            </div>
-        </div>
-    </section>
-
     <section class="report-section card shadow-sm border-0 rounded-4 mb-4">
-        <div class="card-body p-0">
-            <header class="section-header px-4 pt-4 pb-3">
+        <div class="card-body">
+            <header class="section-header d-flex justify-content-between align-items-center mb-3">
                 <h2 class="h4 mb-0">Sales in Period</h2>
+                <button type="button" id="sales-export-btn" class="btn btn-outline-secondary btn-sm">Export to Excel</button>
             </header>
 
-            <div class="table-responsive px-4 pb-4">
-                <table class="report-table table table-hover align-middle mb-0">
-                    <thead class="table-dark">
-                        <tr>
-                            <th>ID</th>
-                            <th>Time</th>
-                            <th>Cashier</th>
-                            <th>Amount</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for sale in sales %}
-                        <tr>
-                            <td>{{ sale.id }}</td>
-                            <td>{{ sale.time_of_sale }}</td>
-                            <td>{{ sale.cashier }}</td>
-                            <td>{{ sale.total_amount }}</td>
-                        </tr>
-                        {% empty %}
-                        <tr>
-                            <td colspan="4" class="text-center py-4 text-muted">No sales found for the selected period.</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
+            {{ sales_data|json_script:"sales-table-data" }}
+            <div id="sales-table" class="table-sm"></div>
+            <p class="text-muted small mt-2 mb-0">Click a row to open that sale.</p>
         </div>
     </section>
-
-    <section class="report-section card shadow-sm border-0 rounded-4 mb-4">
-        <div class="card-body p-0">
-            <header class="section-header px-4 pt-4 pb-3">
-                <h2 class="h4 mb-0">Top Sales</h2>
-            </header>
-
-            <div class="table-responsive px-4 pb-4">
-                <table class="report-table table table-hover align-middle mb-0">
-                    <thead class="table-dark">
-                        <tr>
-                            <th>ID</th>
-                            <th>Items Count</th>
-                            <th>Total Amount</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for sale in top_sales %}
-                        <tr>
-                            <td>{{ sale.id }}</td>
-                            <td>{{ sale.item_count }}</td>
-                            <td>{{ sale.total_amount }}</td>
-                        </tr>
-                        {% empty %}
-                        <tr>
-                            <td colspan="3" class="text-center py-4 text-muted">No top sales data available.</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </section>
-
-    <footer class="report-actions d-flex gap-2 flex-wrap">
-        <a href="{% url 'reports_dashboard' %}" class="btn btn-outline-primary">Dashboard</a>
-        <a href="{% url 'deliveries_report' %}" class="btn btn-outline-primary">Deliveries report</a>
-    </footer>
 </section>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'vendor/sheetjs/xlsx.full.min.js' %}"></script>
+<script src="{% static 'vendor/tabulator/tabulator.min.js' %}"></script>
+<script src="{% static_v 'js/data-table.js' %}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    function moneyFormatter(cell) {
+        var v = Number(cell.getValue());
+        return isNaN(v) ? '' : v.toFixed(2);
+    }
+
+    function refundStatusFormatter(cell) {
+        var v = cell.getValue();
+        var cls = v === 'Fully' ? 'refund-status--full' : v === 'Partial' ? 'refund-status--partial' : '';
+        return cls ? '<span class="' + cls + '">' + v + '</span>' : v;
+    }
+
+    var table = initExcelStyleTable('#sales-table', 'sales-table-data', [
+        {
+            title: '#', formatter: 'rownum', width: 50, hozAlign: 'center',
+            headerSort: false, headerFilter: false, hideable: false,
+        },
+        {title: 'ID', field: 'id', width: 80, bottomCalc: 'count'},
+        {title: 'Date', field: 'date', width: 110},
+        {title: 'Time', field: 'time', width: 90},
+        {title: 'Cashier', field: 'cashier', width: 180},
+        {title: 'Items', field: 'item_qty', width: 90, hozAlign: 'right'},
+        {
+            title: 'Total Amount', field: 'total_amount', width: 140, hozAlign: 'right',
+            formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
+        },
+        {title: 'Refund Status', field: 'refund_status', width: 150, formatter: refundStatusFormatter},
+    ], {placeholder: 'No sales found for the selected period.'});
+
+    // Click a row to open that sale -- same convention as the Products/
+    // Deliveries grids (view/refund actions live on the detail page).
+    table.on('rowClick', function (e, row) {
+        if (e.target.closest('.tabulator-header')) return;
+        window.location = row.getData().view_url;
+    });
+
+    document.getElementById('sales-export-btn').addEventListener('click', function () {
+        table.download('xlsx', 'sales_report.xlsx', {sheetName: 'Sales'});
+    });
+});
+</script>
 {% endblock %}
