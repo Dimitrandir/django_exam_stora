@@ -300,6 +300,55 @@
 
         var table = new Tabulator(elementSelector, tableConfig);
 
+        // `layout: 'fitColumns'` only fits column widths to the container
+        // ONCE, at initial render -- this vendored Tabulator build does NOT
+        // recalculate them on its own if the container is resized
+        // afterwards (window resized, sidebar toggled, etc.). Without this,
+        // a column built wide on a wide window stays that wide (and
+        // overflows) after the window is narrowed, and vice versa -- the
+        // wrap-instead-of-truncate CSS above can't help either, since the
+        // column itself never actually gets narrower to force a wrap.
+        // Confirmed live: table.redraw(true) is what actually recalculates
+        // it; a plain window 'resize' event firing on its own does nothing.
+        var resizeRedrawTimer = null;
+        window.addEventListener('resize', function () {
+            clearTimeout(resizeRedrawTimer);
+            resizeRedrawTimer = setTimeout(function () {
+                table.redraw(true);
+                // redraw(true) recalculates COLUMN widths but not ROW
+                // heights -- a row already rendered once (at the old
+                // width) keeps its old cached height even if a cell's
+                // text now needs to wrap onto another line at the new
+                // (narrower) width, silently clipping that extra line
+                // (overflow: hidden on the cell). normalizeHeight(true)
+                // is the actual Tabulator internal call that re-measures
+                // every row's real content height -- found by grepping
+                // the vendored source (rowManager.normalizeHeight), not
+                // documented as public API, but the only thing that
+                // fixed this when tested live.
+                table.rowManager.normalizeHeight(true);
+            }, 150);
+        });
+
+        // A column can ALSO be resized directly -- dragging its header
+        // border -- with the window never changing size at all, so no
+        // 'resize' event fires for that case; needs its own listener.
+        // 'columnResized' (fired only on drag-release) turned out
+        // unreliable to hook (never fired in testing, possibly a Pointer
+        // vs Mouse Events mismatch in this vendored build) -- 'columnWidth'
+        // is a lower-level event that reliably fires for every width
+        // change regardless of cause, confirmed live. Only normalizeHeight
+        // is needed here (not a full redraw) -- the column's own new width
+        // is already correct; redraw() would recalculate fitColumns and
+        // fight the drag the user just did.
+        var columnWidthTimer = null;
+        table.on('columnWidth', function () {
+            clearTimeout(columnWidthTimer);
+            columnWidthTimer = setTimeout(function () {
+                table.rowManager.normalizeHeight(true);
+            }, 150);
+        });
+
         if (options.columnChooser !== false) {
             table.on('tableBuilt', function () {
                 addColumnChooser(document.querySelector(elementSelector), table, columns);

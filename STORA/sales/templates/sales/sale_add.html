@@ -595,6 +595,51 @@
             ],
         });
 
+        // fitColumns only fits column widths to the container once, at
+        // initial render -- doesn't recalculate on its own if the window is
+        // resized afterwards (see the identical fix/comment in
+        // initExcelStyleTable, static/js/data-table.js, for the full
+        // reasoning -- this table is built directly with `new Tabulator`
+        // instead of that helper, so it needs its own copy of this).
+        var saleItemsWindowResizeTimer = null;
+        window.addEventListener('resize', function () {
+            clearTimeout(saleItemsWindowResizeTimer);
+            saleItemsWindowResizeTimer = setTimeout(function () {
+                saleItemsTable.redraw(true);
+                // redraw(true) recalculates COLUMN widths but not ROW
+                // heights -- a row already rendered once (at the old
+                // width) keeps its old cached height even if a cell's
+                // text now needs to wrap onto another line at the new
+                // (narrower) width, silently clipping that extra line
+                // (overflow: hidden on the cell). normalizeHeight(true)
+                // is the actual Tabulator internal call that re-measures
+                // every row's real content height -- found by grepping
+                // the vendored source (rowManager.normalizeHeight), not
+                // documented as public API, but the only thing that
+                // fixed this when tested live.
+                saleItemsTable.rowManager.normalizeHeight(true);
+            }, 150);
+        });
+
+        // A column can ALSO be resized directly -- dragging its header
+        // border -- with the window never changing size at all, so no
+        // 'resize' event fires for that case; needs its own listener.
+        // 'columnResized' (fired only on drag-release) turned out
+        // unreliable to hook (never fired in testing, possibly a Pointer
+        // vs Mouse Events mismatch in this vendored build) -- 'columnWidth'
+        // is a lower-level event that reliably fires for every width
+        // change regardless of cause, confirmed live. Only normalizeHeight
+        // is needed here (not a full redraw) -- the column's own new width
+        // is already correct; redraw() would recalculate fitColumns and
+        // fight the drag the user just did.
+        var saleItemsColumnWidthTimer = null;
+        saleItemsTable.on('columnWidth', function () {
+            clearTimeout(saleItemsColumnWidthTimer);
+            saleItemsColumnWidthTimer = setTimeout(function () {
+                saleItemsTable.rowManager.normalizeHeight(true);
+            }, 150);
+        });
+
         // -- Selecting a line to delete -- tap its row (the Qty/Unit
         // Price/Sum cells each swallow their own click to open an editor,
         // per Tabulator's usual behavior, so in practice this fires from
