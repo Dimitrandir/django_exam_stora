@@ -943,8 +943,9 @@ class RecipeProductTests(TestCase):
         self.assertIn(self.milk, choices)
         self.assertNotIn(other_recipe, choices)
 
+    @patch('STORA.core.utils._broker_is_reachable', return_value=True)
     @patch('STORA.products.views.backfill_recipe_ingredient_stock.delay')
-    def test_product_create_with_recipe_ingredients_succeeds(self, mock_delay):
+    def test_product_create_with_recipe_ingredients_succeeds(self, mock_delay, mock_broker_reachable):
         category = Category.objects.create(name='Drinks Recipe Category')
         self.client.force_login(self.manager)
         response = self.client.post(reverse('product_create'), {

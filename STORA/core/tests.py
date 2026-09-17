@@ -1,7 +1,11 @@
-from django.test import TestCase
+import socket
+from unittest.mock import MagicMock
+
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from STORA.accounts.models import Employee
+from STORA.core.utils import dispatch_task
 from STORA.products.models import Category, Product, Suppliers
 
 
@@ -103,3 +107,35 @@ class GlobalSearchViewTests(TestCase):
         self.client.force_login(self.user)
         labels = [item['label'] for item in self._search('sparkling nomatchword').json()['products']]
         self.assertFalse(any('Sparkling Water' in label for label in labels))
+
+
+class DispatchTaskTests(TestCase):
+    """dispatch_task() must never let an unreachable Celery broker stall the
+    request -- see core/utils.py for why a raw TCP probe is used instead of
+    trusting Celery/Kombu's own connection-timeout settings (they turned out
+    not to actually bound the delay; kombu's Connection.connect() has its
+    own hardcoded ~2s retry sleep that no documented setting overrides)."""
+
+    def test_skips_delay_when_broker_port_is_closed(self):
+        # Port 1 is a privileged port basically guaranteed to have nothing
+        # listening on it locally -- connection is refused near-instantly.
+        with override_settings(CELERY_BROKER_URL='redis://127.0.0.1:1/0'):
+            task = MagicMock()
+            dispatch_task(task, 'arg')
+            task.delay.assert_not_called()
+
+    def test_calls_delay_when_broker_port_is_open(self):
+        # A real listening socket (doesn't need to speak Redis -- the probe
+        # only checks that *something* accepts the TCP connection) proves
+        # the reachable path still hands off to Celery normally.
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.bind(('127.0.0.1', 0))
+        listener.listen(1)
+        port = listener.getsockname()[1]
+        try:
+            with override_settings(CELERY_BROKER_URL=f'redis://127.0.0.1:{port}/0'):
+                task = MagicMock()
+                dispatch_task(task, 'arg')
+                task.delay.assert_called_once_with('arg')
+        finally:
+            listener.close()
