@@ -105,6 +105,27 @@ login екрана. Ctrl+C да спреш пробното пускане, пр
 Проверка/спиране по-нататък: `nssm status STORA`, `nssm stop STORA`,
 `nssm restart STORA`.
 
+## 7.1 Обновяване на приложението по-нататък (`git pull`)
+
+```bash
+git pull
+pip install -r requirements.txt
+python manage.py migrate
+python manage.py collectstatic --noinput
+nssm restart STORA
+```
+
+**Последната стъпка (`nssm restart STORA`) е задължителна при всяка промяна**
+**на статичен файл (CSS/JS) — не е достатъчно само `collectstatic`.**
+WhiteNoise (`DEBUG=False`) чете статичните файлове в паметта само веднъж,
+при стартиране на процеса — не следи промени на диска след това. Ако само
+пуснеш `collectstatic` без рестарт, файлът на диска е коректен (`grep` през
+`staticfiles/` ще го покаже), но работещият процес продължава да сервира
+старото копие от паметта си, докато не се рестартира. Хванато на живо:
+бутон в интерфейса се появи (HTML-ът се рендира на живо от Django, не е
+статичен файл — вижда се веднага), но си остана в стар/дефолтен цвят чак
+до `nssm restart STORA`.
+
 ## 8. Дневен бекъп на базата
 
 Създай `backup.bat` (напр. в `C:\stora-backup\backup.bat`):
