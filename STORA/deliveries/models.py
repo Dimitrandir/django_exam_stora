@@ -165,8 +165,15 @@ class DeliveryItems(models.Model):
             # SaleItems.save().
             product = Product.objects.select_for_update().get(pk=self.delivery_item_id)
 
-            if not self.price_at_delivery:
+            if self.price_at_delivery is None:
                 self.price_at_delivery = product.delivery_price
+            if self.price_at_delivery is None:
+                # Product has no delivery_price in the catalog yet either
+                # (e.g. brand-new product) -- fall back to 0 instead of
+                # crashing on Decimal * None. Matches what the delivery
+                # items grid already shows the clerk in that case (see
+                # _delivery_items_table.html, addProductRow).
+                self.price_at_delivery = Decimal('0.00')
             self.total_price_row = self.delivery_quantity * self.price_at_delivery
 
             if self.pk:

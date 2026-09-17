@@ -108,6 +108,31 @@ class DeliveryItemDecimalQuantityTests(TestCase):
         self.product.refresh_from_db()
         self.assertEqual(self.product.quantity, Decimal('18.750'))
 
+    def test_explicit_zero_price_is_not_overwritten_by_catalog_price(self):
+        # `if not self.price_at_delivery:` used to treat an explicit 0 the
+        # same as "not given" (Decimal('0') is falsy) and silently replaced
+        # it with product.delivery_price. Here that's None (never delivered
+        # before), so the multiplication crashed with
+        # `TypeError: unsupported operand type(s) for *: 'decimal.Decimal' and 'NoneType'`.
+        self.assertIsNone(self.product.delivery_price)
+        item = DeliveryItems.objects.create(
+            delivery=self.delivery, delivery_item=self.product,
+            delivery_quantity=Decimal('5.000'), price_at_delivery=Decimal('0.00'),
+        )
+        self.assertEqual(item.price_at_delivery, Decimal('0.00'))
+        self.assertEqual(item.total_price_row, Decimal('0.00'))
+
+    def test_missing_price_with_no_catalog_price_falls_back_to_zero(self):
+        # price_at_delivery not given at all, and the product has no
+        # delivery_price yet either -- must not crash, should default to 0.
+        self.assertIsNone(self.product.delivery_price)
+        item = DeliveryItems.objects.create(
+            delivery=self.delivery, delivery_item=self.product,
+            delivery_quantity=Decimal('5.000'),
+        )
+        self.assertEqual(item.price_at_delivery, Decimal('0.00'))
+        self.assertEqual(item.total_price_row, Decimal('0.00'))
+
 
 class DeliveryStockAdjustmentTests(TestCase):
     """DeliveryItems.save() used to unconditionally do
