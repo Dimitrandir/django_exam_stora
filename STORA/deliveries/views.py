@@ -111,7 +111,11 @@ def deliveries_add(request, movement_type=DeliveryAttributes.MOVEMENT_DELIVERY):
             clear_cashier_operation_state(request)
             if movement_type != DeliveryAttributes.MOVEMENT_DELIVERY:
                 return redirect('delivery_details', pk=delivery.pk)
-            return redirect('deliveries_list')
+            # deliveries_list isn't in the nav menu anymore (superseded by
+            # the unified Stock Movements report) -- send the warehouse
+            # clerk straight into a fresh delivery instead, same pattern as
+            # sales_add redirecting to itself after completing a sale.
+            return redirect('delivery_add')
 
         extracted_state = extract_formset_state(request.POST, formset_prefix)
         delivery_items_initial = _items_initial_from_rows(extracted_state.get('forms', []))

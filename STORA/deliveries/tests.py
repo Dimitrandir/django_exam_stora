@@ -356,7 +356,7 @@ class DeliveryFormSubmissionTests(TestCase):
             'items-0-DELETE': '',
         })
         response = self.client.post(reverse('delivery_add'), data)
-        self.assertRedirects(response, reverse('deliveries_list'))
+        self.assertRedirects(response, reverse('delivery_add'))
 
         delivery = DeliveryAttributes.objects.get(document_number='INV-100')
         self.assertEqual(delivery.items.count(), 1)
@@ -379,7 +379,7 @@ class DeliveryFormSubmissionTests(TestCase):
             'items-0-DELETE': '',
         })
         response = self.client.post(reverse('delivery_add'), data)
-        self.assertRedirects(response, reverse('deliveries_list'))
+        self.assertRedirects(response, reverse('delivery_add'))
 
         item = DeliveryItems.objects.get(delivery__document_number='INV-103')
         self.assertEqual(item.expiry_date.isoformat(), '2026-12-31')
