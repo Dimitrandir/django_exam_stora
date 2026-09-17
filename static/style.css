@@ -545,6 +545,22 @@ input[type="text"], input[type="number"], input[type="email"], select, textarea 
     width: fit-content !important;
 }
 
+/* Applies to every Tabulator table in the project. The vendor bootstrap5
+   theme sets .tabulator-cell { white-space: nowrap; text-overflow:
+   ellipsis; overflow: hidden }, so any value too long for its column
+   silently truncates to "..." with no way to read the rest (no native
+   tooltip either, in this vendored build). Wrap instead: the cell grows
+   to however many lines it needs and the row grows to match, so nothing
+   is ever hidden. !important because this file loads BEFORE the vendor
+   tabulator_bootstrap5.min.css in <head> (it's brought in per-template via
+   {% block extra_css %}), so a plain override here would lose the
+   cascade otherwise -- same reasoning as .tabulator-calcs-holder/
+   .tabulator-footer above. */
+.tabulator-cell {
+    white-space: normal !important;
+    text-overflow: clip !important;
+    overflow-wrap: break-word !important;
+}
 
 .sale-form__categories {
     flex: 1;
