@@ -24,6 +24,7 @@ from STORA.products.forms import (
     RecipeIngredientFormSet, ProductHistoryPeriodForm, TaxGroupForm,
 )
 from STORA.products.models import Product, Barcode, Category, Suppliers, TaxGroup
+from STORA.pricelists.services import resolve_prices
 from STORA.sales.models import SaleAttributes, SaleItems
 from STORA.sales.tasks import backfill_recipe_ingredient_stock
 
@@ -64,9 +65,12 @@ class ProductListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListView
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         products_data = []
-        for product in context['products']:
+        products_list = list(context['products'])
+        price_list_matches = resolve_prices(products_list)
+        for product in products_list:
             barcodes = list(product.barcode.all())
             suppliers = list(product.product_suppliers.all())
+            price_list_match = price_list_matches.get(product.pk)
             # Computed server-side (like everything else in this row) rather
             # than as a Tabulator mutator -- a mutator would also re-run on
             # every edit COMMIT for this column, silently overwriting
@@ -92,6 +96,12 @@ class ProductListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListView
                 'delivery_price': float(product.delivery_price) if product.delivery_price is not None else None,
                 'markup_percent': markup_percent,
                 'view_url': reverse('product_details', kwargs={'pk': product.pk}),
+                'price_list_name': price_list_match['rule'].price_list.name if price_list_match else '',
+                'price_list_price': float(price_list_match['price']) if price_list_match else None,
+                'price_list_url': (
+                    reverse('price_list_detail', kwargs={'pk': price_list_match['rule'].price_list_id})
+                    + f'?highlight={product.pk}'
+                ) if price_list_match else '',
             }
             for i in range(self.GRID_SLOT_COUNT):
                 row[f'barcode_{i + 1}'] = barcodes[i].code if i < len(barcodes) else ''

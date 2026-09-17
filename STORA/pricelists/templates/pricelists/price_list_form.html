@@ -1,0 +1,295 @@
+{% extends 'base.html' %}
+
+{% block title %}STORA - {% if price_list %}Edit Price List{% else %}New Price List{% endif %}{% endblock %}
+{% load static %}
+
+{% block main_class %}main-wide{% endblock %}
+{% block container_class %}container-fluid{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
+{% endblock %}
+
+{% block content %}
+<section class="delivery-form">
+    <header class="page-header">
+        <h1>{% if price_list %}Edit Price List{% else %}New Price List{% endif %}</h1>
+    </header>
+
+    {% if form.errors %}
+    <div class="form-errors">{{ form.errors }}</div>
+    {% endif %}
+    {% if rules_error %}
+    <div class="form-errors">
+        <ul class="mb-0">{% for message in rules_error %}<li>{{ message }}</li>{% endfor %}</ul>
+    </div>
+    {% endif %}
+
+    <form method="post" id="price-list-form">
+        {% csrf_token %}
+
+        <section class="delivery-form__general">
+            <header class="section-header"><h2>General Information</h2></header>
+            <div class="delivery-form__fields">
+                <p>{{ form.name.label_tag }} {{ form.name }}</p>
+                <p>{{ form.priority.label_tag }} {{ form.priority }}</p>
+                <p>{{ form.start_date.label_tag }} {{ form.start_date }}</p>
+                <p>{{ form.end_date.label_tag }} {{ form.end_date }}</p>
+            </div>
+        </section>
+
+        <section class="delivery-form__items">
+            <header class="section-header"><h2>Products / Categories / Suppliers Covered</h2></header>
+
+            <div class="d-flex gap-4 flex-wrap mb-3">
+                <div class="position-relative" style="min-width:280px;">
+                    <label class="form-label mb-1">Add a product</label>
+                    <input type="text" id="product-search-input" class="form-control form-control-sm"
+                           placeholder="Search product by name or code..." autocomplete="off">
+                    <div id="product-search-results" class="global-search-results"></div>
+                </div>
+
+                <div style="min-width:220px;">
+                    <label class="form-label mb-1">Add a whole category</label>
+                    <div class="d-flex gap-2">
+                        <select id="category-select" class="form-select form-select-sm"></select>
+                        <button type="button" id="add-category-btn" class="btn btn-sm btn-outline-primary">Add</button>
+                    </div>
+                </div>
+
+                <div class="position-relative" style="min-width:280px;">
+                    <label class="form-label mb-1">Add a whole supplier</label>
+                    <input type="text" id="supplier-search-input" class="form-control form-control-sm"
+                           placeholder="Search supplier by name..." autocomplete="off">
+                    <div id="supplier-search-results" class="global-search-results"></div>
+                </div>
+            </div>
+
+            <div id="rules-table" class="table-sm"></div>
+        </section>
+
+        <footer class="page-actions">
+            <button type="submit" class="button-save">Save Price List</button>
+            <a href="{% if price_list %}{% url 'price_list_detail' price_list.pk %}{% else %}{% url 'price_list_list' %}{% endif %}" class="button-cancel">Cancel</a>
+        </footer>
+
+        <input type="hidden" name="rules_json" id="rules-json-input">
+    </form>
+</section>
+
+{{ existing_rules|json_script:"existing-rules-data" }}
+{{ categories_data|json_script:"categories-data" }}
+{{ suppliers_data|json_script:"suppliers-data" }}
+
+<script src="{% static 'vendor/tabulator/tabulator.min.js' %}"></script>
+<script>
+(function () {
+    const existingRules = JSON.parse(document.getElementById('existing-rules-data').textContent);
+    const categoriesData = JSON.parse(document.getElementById('categories-data').textContent);
+    const suppliersData = JSON.parse(document.getElementById('suppliers-data').textContent);
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+    var categorySelect = document.getElementById('category-select');
+    categoriesData.forEach(function (c) {
+        var opt = document.createElement('option');
+        opt.value = c.id;
+        opt.textContent = c.name;
+        categorySelect.appendChild(opt);
+    });
+
+    function scopeLabel(scopeType) {
+        return {PRODUCT: 'Product', CATEGORY: 'Category', SUPPLIER: 'Supplier'}[scopeType] || scopeType;
+    }
+
+    const table = new Tabulator('#rules-table', {
+        data: existingRules,
+        layout: 'fitColumns',
+        placeholder: 'Add a product, category, or supplier above to start building this price list.',
+        columns: [
+            {title: '#', formatter: 'rownum', width: 50, hozAlign: 'center', headerSort: false},
+            {title: 'Applies To', field: 'scope_type', width: 110, formatter: function (cell) { return scopeLabel(cell.getValue()); }},
+            {title: 'Target', field: 'target_name', widthGrow: 2},
+            {
+                title: 'Discount %', field: 'discount_percent', width: 120, hozAlign: 'right',
+                editor: 'number', editorParams: {min: 0, max: 100, step: 0.01},
+            },
+            {
+                title: 'Fixed Price', field: 'fixed_price', width: 120, hozAlign: 'right',
+                editor: function (cell, onRendered, success, cancel) {
+                    if (cell.getRow().getData().scope_type !== 'PRODUCT') return false;
+                    var input = document.createElement('input');
+                    input.type = 'number';
+                    input.step = '0.01';
+                    input.min = '0.01';
+                    input.style.width = '100%';
+                    input.value = cell.getValue() != null ? cell.getValue() : '';
+                    onRendered(function () { input.focus(); });
+                    input.addEventListener('blur', function () { success(input.value === '' ? null : parseFloat(input.value)); });
+                    input.addEventListener('keydown', function (e) {
+                        if (e.key === 'Enter') { success(input.value === '' ? null : parseFloat(input.value)); }
+                        if (e.key === 'Escape') { cancel(); }
+                    });
+                    return input;
+                },
+                formatter: function (cell) {
+                    var v = cell.getValue();
+                    if (v === null || v === undefined || v === '') return cell.getRow().getData().scope_type === 'PRODUCT' ? '' : '—';
+                    return Number(v).toFixed(2);
+                },
+            },
+            {
+                title: 'Conflict', field: 'conflict_note', widthGrow: 2, hozAlign: 'left',
+                formatter: function (cell) {
+                    var v = cell.getValue();
+                    if (!v) return '';
+                    return '<span style="color:#c0392b;">' + v + '</span>';
+                },
+            },
+            {
+                title: 'Remove', width: 90, hozAlign: 'center', headerSort: false,
+                formatter: function () { return '<button type="button" class="btn btn-sm btn-outline-danger">Remove</button>'; },
+                cellClick: function (e, cell) { cell.getRow().delete(); },
+            },
+        ],
+    });
+
+    // Discount % and Fixed Price are mutually exclusive server-side --
+    // editing one clears the other on the same row, so a careless double
+    // entry can't slip through as "both set" (the model rejects that).
+    table.on('cellEdited', function (cell) {
+        var field = cell.getField();
+        if (field === 'discount_percent' && cell.getValue() !== null && cell.getValue() !== '') {
+            cell.getRow().update({fixed_price: null});
+        }
+        if (field === 'fixed_price' && cell.getValue() !== null && cell.getValue() !== '') {
+            cell.getRow().update({discount_percent: null});
+        }
+    });
+
+    function checkConflict(scopeType, targetId, row) {
+        var params = new URLSearchParams({scope_type: scopeType, target_id: targetId});
+        {% if price_list %}params.set('exclude_pk', '{{ price_list.pk }}');{% endif %}
+        fetch('{% url "price_list_check_conflict" %}?' + params.toString())
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (!data.conflicts.length) return;
+                var parts = data.conflicts.map(function (c) {
+                    var price = c.discount_percent !== null ? c.discount_percent + '%' : c.fixed_price.toFixed(2);
+                    return c.price_list_name + ' (' + price + ')';
+                });
+                row.update({conflict_note: 'Also in: ' + parts.join(', ')});
+            });
+    }
+
+    function addRow(scopeType, targetId, targetName) {
+        var existing = table.getData().find(function (d) { return d.scope_type === scopeType && String(d.target_id) === String(targetId); });
+        if (existing) { alert('That is already in this list.'); return; }
+        table.addRow({
+            scope_type: scopeType, target_id: targetId, target_name: targetName,
+            discount_percent: null, fixed_price: null, conflict_note: '',
+        }).then(function (row) { checkConflict(scopeType, targetId, row); });
+    }
+
+    document.getElementById('add-category-btn').addEventListener('click', function () {
+        var opt = categorySelect.options[categorySelect.selectedIndex];
+        if (!opt) return;
+        addRow('CATEGORY', opt.value, opt.textContent);
+    });
+
+    // -- Product search (trigram, server-side, reuses the same endpoint as
+    // the recipe-ingredient picker) --
+    (function () {
+        var input = document.getElementById('product-search-input');
+        var resultsBox = document.getElementById('product-search-results');
+        var debounceTimer = null;
+
+        function render(results) {
+            resultsBox.innerHTML = '';
+            results.forEach(function (product) {
+                var row = document.createElement('div');
+                row.className = 'global-search-result';
+                row.textContent = product.internal_code + ' — ' + product.name;
+                row.addEventListener('click', function () {
+                    addRow('PRODUCT', product.id, product.internal_code + ' — ' + product.name);
+                    resultsBox.classList.remove('is-open');
+                    input.value = '';
+                });
+                resultsBox.appendChild(row);
+            });
+            resultsBox.classList.toggle('is-open', results.length > 0);
+        }
+
+        input.addEventListener('input', function () {
+            clearTimeout(debounceTimer);
+            var q = input.value.trim();
+            if (!q) { render([]); return; }
+            debounceTimer = setTimeout(function () {
+                fetch('{% url "ingredient_search" %}?q=' + encodeURIComponent(q))
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) { render(data.results); });
+            }, 200);
+        });
+        document.addEventListener('click', function (e) {
+            if (!e.target.closest('#product-search-input') && !e.target.closest('#product-search-results')) {
+                resultsBox.classList.remove('is-open');
+            }
+        });
+    })();
+
+    // -- Supplier search (same pattern) --
+    (function () {
+        var input = document.getElementById('supplier-search-input');
+        var resultsBox = document.getElementById('supplier-search-results');
+        var debounceTimer = null;
+
+        function render(results) {
+            resultsBox.innerHTML = '';
+            results.forEach(function (supplier) {
+                var row = document.createElement('div');
+                row.className = 'global-search-result';
+                row.textContent = supplier.name;
+                row.addEventListener('click', function () {
+                    addRow('SUPPLIER', supplier.id, supplier.name);
+                    resultsBox.classList.remove('is-open');
+                    input.value = '';
+                });
+                resultsBox.appendChild(row);
+            });
+            resultsBox.classList.toggle('is-open', results.length > 0);
+        }
+
+        input.addEventListener('input', function () {
+            clearTimeout(debounceTimer);
+            var q = input.value.trim();
+            if (!q) { render([]); return; }
+            debounceTimer = setTimeout(function () {
+                fetch('{% url "supplier_search" %}?q=' + encodeURIComponent(q))
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) { render(data.results); });
+            }, 200);
+        });
+        document.addEventListener('click', function (e) {
+            if (!e.target.closest('#supplier-search-input') && !e.target.closest('#supplier-search-results')) {
+                resultsBox.classList.remove('is-open');
+            }
+        });
+    })();
+
+    // Re-check conflicts for whatever rows were already there (Edit page)
+    // -- another list could have picked up the same target since this one
+    // was last saved.
+    table.on('tableBuilt', function () {
+        existingRules.forEach(function (r) {
+            var row = table.getRows().find(function (row) {
+                return row.getData().scope_type === r.scope_type && String(row.getData().target_id) === String(r.target_id);
+            });
+            if (row) checkConflict(r.scope_type, r.target_id, row);
+        });
+    });
+
+    document.getElementById('price-list-form').addEventListener('submit', function () {
+        document.getElementById('rules-json-input').value = JSON.stringify(table.getData());
+    });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,92 @@
+{% extends 'base.html' %}
+
+{% block title %}STORA - {{ price_list.name }}{% endblock %}
+{% load static cache_bust %}
+
+{% block main_class %}main-wide{% endblock %}
+{% block container_class %}container-fluid{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
+{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-2">
+    <div>
+        <h1 class="mb-1">{{ price_list.name }}{% if price_list.is_deleted %} <span class="text-danger">(Deleted)</span>{% endif %}</h1>
+        <p class="text-muted mb-0">
+            {{ price_list.start_date|date:"d.m.Y" }} — {{ price_list.end_date|date:"d.m.Y" }} ·
+            Priority {{ price_list.priority }} · Created by {{ price_list.created_by }}
+        </p>
+    </div>
+    <div class="d-flex gap-2">
+        {% if perms.pricelists.change_pricelist and not price_list.is_deleted %}
+        <a href="{% url 'price_list_edit' price_list.pk %}" class="btn button-save">Edit</a>
+        <form method="post" action="{% url 'price_list_delete' price_list.pk %}" onsubmit="return confirm('Delete this price list? Products covered by it will fall back to their regular price.');">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-outline-danger">Delete</button>
+        </form>
+        {% endif %}
+    </div>
+</div>
+
+<button type="button" id="price-list-items-export-btn" class="btn btn-outline-secondary btn-sm mb-2">Export to Excel</button>
+
+{{ items_data|json_script:"price-list-items-data" }}
+<div id="price-list-items-table" class="table-sm"></div>
+
+{% endblock content %}
+
+{% block extra_js %}
+<script src="{% static 'vendor/sheetjs/xlsx.full.min.js' %}"></script>
+<script src="{% static 'vendor/tabulator/tabulator.min.js' %}"></script>
+<script src="{% static_v 'js/data-table.js' %}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    function moneyFormatter(cell) {
+        var v = Number(cell.getValue());
+        return isNaN(v) ? '' : v.toFixed(2);
+    }
+    function percentFormatter(cell) {
+        var v = cell.getValue();
+        return v === null || v === undefined ? '—' : Number(v).toFixed(2) + '%';
+    }
+
+    var table = initExcelStyleTable('#price-list-items-table', 'price-list-items-data', [
+        {
+            title: '#', formatter: 'rownum', width: 50, hozAlign: 'center',
+            headerSort: false, headerFilter: false, hideable: false,
+        },
+        {title: 'Code', field: 'internal_code', width: 110},
+        {title: 'Name', field: 'name', widthGrow: 2},
+        {title: 'Applies To', field: 'scope_type', width: 100},
+        {title: 'Base Price (no VAT)', field: 'base_price_no_vat', width: 140, hozAlign: 'right', formatter: moneyFormatter},
+        {title: 'Base Price', field: 'base_price', width: 110, hozAlign: 'right', formatter: moneyFormatter},
+        {title: '%', field: 'discount_percent', width: 90, hozAlign: 'right', formatter: percentFormatter},
+        {title: 'New Price (no VAT)', field: 'new_price_no_vat', width: 140, hozAlign: 'right', formatter: moneyFormatter},
+        {title: 'New Price', field: 'new_price', width: 110, hozAlign: 'right', formatter: moneyFormatter},
+    ], {placeholder: 'No products are currently covered by this price list.'});
+
+    // Jump straight to (and briefly highlight) one product's row -- used
+    // when arriving here via the "Price List" column on the Products grid
+    // (?highlight=<product_id>), so the person doesn't have to scan/search
+    // the whole list themselves for the one product they clicked from.
+    var params = new URLSearchParams(window.location.search);
+    var highlightId = params.get('highlight');
+    if (highlightId) {
+        table.on('tableBuilt', function () {
+            var row = table.getRows().find(function (r) { return String(r.getData().product_id) === highlightId; });
+            if (row) {
+                row.scrollTo();
+                row.getElement().style.outline = '2px solid #f0ad4e';
+            }
+        });
+    }
+
+    document.getElementById('price-list-items-export-btn').addEventListener('click', function () {
+        table.download('xlsx', 'price_list_{{ price_list.pk }}_items.xlsx', {sheetName: 'Price List Items'});
+    });
+});
+</script>
+{% endblock %}

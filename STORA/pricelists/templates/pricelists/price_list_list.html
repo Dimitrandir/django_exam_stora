@@ -1,0 +1,73 @@
+{% extends 'base.html' %}
+
+{% block title %}STORA - Price Lists{% endblock %}
+{% load static cache_bust %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
+{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="mb-0">Price Lists</h1>
+    {% if perms.pricelists.add_pricelist %}
+    <a href="{% url 'price_list_create' %}" class="btn button-save">+ New Price List</a>
+    {% endif %}
+</div>
+
+<div class="mb-2 d-flex align-items-center gap-3">
+    <button type="button" id="price-lists-export-btn" class="btn btn-outline-secondary btn-sm">Export to Excel</button>
+    <label class="form-check-label" style="cursor:pointer;">
+        <input type="checkbox" id="show-deleted-toggle" {% if show_deleted %}checked{% endif %}> Show deleted
+    </label>
+</div>
+
+{{ price_lists_data|json_script:"price-lists-data" }}
+<div id="price-lists-table" class="table-sm"></div>
+
+{% endblock content %}
+
+{% block extra_js %}
+<script src="{% static 'vendor/sheetjs/xlsx.full.min.js' %}"></script>
+<script src="{% static 'vendor/tabulator/tabulator.min.js' %}"></script>
+<script src="{% static_v 'js/data-table.js' %}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    function statusFormatter(cell) {
+        var v = cell.getValue();
+        if (v === 'Active') return '<span style="color:#27ae60;font-weight:600;">Active</span>';
+        if (v === 'Expired') return '<span style="color:#6c757d;">Expired</span>';
+        return '<span style="color:#c0392b;">Upcoming</span>';
+    }
+
+    var table = initExcelStyleTable('#price-lists-table', 'price-lists-data', [
+        {
+            title: '#', formatter: 'rownum', width: 50, hozAlign: 'center',
+            headerSort: false, headerFilter: false, hideable: false,
+        },
+        {title: 'Name', field: 'name', widthGrow: 3},
+        {title: 'Priority', field: 'priority', width: 90, hozAlign: 'right'},
+        {title: 'Start Date', field: 'start_date', width: 120},
+        {title: 'End Date', field: 'end_date', width: 120},
+        {title: 'Status', field: 'status', width: 110, formatter: statusFormatter},
+        {title: 'Created By', field: 'created_by', width: 150},
+    ], {placeholder: 'No price lists yet.'});
+
+    table.on('rowClick', function (e, row) {
+        if (e.target.closest('.tabulator-header')) return;
+        window.location = row.getData().view_url;
+    });
+
+    document.getElementById('price-lists-export-btn').addEventListener('click', function () {
+        table.download('xlsx', 'price_lists.xlsx', {sheetName: 'Price Lists'});
+    });
+
+    document.getElementById('show-deleted-toggle').addEventListener('change', function (e) {
+        var params = new URLSearchParams(window.location.search);
+        if (e.target.checked) { params.set('show_deleted', '1'); } else { params.delete('show_deleted'); }
+        window.location.search = params.toString();
+    });
+});
+</script>
+{% endblock %}

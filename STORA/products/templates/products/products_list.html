@@ -186,6 +186,17 @@ document.addEventListener('DOMContentLoaded', function () {
             formatter: markupFormatter,
         },
         {
+            title: 'Price List', field: 'price_list_name', width: 130,
+            formatter: function (cell) {
+                var v = cell.getValue();
+                return v ? '<span style="color:#2a4d7a;text-decoration:underline;cursor:pointer;">' + v + '</span>' : '';
+            },
+            cellClick: function (e, cell) {
+                var url = cell.getRow().getData().price_list_url;
+                if (url) window.location = url;
+            },
+        },
+        {
             // bottomCalc sums the raw numbers regardless of unit -- fine
             // while everything's "piece", but once weight products are
             // actually in use, a sum mixing pcs and kg stops being
@@ -213,7 +224,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (editMode) return;
         var cellEl = e.target.closest('.tabulator-cell');
         var field = cellEl ? cellEl.getAttribute('tabulator-field') : null;
-        if (field === null || field === 'show_on_pos') return;
+        if (field === null || field === 'show_on_pos' || field === 'price_list_name') return;
         window.location = row.getData().view_url;
     });
 

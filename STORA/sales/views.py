@@ -20,6 +20,7 @@ from STORA.core.mixins import StaffPermissionRequiredMixin
 from STORA.core.session_service import extract_formset_state
 from STORA.core.utils import build_restore_formset_data, dispatch_task, multi_token_icontains_q
 from STORA.products.models import Product, Barcode, Category
+from STORA.pricelists.services import resolve_prices
 from STORA.sales.forms import SaleForms, SaleItemFormSet
 from STORA.sales.models import SaleAttributes, SaleItems, PosPin, SaleItemVoidLog, RefundAttributes, RefundItems
 from STORA.sales.tab_state import (
@@ -57,12 +58,27 @@ def sales_add(request):
         .annotate(total_qty=Sum('sale_quantity'))
         .values_list('sale_item_id', 'total_qty')
     )
-    products_data = [
-        {**row, 'recent_qty': float(recent_qty_by_product.get(row['id'], 0))}
-        for row in Product.objects.values(
-            'id', 'internal_code', 'name', 'sell_price', 'unit_type', 'category_id', 'show_on_pos',
-        )
-    ]
+    # sell_price below is the EFFECTIVE price (a promo/price-list rule wins
+    # over the regular catalog price when one currently applies) -- this is
+    # the only place that matters, since the cart/search JS just reads
+    # sell_price straight off this dump for whatever product gets scanned.
+    # See STORA.pricelists.services.resolve_prices.
+    all_products = list(Product.objects.all())
+    price_list_matches = resolve_prices(all_products)
+    products_data = []
+    for product in all_products:
+        match = price_list_matches.get(product.pk)
+        effective_price = match['price'] if match else product.sell_price
+        products_data.append({
+            'id': product.pk,
+            'internal_code': product.internal_code,
+            'name': product.name,
+            'sell_price': float(effective_price),
+            'unit_type': product.unit_type,
+            'category_id': product.category_id,
+            'show_on_pos': product.show_on_pos,
+            'recent_qty': float(recent_qty_by_product.get(product.pk, 0)),
+        })
     barcodes_data = list(Barcode.objects.values('code', 'product_id', 'is_scale_code'))
     categories_data = list(Category.objects.values('id', 'name', 'parent_id', 'show_on_pos'))
     pos_pins_data = [

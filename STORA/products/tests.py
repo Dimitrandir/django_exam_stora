@@ -751,6 +751,38 @@ class ProductPositionOrderingTests(TestCase):
         # No delivery price -- nothing to compute markup against.
         self.assertIsNone(rows[no_cost.pk]['markup_percent'])
 
+    def test_products_list_grid_exposes_active_price_list(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from STORA.pricelists.models import PriceList, PriceListRule
+
+        manager = Employee.objects.create_user(
+            username='manager-pricelist', password='pass12345', role=Employee.MANAGER
+        )
+        self.client.force_login(manager)
+        today = timezone.localdate()
+        price_list = PriceList.objects.create(
+            name='Grid Promo', start_date=today - timedelta(days=1), end_date=today + timedelta(days=1),
+            created_by=manager,
+        )
+        PriceListRule.objects.create(
+            price_list=price_list, scope_type=PriceListRule.SCOPE_PRODUCT,
+            product=self.product, discount_percent=Decimal('10'),
+        )
+
+        response = self.client.get(reverse('product_list'))
+        row = next(r for r in response.context['products_data'] if r['id'] == self.product.pk)
+        self.assertEqual(row['price_list_name'], 'Grid Promo')
+        self.assertIn(f'?highlight={self.product.pk}', row['price_list_url'])
+
+    def test_products_list_grid_price_list_blank_when_none_active(self):
+        self.client.force_login(Employee.objects.create_user(
+            username='manager-no-pricelist', password='pass12345', role=Employee.MANAGER
+        ))
+        response = self.client.get(reverse('product_list'))
+        row = next(r for r in response.context['products_data'] if r['id'] == self.product.pk)
+        self.assertEqual(row['price_list_name'], '')
+
     def test_duplicate_supplier_on_same_product_rejected(self):
         ProductSupplier.objects.create(product=self.product, supplier=self.supplier_a, position=1)
         with self.assertRaises(IntegrityError):

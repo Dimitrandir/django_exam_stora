@@ -1,4 +1,5 @@
 import json
+from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
@@ -8,6 +9,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from STORA.products.models import Category, Product, RecipeIngredient
+from STORA.pricelists.models import PriceList, PriceListRule
 from STORA.sales.models import SaleAttributes, SaleItems, PosPin, SaleItemVoidLog, RefundAttributes, RefundItems
 from STORA.sales.forms import SaleItemForm
 from STORA.sales.tasks import backfill_recipe_ingredient_stock
@@ -258,6 +260,40 @@ class SalesAddCategoryPanelDataTests(TestCase):
         by_id = {c['id']: c for c in response.context['categories_data']}
         self.assertIsNone(by_id[self.drinks.pk]['parent_id'])
         self.assertEqual(by_id[self.sodas.pk]['parent_id'], self.drinks.pk)
+
+
+class PosPriceListIntegrationTests(TestCase):
+    """The cart/search JS reads sell_price straight off products_data --
+    when an active price list rule covers a product, that field must
+    already be the discounted price, not the catalog one (see
+    STORA.pricelists.services.resolve_prices)."""
+
+    def setUp(self):
+        self.cashier = User.objects.create_user(username='promo-cashier', password='pass12345', role=User.CASHIER)
+        self.manager = User.objects.create_user(username='promo-manager', password='pass12345', role=User.MANAGER)
+        self.client.force_login(self.cashier)
+        self.product = Product.objects.create(
+            internal_code='PROMO001', name='Promo Cola', sell_price=Decimal('2.00'), quantity=10,
+        )
+
+    def test_products_data_uses_regular_price_with_no_active_list(self):
+        response = self.client.get(reverse('sale_add'))
+        row = next(p for p in response.context['products_data'] if p['id'] == self.product.pk)
+        self.assertEqual(row['sell_price'], 2.00)
+
+    def test_products_data_uses_discounted_price_when_a_list_is_active(self):
+        today = timezone.localdate()
+        price_list = PriceList.objects.create(
+            name='Test Promo', start_date=today - timedelta(days=1), end_date=today + timedelta(days=1),
+            created_by=self.manager,
+        )
+        PriceListRule.objects.create(
+            price_list=price_list, scope_type=PriceListRule.SCOPE_PRODUCT,
+            product=self.product, discount_percent=Decimal('25'),
+        )
+        response = self.client.get(reverse('sale_add'))
+        row = next(p for p in response.context['products_data'] if p['id'] == self.product.pk)
+        self.assertEqual(row['sell_price'], 1.50)
 
 
 class PosShowOnPosDataTests(TestCase):

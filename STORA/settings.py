@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     'STORA.deliveries',
     'STORA.reports',
     'STORA.revisions',
+    'STORA.pricelists',
 ]
 
 MIDDLEWARE = [
