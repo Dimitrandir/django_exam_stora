@@ -4,7 +4,7 @@ from decimal import Decimal, InvalidOperation
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.postgres.search import TrigramSimilarity
-from django.db.models import ProtectedError, Sum
+from django.db.models import F, ProtectedError, Sum
 from django.forms.models import model_to_dict
 from django.http import HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404, render
@@ -18,6 +18,7 @@ from STORA.core.mixins import StaffPermissionRequiredMixin
 from STORA.core.session_service import get_cashier_operation_state
 from STORA.core.utils import dispatch_task, multi_token_icontains_q
 from STORA.deliveries.models import DeliveryItems
+from STORA.revisions.models import RevisionAttributes, RevisionItems
 from STORA.products.forms import (
     ProductForms, ProductInlineEditForm, CategoryForm, SuppliersForm, BarcodeFormSet, ProductSupplierFormSet,
     RecipeIngredientFormSet, ProductHistoryPeriodForm, TaxGroupForm,
@@ -289,6 +290,23 @@ class ProductHistoryView(LoginRequiredMixin, StaffPermissionRequiredMixin, Detai
             delivery__time_of_delivery__date__range=(start_date, end_date),
         ).select_related('delivery', 'delivery__supplier')
 
+        # Only completed revisions, and only where the count actually
+        # changed something -- a product that matched its system quantity
+        # exactly didn't move stock, so it has nothing to show here (this
+        # view's whole point is "everything that moved this product's
+        # stock"). Revisions don't show up in the Stock Movements report
+        # (see CLAUDE.md -- a single revision can both increase and
+        # decrease different products, which that report's one-sign-per-
+        # document model can't represent), so this is the only place a
+        # revision's effect on THIS product is visible.
+        revisions = RevisionItems.objects.filter(
+            product=product,
+            revision__status=RevisionAttributes.STATUS_COMPLETED,
+            revision__completed_at__date__range=(start_date, end_date),
+        ).exclude(found_quantity=F('system_quantity_at_start')).select_related(
+            'revision', 'revision__completed_by'
+        )
+
         events = [
             {
                 'date': item.sale.time_of_sale,
@@ -309,6 +327,16 @@ class ProductHistoryView(LoginRequiredMixin, StaffPermissionRequiredMixin, Detai
                 'cashier': None,
             }
             for item in deliveries
+        ] + [
+            {
+                'date': item.revision.completed_at,
+                'event_type': 'Revised',
+                'quantity_change': item.found_quantity - item.system_quantity_at_start,
+                'unit_price': item.price_at_revision,
+                'supplier': None,
+                'cashier': item.revision.completed_by,
+            }
+            for item in revisions
         ]
         events.sort(key=lambda event: event['date'], reverse=True)
 

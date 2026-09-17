@@ -8,7 +8,7 @@ from STORA.accounts.models import Employee
 
 @receiver(post_migrate)
 def create_default_groups(sender, **kwargs):
-    if sender.name not in {'STORA.accounts', 'STORA.products', 'STORA.sales', 'STORA.deliveries'}:
+    if sender.name not in {'STORA.accounts', 'STORA.products', 'STORA.sales', 'STORA.deliveries', 'STORA.revisions'}:
         return
 
     managers_group, _ = Group.objects.get_or_create(name='Managers')
@@ -69,7 +69,20 @@ def create_default_groups(sender, **kwargs):
             'view_scrapreason',
         ]
     )
-    warehouse_group.permissions.set(list(product_permissions) + list(delivery_permissions))
+    # Stock revisions (counting/reconciling physical stock) are a
+    # Warehouse/Manager job, same tier as deliveries -- a cashier has no
+    # business correcting stock levels.
+    revision_permissions = Permission.objects.filter(
+        content_type__app_label='revisions',
+        codename__in=[
+            'view_revisionattributes',
+            'add_revisionattributes',
+            'change_revisionattributes',
+        ]
+    )
+    warehouse_group.permissions.set(
+        list(product_permissions) + list(delivery_permissions) + list(revision_permissions)
+    )
 
 
 ROLE_TO_GROUP = {

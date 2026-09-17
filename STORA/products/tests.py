@@ -18,6 +18,7 @@ from STORA.products.models import (
 from STORA.products.scale_barcode import ean13_check_digit, is_valid_ean13, decode_scale_barcode
 from STORA.products.templatetags.currency_filters import quantity_display
 from STORA.products.views import get_free_internal_codes
+from STORA.revisions.models import RevisionAttributes, RevisionItems
 from STORA.sales.models import SaleAttributes, SaleItems
 
 
@@ -384,6 +385,54 @@ class ProductHistoryViewTests(TestCase):
             {'start_date': old_start.isoformat(), 'end_date': old_end.isoformat()},
         )
         self.assertEqual(len(response.context['events']), 0)
+
+    def test_history_shows_completed_revision_that_changed_quantity(self):
+        revision = RevisionAttributes.objects.create(started_by=self.manager)
+        RevisionItems.objects.create(
+            revision=revision, product=self.product,
+            found_quantity=Decimal('4'), system_quantity_at_start=Decimal('7'),
+            price_at_revision=Decimal('1.10'),
+        )
+        revision.status = RevisionAttributes.STATUS_COMPLETED
+        revision.completed_by = self.manager
+        revision.completed_at = timezone.now()
+        revision.save(update_fields=['status', 'completed_by', 'completed_at'])
+
+        self.client.force_login(self.manager)
+        response = self.client.get(reverse('product_history', kwargs={'pk': self.product.pk}))
+        events = response.context['events']
+        revision_event = next(e for e in events if e['event_type'] == 'Revised')
+        self.assertEqual(revision_event['quantity_change'], Decimal('-3'))
+        self.assertEqual(revision_event['cashier'], self.manager)
+
+    def test_history_hides_revision_item_where_found_matched_system(self):
+        revision = RevisionAttributes.objects.create(started_by=self.manager)
+        RevisionItems.objects.create(
+            revision=revision, product=self.product,
+            found_quantity=Decimal('7'), system_quantity_at_start=Decimal('7'),
+            price_at_revision=Decimal('1.10'),
+        )
+        revision.status = RevisionAttributes.STATUS_COMPLETED
+        revision.completed_by = self.manager
+        revision.completed_at = timezone.now()
+        revision.save(update_fields=['status', 'completed_by', 'completed_at'])
+
+        self.client.force_login(self.manager)
+        response = self.client.get(reverse('product_history', kwargs={'pk': self.product.pk}))
+        events = response.context['events']
+        self.assertFalse(any(e['event_type'] == 'Revised' for e in events))
+
+    def test_history_hides_revision_that_is_still_open(self):
+        revision = RevisionAttributes.objects.create(started_by=self.manager)
+        RevisionItems.objects.create(
+            revision=revision, product=self.product,
+            found_quantity=Decimal('4'), system_quantity_at_start=Decimal('7'),
+            price_at_revision=Decimal('1.10'),
+        )
+        self.client.force_login(self.manager)
+        response = self.client.get(reverse('product_history', kwargs={'pk': self.product.pk}))
+        events = response.context['events']
+        self.assertFalse(any(e['event_type'] == 'Revised' for e in events))
 
 
 class ProductInlineUpdateViewTests(TestCase):

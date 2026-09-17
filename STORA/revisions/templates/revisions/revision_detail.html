@@ -1,0 +1,418 @@
+{% extends 'base.html' %}
+
+{% block title %}STORA - Stock Revision #{{ revision.pk }}{% endblock %}
+{% load static cache_bust %}
+
+{% block main_class %}main-wide{% endblock %}
+{% block container_class %}container-fluid{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
+{% endblock %}
+
+{% block content %}
+<section class="sale-form">
+    <header class="page-header pos-header">
+        <div class="pos-header__info">
+            <h1>Stock Revision #{{ revision.pk }}</h1>
+            <p class="pos-header__meta">
+                <span id="live-clock"></span> — started by {{ revision.started_by }}
+                at {{ revision.started_at|date:"d.m.Y H:i" }}
+            </p>
+        </div>
+    </header>
+
+    <div id="revision-closed-banner" class="form-errors" style="display:none;">
+        This revision was just completed on another screen. Reload the page to see the final result.
+    </div>
+
+    <div class="sale-item-search-row">
+        <div class="position-relative sale-item-search-wrapper">
+            <input type="search" id="revision-item-search-input" class="form-control"
+                   placeholder="Search or scan a product..." autocomplete="off">
+            <div id="revision-item-search-results" class="global-search-results"></div>
+        </div>
+    </div>
+
+    <button type="button" id="revision-export-btn" class="btn btn-outline-secondary btn-sm">Export to Excel</button>
+
+    <div id="revision-items-table" class="table-sm"></div>
+
+    {% if can_complete %}
+    <footer class="page-actions">
+        <button type="button" id="revision-complete-btn" class="button-save">Complete Revision</button>
+        <button type="button" id="revision-cancel-btn" class="btn btn-outline-danger">Cancel Revision</button>
+    </footer>
+    {% endif %}
+</section>
+
+{{ items_data|json_script:"revision-items-data" }}
+{{ products_data|json_script:"products-data" }}
+{{ barcodes_data|json_script:"barcodes-data" }}
+
+<script src="{% static 'vendor/sheetjs/xlsx.full.min.js' %}"></script>
+<script src="{% static 'vendor/tabulator/tabulator.min.js' %}"></script>
+<script src="{% static_v 'js/data-table.js' %}"></script>
+<script>
+(function () {
+    const productsData = JSON.parse(document.getElementById('products-data').textContent);
+    const barcodesData = JSON.parse(document.getElementById('barcodes-data').textContent);
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]') ? document.querySelector('[name=csrfmiddlewaretoken]').value : '{{ csrf_token }}';
+
+    // -- Live clock, same as the cashier screen. --
+    (function () {
+        const clockEl = document.getElementById('live-clock');
+        function tick() {
+            const now = new Date();
+            const pad = n => String(n).padStart(2, '0');
+            clockEl.textContent = `${pad(now.getDate())}.${pad(now.getMonth() + 1)}.${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+        }
+        tick();
+        setInterval(tick, 1000);
+    })();
+
+    function moneyFormatter(cell) {
+        var v = Number(cell.getValue());
+        return isNaN(v) ? '' : v.toFixed(2);
+    }
+
+    // Difference columns (Found - System) turn into a red box the moment
+    // they're nonzero -- that's the whole point of a revision, so a
+    // mismatch should jump out rather than requiring the manager to
+    // subtract the two columns themselves. Cleared back to plain when a
+    // later poll/edit brings the diff back to 0.
+    function highlightIfNonzero(cell, text) {
+        var v = Number(cell.getValue());
+        var el = cell.getElement();
+        if (v !== 0) {
+            el.style.backgroundColor = '#f8d7da';
+            el.style.color = '#842029';
+            el.style.fontWeight = '600';
+        } else {
+            el.style.backgroundColor = '';
+            el.style.color = '';
+            el.style.fontWeight = '';
+        }
+        return text;
+    }
+
+    function quantityDiffFormatter(cell) {
+        var v = Number(cell.getValue());
+        return highlightIfNonzero(cell, isNaN(v) ? '' : v);
+    }
+
+    function moneyDiffFormatter(cell) {
+        var v = Number(cell.getValue());
+        return highlightIfNonzero(cell, isNaN(v) ? '' : v.toFixed(2));
+    }
+
+    // Separate, plain formatters for the bottomCalc (totals) row -- it's
+    // not a real Tabulator cell (no getElement() to safely style), just a
+    // number to display, same as every other bottomCalcFormatter here.
+    function quantityDiffCalcFormatter(cell) {
+        var v = Number(cell.getValue());
+        return isNaN(v) ? '' : v;
+    }
+
+    // Built through the shared listing-table helper (sort, Excel-style
+    // per-column filter, Columns chooser, Export to Excel, the resize/
+    // column-width row-height fixes -- see CLAUDE.md table convention) so
+    // this screen gets the same toolkit as every other table in the app,
+    // even though it's also a live, polled, incrementally-updated grid
+    // (upsertRow/setData below) rather than a static one-shot listing.
+    const table = initExcelStyleTable('#revision-items-table', 'revision-items-data', [
+        {title: '#', formatter: 'rownum', width: 50, hozAlign: 'center', headerSort: false, headerFilter: false, hideable: false},
+        {title: 'Code', field: 'internal_code', width: 110},
+        {title: 'Name', field: 'name', widthGrow: 3},
+        {title: 'Found Qty', field: 'found_quantity', width: 110, hozAlign: 'right', bottomCalc: 'sum'},
+        {title: 'System Qty', field: 'system_quantity_at_start', width: 120, hozAlign: 'right', bottomCalc: 'sum'},
+        {
+            title: 'Diff Qty', field: 'quantity_diff', width: 110, hozAlign: 'right',
+            formatter: quantityDiffFormatter, bottomCalc: 'sum', bottomCalcFormatter: quantityDiffCalcFormatter,
+        },
+        {
+            title: 'Unit Price', field: 'price_at_revision', width: 110, hozAlign: 'right',
+            formatter: moneyFormatter,
+        },
+        {
+            title: 'Found Sum', field: 'found_sum', width: 120, hozAlign: 'right',
+            formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
+        },
+        {
+            title: 'System Sum', field: 'system_sum', width: 120, hozAlign: 'right',
+            formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
+        },
+        {
+            title: 'Diff Sum', field: 'sum_diff', width: 120, hozAlign: 'right',
+            formatter: moneyDiffFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
+        },
+        {
+            title: 'Remove', width: 90, hozAlign: 'center', headerSort: false, headerFilter: false, hideable: false,
+            formatter: function () { return '<button type="button" class="btn btn-sm btn-outline-danger">Remove</button>'; },
+            cellClick: function (e, cell) {
+                var data = cell.getRow().getData();
+                removeItem(data.id, data.name);
+            },
+        },
+    ], {placeholder: 'Search or scan a product above to start counting.'});
+
+    document.getElementById('revision-export-btn').addEventListener('click', function () {
+        table.download('xlsx', 'revision_{{ revision.pk }}_items.xlsx', {sheetName: 'Revision Items'});
+    });
+
+    function upsertRow(item) {
+        if (table.getRow(item.id)) {
+            table.updateData([item]);
+        } else {
+            table.addRow(item);
+        }
+    }
+
+    // Removes a miscounted product from the revision entirely (not just
+    // its quantity back to 0) -- asks for confirmation first since this
+    // deletes a real, already-persisted count (shared with every other
+    // computer looking at this revision), not just a local draft row.
+    function removeItem(id, name) {
+        if (!confirm('Remove "' + name + '" from this revision? This cannot be undone.')) return;
+        fetch('{% url "revision_view" revision.pk %}remove-item/' + id + '/', {
+            method: 'POST',
+            headers: {'X-CSRFToken': csrfToken},
+        }).then(function (r) {
+            if (r.status === 409) {
+                document.getElementById('revision-closed-banner').style.display = '';
+                return;
+            }
+            return r.json().then(function (data) {
+                if (data.error) { alert(data.error); return; }
+                var row = table.getRow(id);
+                if (row) row.delete();
+            });
+        }).catch(function () { alert('Could not remove this row -- check your connection and try again.'); });
+    }
+
+    // -- Search-to-add, same client-side pattern as the cashier screen
+    // (sale_add.html): type to search by name/code, or scan a barcode
+    // (including scale barcodes, decoded the same way). Unlike the cart,
+    // there's nothing to build up locally -- every add/scan is its own
+    // request straight to the server, which is the single source of truth
+    // for the running found_quantity (so two computers counting the same
+    // product both add up into the same total, see RevisionItems.add_count
+    // in core/revisions/models.py). --
+    function findProductByCode(code) {
+        const cleanCode = code.trim();
+        const byInternalCode = productsData.find(p => p.internal_code === cleanCode);
+        if (byInternalCode) return byInternalCode;
+        const barcodeMatch = barcodesData.find(b => b.code === cleanCode && !b.is_scale_code);
+        if (barcodeMatch) {
+            return productsData.find(p => String(p.id) === String(barcodeMatch.product_id));
+        }
+        return null;
+    }
+
+    const SCALE_PREFIX_LENGTHS = [7, 8];
+
+    function ean13CheckDigit(digits12) {
+        let total = 0;
+        for (let i = 0; i < digits12.length; i++) {
+            const digit = parseInt(digits12[i], 10);
+            total += (i % 2 === 0) ? digit : digit * 3;
+        }
+        return (10 - (total % 10)) % 10;
+    }
+
+    function isValidEan13(code) {
+        if (!/^\d{13}$/.test(code)) return false;
+        return ean13CheckDigit(code.slice(0, 12)) === parseInt(code[12], 10);
+    }
+
+    function decodeScaleBarcode(code) {
+        const cleanCode = code.trim();
+        if (!isValidEan13(cleanCode)) return null;
+        for (const prefixLength of SCALE_PREFIX_LENGTHS) {
+            const prefix = cleanCode.slice(0, prefixLength);
+            const quantityDigits = cleanCode.slice(prefixLength, 12);
+            const barcodeEntry = barcodesData.find(b => b.code === prefix && b.is_scale_code);
+            if (!barcodeEntry) continue;
+            const product = productsData.find(p => String(p.id) === String(barcodeEntry.product_id));
+            if (!product) continue;
+            const rawQuantity = parseInt(quantityDigits, 10);
+            const quantity = product.unit_type === 'weight' ? rawQuantity / 1000 : rawQuantity;
+            return {product, quantity};
+        }
+        return null;
+    }
+
+    function addCount(product, quantity) {
+        fetch('{% url "revision_add_item" revision.pk %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-CSRFToken': csrfToken,
+            },
+            body: new URLSearchParams({product_id: product.id, quantity: String(quantity)}),
+        }).then(function (r) {
+            if (r.status === 409) {
+                document.getElementById('revision-closed-banner').style.display = '';
+                throw new Error('closed');
+            }
+            return r.json();
+        }).then(function (data) {
+            if (data.error) { alert(data.error); return; }
+            upsertRow(data);
+        }).catch(function () { /* network hiccup -- the next poll will reconcile */ });
+    }
+
+    const searchInput = document.getElementById('revision-item-search-input');
+    const resultsBox = document.getElementById('revision-item-search-results');
+    let currentResults = [];
+    let highlightedIndex = -1;
+
+    function highlightResult(index) {
+        const items = resultsBox.querySelectorAll('.global-search-result');
+        items.forEach(el => el.classList.remove('is-highlighted'));
+        if (index >= 0 && index < items.length) {
+            items[index].classList.add('is-highlighted');
+            items[index].scrollIntoView({block: 'nearest'});
+        }
+        highlightedIndex = index;
+    }
+
+    function renderResults(results) {
+        resultsBox.innerHTML = '';
+        currentResults = results;
+        if (!results.length) {
+            resultsBox.classList.remove('is-open');
+            return;
+        }
+        results.forEach((product, index) => {
+            const row = document.createElement('div');
+            row.className = 'global-search-result';
+            row.textContent = product.internal_code + ' — ' + product.name;
+            row.addEventListener('mouseenter', () => highlightResult(index));
+            row.addEventListener('click', () => selectProduct(product));
+            resultsBox.appendChild(row);
+        });
+        resultsBox.classList.add('is-open');
+        highlightResult(0);
+    }
+
+    function runSearch() {
+        const q = searchInput.value.trim().toLowerCase();
+        if (!q) { renderResults([]); return; }
+        const tokens = q.split(/\s+/).filter(Boolean);
+        const startsWith = [];
+        const allWordsMatch = [];
+        productsData.forEach(product => {
+            const name = product.name.toLowerCase();
+            const code = product.internal_code.toLowerCase();
+            if (name.startsWith(q) || code.startsWith(q)) {
+                startsWith.push(product);
+            } else if (tokens.every(t => name.includes(t) || code.includes(t))) {
+                allWordsMatch.push(product);
+            }
+        });
+        renderResults(startsWith.concat(allWordsMatch).slice(0, 30));
+    }
+
+    function selectProduct(product) {
+        addCount(product, 1);
+        resultsBox.classList.remove('is-open');
+        searchInput.value = '';
+        currentResults = [];
+        highlightedIndex = -1;
+        searchInput.focus();
+    }
+
+    searchInput.addEventListener('input', runSearch);
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('#revision-item-search-input') && !e.target.closest('#revision-item-search-results')) {
+            resultsBox.classList.remove('is-open');
+        }
+    });
+
+    searchInput.addEventListener('keydown', (e) => {
+        const hasOpenResults = resultsBox.classList.contains('is-open') && currentResults.length;
+        if (e.key === 'ArrowDown') {
+            if (!hasOpenResults) return;
+            e.preventDefault();
+            highlightResult(Math.min(highlightedIndex + 1, currentResults.length - 1));
+            return;
+        }
+        if (e.key === 'ArrowUp') {
+            if (!hasOpenResults) return;
+            e.preventDefault();
+            highlightResult(Math.max(highlightedIndex - 1, 0));
+            return;
+        }
+        if (e.key === 'Escape') {
+            resultsBox.classList.remove('is-open');
+            return;
+        }
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+
+        if (hasOpenResults) {
+            selectProduct(currentResults[highlightedIndex >= 0 ? highlightedIndex : 0]);
+            return;
+        }
+
+        const code = searchInput.value.trim();
+        if (!code) return;
+        let product = findProductByCode(code);
+        let scaleQuantity = null;
+        if (!product) {
+            const decoded = decodeScaleBarcode(code);
+            if (decoded) {
+                product = decoded.product;
+                scaleQuantity = decoded.quantity;
+            }
+        }
+        if (!product) { alert('Product not found'); return; }
+        addCount(product, scaleQuantity !== null ? scaleQuantity : 1);
+        resultsBox.classList.remove('is-open');
+        searchInput.value = '';
+        searchInput.focus();
+    });
+
+    searchInput.focus();
+
+    // -- Poll so counts entered on another computer show up here too. --
+    setInterval(function () {
+        fetch('{% url "revision_items_data" revision.pk %}')
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (data.status !== 'OPEN') {
+                    document.getElementById('revision-closed-banner').style.display = '';
+                    return;
+                }
+                table.setData(data.items);
+            })
+            .catch(function () { /* transient network error -- next poll will retry */ });
+    }, 4000);
+
+    {% if can_complete %}
+    document.getElementById('revision-complete-btn').addEventListener('click', function () {
+        if (!confirm('Complete this revision? Product quantities will be corrected to match the found counts. This cannot be undone.')) return;
+        fetch('{% url "revision_complete" revision.pk %}', {
+            method: 'POST',
+            headers: {'X-CSRFToken': csrfToken},
+        }).then(function (r) {
+            if (r.redirected) { window.location = r.url; return; }
+            return r.json().then(function (data) { alert(data.error || 'Could not complete the revision.'); });
+        });
+    });
+
+    document.getElementById('revision-cancel-btn').addEventListener('click', function () {
+        if (!confirm('Cancel this revision? All counted quantities will be discarded and nothing will be applied to stock. This cannot be undone.')) return;
+        fetch('{% url "revision_cancel" revision.pk %}', {
+            method: 'POST',
+            headers: {'X-CSRFToken': csrfToken},
+        }).then(function (r) {
+            if (r.redirected) { window.location = r.url; return; }
+            return r.json().then(function (data) { alert(data.error || 'Could not cancel the revision.'); });
+        });
+    });
+    {% endif %}
+})();
+</script>
+{% endblock %}

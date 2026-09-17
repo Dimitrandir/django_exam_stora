@@ -1,0 +1,29 @@
+{% extends 'base.html' %}
+
+{% block title %}STORA - Stock Revision{% endblock %}
+
+{% block content %}
+<section class="revision-home">
+    <header class="page-header">
+        <h1>Stock Revision</h1>
+    </header>
+
+    {% if open_revision %}
+    <div class="form-errors" style="background:#fff8e6;border-color:#e6c66b;color:#6b5300;">
+        <p>
+            There is already an open revision, started by <strong>{{ open_revision.started_by }}</strong>
+            at {{ open_revision.started_at|date:"d.m.Y H:i" }}. Only one revision can be open at a time.
+        </p>
+        <a href="{% url 'revision_view' open_revision.pk %}" class="btn button-save" role="button">Join open revision</a>
+    </div>
+    {% else %}
+    <p class="text-muted">No revision is currently open.</p>
+    <form method="post" action="{% url 'revision_start' %}">
+        {% csrf_token %}
+        <button type="submit" class="btn button-save">Start New Revision</button>
+    </form>
+    {% endif %}
+
+    <p style="margin-top:1.5rem;"><a href="{% url 'revision_list' %}">View revision history</a></p>
+</section>
+{% endblock %}

@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+
+{% block title %}STORA - Revision History{% endblock %}
+{% load static cache_bust %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
+{% endblock %}
+
+{% block content %}
+
+<h1>Revision History</h1>
+
+<button type="button" id="revisions-export-btn" class="btn btn-outline-secondary btn-sm">Export to Excel</button>
+
+{{ revisions_data|json_script:"revisions-data" }}
+<div id="revisions-table" class="table-sm"></div>
+
+{% endblock content %}
+
+{% block extra_js %}
+<script src="{% static 'vendor/sheetjs/xlsx.full.min.js' %}"></script>
+<script src="{% static 'vendor/tabulator/tabulator.min.js' %}"></script>
+<script src="{% static_v 'js/data-table.js' %}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var table = initExcelStyleTable('#revisions-table', 'revisions-data', [
+        {
+            title: '#', formatter: 'rownum', width: 50, hozAlign: 'center',
+            headerSort: false, headerFilter: false, hideable: false,
+        },
+        {title: 'Status', field: 'status', width: 110},
+        {title: 'Started By', field: 'started_by', width: 150},
+        {title: 'Started At', field: 'started_at', width: 150},
+        {title: 'Completed By', field: 'completed_by', width: 150},
+        {title: 'Completed At', field: 'completed_at', width: 150},
+        {title: 'Items Counted', field: 'item_count', width: 130, hozAlign: 'right'},
+    ], {placeholder: 'No revisions yet.'});
+
+    table.on('rowClick', function (e, row) {
+        if (e.target.closest('.tabulator-header')) return;
+        window.location = row.getData().view_url;
+    });
+
+    document.getElementById('revisions-export-btn').addEventListener('click', function () {
+        table.download('xlsx', 'revisions.xlsx', {sheetName: 'Revisions'});
+    });
+});
+</script>
+{% endblock %}

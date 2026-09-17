@@ -1,0 +1,106 @@
+{% extends 'base.html' %}
+
+{% block title %}STORA - Stock Revision #{{ revision.pk }}{% endblock %}
+{% load static cache_bust %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
+{% endblock %}
+
+{% block content %}
+
+<h1>Stock Revision #{{ revision.pk }}{% if revision.status == 'CANCELLED' %} <span class="text-danger">(Cancelled)</span>{% endif %}</h1>
+<p class="text-muted">
+    Started by {{ revision.started_by }} at {{ revision.started_at|date:"d.m.Y H:i" }}.
+    {% if revision.status == 'CANCELLED' %}
+    Cancelled by {{ revision.completed_by }} at {{ revision.completed_at|date:"d.m.Y H:i" }} -- no stock was changed.
+    {% else %}
+    Completed by {{ revision.completed_by }} at {{ revision.completed_at|date:"d.m.Y H:i" }}.
+    {% endif %}
+</p>
+
+<button type="button" id="revision-export-btn" class="btn btn-outline-secondary btn-sm">Export to Excel</button>
+
+{{ items_data|json_script:"revision-items-data" }}
+<div id="revision-items-table" class="table-sm"></div>
+
+{% endblock content %}
+
+{% block extra_js %}
+<script src="{% static 'vendor/sheetjs/xlsx.full.min.js' %}"></script>
+<script src="{% static 'vendor/tabulator/tabulator.min.js' %}"></script>
+<script src="{% static_v 'js/data-table.js' %}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    function moneyFormatter(cell) {
+        var v = Number(cell.getValue());
+        return isNaN(v) ? '' : v.toFixed(2);
+    }
+
+    // Same red-box-on-mismatch treatment as the live counting screen (see
+    // revision_detail.html) -- a completed revision's report should still
+    // make any leftover discrepancy obvious at a glance.
+    function highlightIfNonzero(cell, text) {
+        var v = Number(cell.getValue());
+        var el = cell.getElement();
+        if (v !== 0) {
+            el.style.backgroundColor = '#f8d7da';
+            el.style.color = '#842029';
+            el.style.fontWeight = '600';
+        } else {
+            el.style.backgroundColor = '';
+            el.style.color = '';
+            el.style.fontWeight = '';
+        }
+        return text;
+    }
+
+    function quantityDiffFormatter(cell) {
+        var v = Number(cell.getValue());
+        return highlightIfNonzero(cell, isNaN(v) ? '' : v);
+    }
+
+    function moneyDiffFormatter(cell) {
+        var v = Number(cell.getValue());
+        return highlightIfNonzero(cell, isNaN(v) ? '' : v.toFixed(2));
+    }
+
+    function quantityDiffCalcFormatter(cell) {
+        var v = Number(cell.getValue());
+        return isNaN(v) ? '' : v;
+    }
+
+    var table = initExcelStyleTable('#revision-items-table', 'revision-items-data', [
+        {
+            title: '#', formatter: 'rownum', width: 50, hozAlign: 'center',
+            headerSort: false, headerFilter: false, hideable: false,
+        },
+        {title: 'Code', field: 'internal_code', width: 110},
+        {title: 'Name', field: 'name', width: 250},
+        {title: 'Found Qty', field: 'found_quantity', width: 110, hozAlign: 'right', bottomCalc: 'sum'},
+        {title: 'System Qty', field: 'system_quantity_at_start', width: 120, hozAlign: 'right', bottomCalc: 'sum'},
+        {
+            title: 'Diff Qty', field: 'quantity_diff', width: 110, hozAlign: 'right',
+            formatter: quantityDiffFormatter, bottomCalc: 'sum', bottomCalcFormatter: quantityDiffCalcFormatter,
+        },
+        {title: 'Unit Price', field: 'price_at_revision', width: 110, hozAlign: 'right', formatter: moneyFormatter},
+        {
+            title: 'Found Sum', field: 'found_sum', width: 120, hozAlign: 'right',
+            formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
+        },
+        {
+            title: 'System Sum', field: 'system_sum', width: 120, hozAlign: 'right',
+            formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
+        },
+        {
+            title: 'Diff Sum', field: 'sum_diff', width: 120, hozAlign: 'right',
+            formatter: moneyDiffFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
+        },
+    ], {placeholder: 'No items were counted in this revision.'});
+
+    document.getElementById('revision-export-btn').addEventListener('click', function () {
+        table.download('xlsx', 'revision_{{ revision.pk }}_items.xlsx', {sheetName: 'Revision Items'});
+    });
+});
+</script>
+{% endblock %}
