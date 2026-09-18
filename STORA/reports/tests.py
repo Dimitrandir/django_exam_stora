@@ -186,6 +186,93 @@ class DeliveriesReportViewTests(TestCase):
         ids = [d['id'] for d in response.context['deliveries_data']]
         self.assertIn(self.in_range_delivery.pk, ids)
 
+    def test_invalid_period_shows_form_errors_instead_of_silently_falling_back(self):
+        # start_date after end_date is the one thing ReportPeriodForm
+        # actually validates -- the view used to fall back to the default
+        # period with zero indication anything was wrong with what was
+        # typed.
+        response = self._get(
+            start_date=timezone.localdate().isoformat(),
+            end_date=(timezone.localdate() - timezone.timedelta(days=1)).isoformat(),
+        )
+        self.assertTrue(response.context['form'].errors)
+        self.assertContains(response, 'form-errors')
+
+    def test_cashier_cannot_view_stock_movements_report(self):
+        # Shows supplier names and delivery COSTS -- Manager/Warehouse only.
+        # Cashier already holds view_deliveryattributes (for the individual
+        # delivery detail page), so this deliberately checks against
+        # add_deliveryattributes instead -- see DeliveriesReportView.
+        cashier = User.objects.create_user(username='report-cashier2', password='pass12345', role=User.CASHIER)
+        self.client.force_login(cashier)
+        response = self._get()
+        self.assertEqual(response.status_code, 403)
+
+    def test_warehouse_can_view_stock_movements_report(self):
+        warehouse = User.objects.create_user(username='report-warehouse1', password='pass12345', role=User.WAREHOUSE)
+        self.client.force_login(warehouse)
+        response = self._get()
+        self.assertEqual(response.status_code, 200)
+
+    def test_logged_out_redirected_to_login_not_403(self):
+        self.client.logout()
+        response = self._get()
+        self.assertEqual(response.status_code, 302)
+        self.assertIn('/accounts/login/', response.url)
+
+
+class ReportsDashboardViewTests(TestCase):
+    """Zero coverage before this."""
+
+    def setUp(self):
+        self.manager = User.objects.create_user(username='report-manager1', password='pass12345', role=User.MANAGER)
+        self.client.force_login(self.manager)
+
+    def _get(self, **params):
+        today = timezone.localdate()
+        data = {
+            'start_date': (today - timezone.timedelta(days=7)).isoformat(),
+            'end_date': today.isoformat(),
+        }
+        data.update(params)
+        return self.client.get(reverse('reports_dashboard'), data)
+
+    def test_requires_login(self):
+        self.client.logout()
+        response = self._get()
+        self.assertEqual(response.status_code, 302)
+
+    def test_any_logged_in_role_can_view(self):
+        # Deliberately not permission-gated like Stock Movements -- the
+        # dashboard only shows aggregate totals, not per-supplier costs.
+        cashier = User.objects.create_user(username='report-cashier3', password='pass12345', role=User.CASHIER)
+        self.client.force_login(cashier)
+        response = self._get()
+        self.assertEqual(response.status_code, 200)
+
+    def test_low_stock_excludes_recipe_products(self):
+        # A recipe's own `quantity` is never touched by sales (only its
+        # ingredients are) -- it sits at 0 forever regardless of real
+        # stock, so it must not clutter this list.
+        plain_low = Product.objects.create(
+            internal_code='DASH001', name='Plain Low Stock', sell_price=Decimal('2.00'), quantity=1,
+        )
+        recipe_product = Product.objects.create(
+            internal_code='DASH002', name='Recipe Product', sell_price=Decimal('5.00'), quantity=0, is_recipe=True,
+        )
+        response = self._get()
+        ids = [p.pk for p in response.context['low_stock_products']]
+        self.assertIn(plain_low.pk, ids)
+        self.assertNotIn(recipe_product.pk, ids)
+
+    def test_invalid_period_shows_form_errors(self):
+        response = self._get(
+            start_date=timezone.localdate().isoformat(),
+            end_date=(timezone.localdate() - timezone.timedelta(days=1)).isoformat(),
+        )
+        self.assertTrue(response.context['form'].errors)
+        self.assertContains(response, 'form-errors')
+
 
 class SalesReportViewTests(TestCase):
     """Replaces the old plain sales_list.html as the app's "browse all
@@ -260,3 +347,11 @@ class SalesReportViewTests(TestCase):
         response = self._get()
         ids = [r['id'] for r in response.context['sales_data']]
         self.assertNotIn(old_sale.pk, ids)
+
+    def test_invalid_period_shows_form_errors_instead_of_silently_falling_back(self):
+        response = self._get(
+            start_date=timezone.localdate().isoformat(),
+            end_date=(timezone.localdate() - timezone.timedelta(days=1)).isoformat(),
+        )
+        self.assertTrue(response.context['form'].errors)
+        self.assertContains(response, 'form-errors')

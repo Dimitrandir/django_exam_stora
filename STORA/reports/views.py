@@ -8,6 +8,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views import View
 
+from STORA.core.mixins import StaffPermissionRequiredMixin
 from STORA.deliveries.models import DeliveryAttributes
 from STORA.products.models import Product
 from STORA.reports.forms import ReportPeriodForm
@@ -61,7 +62,14 @@ class ReportsDashboardView(ReportsBaseView):
         total_deliveries_count = deliveries.count()
         total_deliveries_amount = deliveries.aggregate(total=Sum('total_amount'))['total'] or 0
 
-        low_stock_products = Product.objects.filter(quantity__lte=5).order_by('quantity')[:10]
+        # A recipe product's own `quantity` is never touched by sales (only
+        # its ingredients are decremented -- see CLAUDE.md) -- it just sits
+        # at whatever it was left at (usually 0), so it would otherwise
+        # show up here forever regardless of real stock, drowning out
+        # products whose quantity actually means something.
+        low_stock_products = Product.objects.filter(
+            quantity__lte=5, is_recipe=False
+        ).order_by('quantity')[:10]
 
         context = {
             'form': form,
@@ -141,13 +149,24 @@ class SalesReportView(ReportsBaseView):
         return render(request, self.template_name, context)
 
 
-class DeliveriesReportView(ReportsBaseView):
+class DeliveriesReportView(StaffPermissionRequiredMixin, ReportsBaseView):
     """One shared "Stock Movements" report for all three DeliveryAttributes
     movement types (Delivery/Write-off/Scrap) -- picked via `movement_type`
     in the querystring (defaults to Delivery). Kept as one view/template
     rather than three, since they're the same underlying model and table
-    shape; only which rows match differs."""
+    shape; only which rows match differs.
 
+    Manager/Warehouse only -- this report shows supplier names and delivery
+    COSTS (what the shop pays), unlike the individual delivery detail page.
+    Reuses `deliveries.add_deliveryattributes` rather than
+    `view_deliveryattributes`: Cashiers already hold view_deliveryattributes
+    (so they can check whether stock has arrived on a specific delivery,
+    see accounts/signals.py), so gating on that wouldn't actually exclude
+    them here -- add_deliveryattributes is Warehouse+Manager only, which is
+    exactly the split wanted.
+    """
+
+    permission_required = 'deliveries.add_deliveryattributes'
     template_name = 'reports/deliveries_report.html'
 
     def get(self, request, *args, **kwargs):

@@ -9,6 +9,10 @@
         <p class="text-muted mb-0">Overview of sales, deliveries and stock status.</p>
     </header>
 
+    {% if form.errors %}
+    <div class="form-errors">{{ form.errors }}</div>
+    {% endif %}
+
     <section class="report-filter card shadow-sm border-0 rounded-4 mb-4">
         <div class="card-body">
             <form method="get">
