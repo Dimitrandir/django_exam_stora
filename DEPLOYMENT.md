@@ -31,6 +31,27 @@ GRANT ALL PRIVILEGES ON DATABASE stora_db TO stora_usr;
 ALTER DATABASE stora_db OWNER TO stora_usr;
 ```
 
+### 2.1 AI режим на справките — само-за-четене роля
+
+Reports app-ът има "AI режим" (справки от свободен текст) — вика Anthropic API,
+което съставя и изпълнява SQL заявки срещу базата. За да е това истински
+безопасно (не само "казахме му да не пипа"), заявките минават през отделна
+Postgres роля, която физически няма право да пише нищо. Докато си още в
+"SQL Shell (psql)" от стъпка 2, пусни и:
+
+```sql
+\i db_create_ai_readonly_role.sql
+```
+
+(файлът е в root на проекта, до `manage.py`) — от "SQL Shell (psql)" вече си
+логнат като `postgres` с паролата от стъпка 2, така че `\i` просто го
+изпълнява директно, без нова връзка/парола.
+
+По подразбиране скриптът задава на новата роля същата парола като на
+`stora_usr` (`stora_psswd` в dev пробите) — смени я в самия `.sql` файл
+преди да го пуснеш, ако искаш различна. Тази парола отива в `.env` като
+`DB_READONLY_PASSWORD` в стъпка 4.
+
 ## 3. Проектът
 
 Копирай папката на проекта на машината (или `git clone`, ако има интернет и
@@ -53,6 +74,8 @@ pip install -r requirements.txt
 - `DEBUG=False`
 - `ALLOWED_HOSTS=localhost,127.0.0.1`
 - `DB_PASSWORD` — паролата, която зададе на `stora_usr` в стъпка 2.
+- `DB_READONLY_PASSWORD` — паролата, която зададе на `stora_ai_readonly` в стъпка 2.1.
+- `ANTHROPIC_API_KEY` — за AI режима на справките.
 
 `.env` НЕ се комитва в git — остава само на тази машина.
 

@@ -100,7 +100,23 @@ DATABASES = {
         'PASSWORD': os.environ.get('DB_PASSWORD', 'stora_psswd'),
         'HOST': os.environ.get('DB_HOST', '127.0.0.1'),
         'PORT': os.environ.get('DB_PORT', '5432'),
-    }
+    },
+    # Used only by the Reports app's AI mode (natural-language report
+    # generation) -- a separate Postgres role with SELECT-only grants (see
+    # db_create_ai_readonly_role.sql), not just the same connection with a
+    # "please don't write" instruction in the prompt. Genuinely can't
+    # execute a write, regardless of what the AI generates.
+    'readonly': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.environ.get('DB_NAME', 'stora_db'),
+        'USER': os.environ.get('DB_READONLY_USER', 'stora_ai_readonly'),
+        # Same dev-only fallback pattern as DB_PASSWORD above -- matches
+        # what db_create_ai_readonly_role.sql actually set locally, so dev
+        # works without needing a .env file (same reasoning as DB_PASSWORD).
+        'PASSWORD': os.environ.get('DB_READONLY_PASSWORD', 'stora_psswd'),
+        'HOST': os.environ.get('DB_HOST', '127.0.0.1'),
+        'PORT': os.environ.get('DB_PORT', '5432'),
+    },
 }
 
 
