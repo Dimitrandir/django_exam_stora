@@ -17,7 +17,7 @@ from django.views.generic import CreateView, ListView, DetailView, UpdateView, D
 from STORA.core.mixins import StaffPermissionRequiredMixin
 from STORA.core.session_service import get_cashier_operation_state
 from STORA.core.utils import dispatch_task, multi_token_icontains_q
-from STORA.deliveries.models import DeliveryItems
+from STORA.deliveries.models import DeliveryAttributes, DeliveryItems
 from STORA.revisions.models import RevisionAttributes, RevisionItems
 from STORA.products.forms import (
     ProductForms, ProductInlineEditForm, CategoryForm, SuppliersForm, BarcodeFormSet, ProductSupplierFormSet,
@@ -330,8 +330,21 @@ class ProductHistoryView(LoginRequiredMixin, StaffPermissionRequiredMixin, Detai
         ] + [
             {
                 'date': item.delivery.time_of_delivery,
-                'event_type': 'Delivery',
-                'quantity_change': item.delivery_quantity,
+                # `delivery_quantity` is always stored positive (the clerk
+                # never types a negative number, see DeliveryItems.save())
+                # -- write-off/scrap rows need both their label and their
+                # sign flipped here, or they'd show up as a positive
+                # "Delivery" that increased stock when they actually
+                # decreased it.
+                'event_type': (
+                    'Delivery' if item.delivery.movement_type == DeliveryAttributes.MOVEMENT_DELIVERY
+                    else item.delivery.get_movement_type_display()
+                ),
+                'quantity_change': (
+                    -item.delivery_quantity
+                    if item.delivery.movement_type in DeliveryAttributes.OUTGOING_MOVEMENT_TYPES
+                    else item.delivery_quantity
+                ),
                 'unit_price': item.price_at_delivery,
                 'supplier': item.delivery.supplier,
                 'cashier': None,

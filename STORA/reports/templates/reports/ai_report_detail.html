@@ -1,0 +1,102 @@
+{% extends 'base.html' %}
+
+{% block title %}STORA - AI Report{% endblock %}
+{% load static cache_bust %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
+{% endblock %}
+
+{% block content %}
+<section class="reports-ai-detail">
+    <header class="page-header mb-4">
+        <h1 class="h2 mb-1">{{ ai_report.prompt }}</h1>
+        <p class="text-muted mb-0">
+            Asked by {{ ai_report.created_by|default:'—' }} on {{ ai_report.created_at|date:"Y-m-d H:i" }}
+            {% if ai_report.last_regenerated_at %} · answer last regenerated {{ ai_report.last_regenerated_at|date:"Y-m-d H:i" }}{% endif %}
+        </p>
+    </header>
+
+    {% if messages %}
+    {% for message in messages %}
+    <div class="form-errors mb-3">{{ message }}</div>
+    {% endfor %}
+    {% endif %}
+
+    <section class="report-section card shadow-sm border-0 rounded-4 mb-4">
+        <div class="card-body">
+            <header class="section-header d-flex justify-content-between align-items-center mb-3">
+                <h2 class="h5 mb-0">Answer</h2>
+                <form method="POST" action="{% url 'ai_report_regenerate' ai_report.pk %}" id="regenerate-form">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-outline-secondary btn-sm" id="regenerate-btn">Regenerate</button>
+                </form>
+            </header>
+            <p class="mb-0" style="white-space: pre-wrap;">{{ ai_report.last_answer|default:'No answer yet.' }}</p>
+        </div>
+    </section>
+
+    {% if rerun_error %}
+    <div class="form-errors mb-3">The saved query no longer runs: {{ rerun_error }}. Try Regenerate.</div>
+    {% endif %}
+
+    <section class="report-section card shadow-sm border-0 rounded-4 mb-4">
+        <div class="card-body">
+            <header class="section-header d-flex justify-content-between align-items-center mb-3">
+                <h2 class="h5 mb-0">Data (live, re-run just now)</h2>
+                <button type="button" id="ai-report-export-btn" class="btn btn-outline-secondary btn-sm">Export to Excel</button>
+            </header>
+
+            {{ columns|json_script:"ai-report-columns" }}
+            {{ table_data|json_script:"ai-report-table-data" }}
+            <div id="ai-report-table" class="table-sm"></div>
+        </div>
+    </section>
+
+    <section class="report-section card shadow-sm border-0 rounded-4 mb-4">
+        <div class="card-body">
+            <header class="section-header mb-2">
+                <h2 class="h6 mb-0 text-muted">SQL used</h2>
+            </header>
+            <pre class="mb-0 small text-muted" style="white-space: pre-wrap;">{{ ai_report.generated_sql|default:'—' }}</pre>
+        </div>
+    </section>
+
+    <footer class="report-actions d-flex gap-2">
+        <a href="{% url 'ai_report_list' %}" class="btn btn-outline-primary">Back to AI reports</a>
+        <a href="{% url 'ai_report_delete' ai_report.pk %}" class="btn btn-outline-danger">Delete</a>
+    </footer>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'vendor/sheetjs/xlsx.full.min.js' %}"></script>
+<script src="{% static 'vendor/tabulator/tabulator.min.js' %}"></script>
+<script src="{% static_v 'js/data-table.js' %}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    // Column names come from whatever the generated SELECT returned --
+    // unlike the app's other report tables, they aren't known ahead of
+    // time, so the column definitions are built here instead of hardcoded.
+    var columnNames = JSON.parse(document.getElementById('ai-report-columns').textContent);
+    var columns = columnNames.map(function (name) {
+        return {title: name, field: name};
+    });
+
+    var table = initExcelStyleTable('#ai-report-table', 'ai-report-table-data', columns, {
+        placeholder: 'No rows returned.',
+    });
+
+    document.getElementById('ai-report-export-btn').addEventListener('click', function () {
+        table.download('xlsx', 'ai_report.xlsx', {sheetName: 'AI Report'});
+    });
+
+    var regenerateForm = document.getElementById('regenerate-form');
+    var regenerateBtn = document.getElementById('regenerate-btn');
+    regenerateForm.addEventListener('submit', function () {
+        regenerateBtn.disabled = true;
+        regenerateBtn.textContent = 'Regenerating…';
+    });
+});
+</script>
+{% endblock %}

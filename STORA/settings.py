@@ -182,6 +182,15 @@ STORAGES = {
 SESSION_EXPIRE_AT_BROWSER_CLOSE = False
 SESSION_COOKIE_AGE = 60 * 60 * 24 * 7  # 7 days
 
+# Reports app "AI mode" -- natural-language report generation. Queries run
+# through the genuinely read-only 'readonly' DB connection above (see
+# db_create_ai_readonly_role.sql), not this key -- the key is only for
+# talking to the Anthropic API itself. No fallback default: the AI report
+# views check for this being empty and show a friendly message instead of
+# crashing, rather than silently pretending a placeholder key would work.
+ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', '')
+AI_REPORTS_MODEL = os.environ.get('AI_REPORTS_MODEL', 'claude-sonnet-5')
+
 CELERY_BROKER_URL = 'redis://localhost:6379/0'
 CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
 CELERY_ACCEPT_CONTENT = ['json']

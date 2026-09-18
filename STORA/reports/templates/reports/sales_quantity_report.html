@@ -1,0 +1,105 @@
+{% extends 'base.html' %}
+
+{% block title %}STORA - Sales Quantity Report{% endblock %}
+{% load static cache_bust %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
+{% endblock %}
+
+{% block content %}
+<section class="reports-sales-quantity">
+    <header class="page-header mb-4">
+        <h1 class="h2 mb-1">Sales Quantity Report</h1>
+        <p class="text-muted mb-0">How much of each product sold in the period, its group, and its delivery/sell price.</p>
+    </header>
+
+    {% if form.errors %}
+    <div class="form-errors">{{ form.errors }}</div>
+    {% endif %}
+
+    <section class="report-filter card shadow-sm border-0 rounded-4 mb-4">
+        <div class="card-body">
+            <form method="get">
+                <fieldset class="report-filter__fieldset border-0 p-0 m-0">
+                    <legend class="h5 mb-3">Choose period</legend>
+
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <div class="report-filter__field">
+                                {{ form.start_date.label_tag }}
+                                {{ form.start_date }}
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <div class="report-filter__field">
+                                {{ form.end_date.label_tag }}
+                                {{ form.end_date }}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-3">
+                        <button type="submit" class="btn btn-primary">Show report</button>
+                    </div>
+                </fieldset>
+            </form>
+        </div>
+    </section>
+
+    <section class="report-section card shadow-sm border-0 rounded-4 mb-4">
+        <div class="card-body">
+            <header class="section-header d-flex justify-content-between align-items-center mb-3">
+                <h2 class="h4 mb-0">Sold in period</h2>
+                <button type="button" id="sales-quantity-export-btn" class="btn btn-outline-secondary btn-sm">Export to Excel</button>
+            </header>
+
+            {{ sales_quantity_data|json_script:"sales-quantity-table-data" }}
+            <div id="sales-quantity-table" class="table-sm"></div>
+        </div>
+    </section>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'vendor/sheetjs/xlsx.full.min.js' %}"></script>
+<script src="{% static 'vendor/tabulator/tabulator.min.js' %}"></script>
+<script src="{% static_v 'js/data-table.js' %}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    function moneyFormatter(cell) {
+        var v = Number(cell.getValue());
+        return isNaN(v) ? '' : v.toFixed(2) + ' eur';
+    }
+    function qtyFormatter(cell) {
+        var v = Number(cell.getValue());
+        return isNaN(v) ? '' : v.toFixed(3).replace(/\.?0+$/, '') || '0';
+    }
+
+    var table = initExcelStyleTable('#sales-quantity-table', 'sales-quantity-table-data', [
+        {
+            title: '#', formatter: 'rownum', width: 50, hozAlign: 'center',
+            headerSort: false, headerFilter: false, hideable: false,
+        },
+        {title: 'Code', field: 'code', width: 100},
+        {title: 'Name', field: 'name', width: 250},
+        {title: 'Category', field: 'category', width: 150},
+        {
+            title: 'Quantity Sold', field: 'quantity_sold', width: 140, hozAlign: 'right',
+            formatter: qtyFormatter, bottomCalc: 'sum', bottomCalcFormatter: qtyFormatter,
+        },
+        {title: 'Delivery Price', field: 'delivery_price', width: 130, hozAlign: 'right', formatter: moneyFormatter},
+        {title: 'Sell Price', field: 'sell_price', width: 130, hozAlign: 'right', formatter: moneyFormatter},
+        {
+            title: 'Total Revenue', field: 'total_amount', width: 150, hozAlign: 'right',
+            formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
+        },
+    ], {placeholder: 'No sales found for the selected period.'});
+
+    document.getElementById('sales-quantity-export-btn').addEventListener('click', function () {
+        table.download('xlsx', 'sales_quantity_report.xlsx', {sheetName: 'Sales Quantity'});
+    });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+
+{% block title %}STORA - Delete AI Report{% endblock %}
+
+{% block content %}
+
+<h1>Are you sure you want to delete this AI report?</h1>
+<p class="text-muted">"{{ ai_report.prompt|truncatechars:150 }}"</p>
+
+<form method="POST">
+    {% csrf_token %}
+    <button type="submit" class="delete_button">YES</button>
+    <a href="{% url 'ai_report_list' %}" class="button_cancel">NO</a>
+</form>
+
+{% endblock %}

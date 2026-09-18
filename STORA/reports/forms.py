@@ -3,6 +3,21 @@ from django import forms
 from STORA.products.models import Suppliers
 
 
+class StockAsOfDateForm(forms.Form):
+    as_of_date = forms.DateField(
+        label='As of date',
+        widget=forms.DateInput(attrs={'type': 'date'}),
+    )
+
+
+class ExpiringPeriodForm(forms.Form):
+    days_ahead = forms.IntegerField(
+        label='Days ahead',
+        min_value=0,
+        help_text='Also includes batches that already expired.',
+    )
+
+
 class ReportPeriodForm(forms.Form):
     start_date = forms.DateField(
         label='From date',

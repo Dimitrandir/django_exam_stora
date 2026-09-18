@@ -1,0 +1,93 @@
+{% extends 'base.html' %}
+
+{% block title %}STORA - Stock As Of Date{% endblock %}
+{% load static cache_bust %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
+{% endblock %}
+
+{% block content %}
+<section class="reports-stock-as-of">
+    <header class="page-header mb-4">
+        <h1 class="h2 mb-1">Stock As Of Date</h1>
+        <p class="text-muted mb-0">What each product's stock reportedly was at the end of the chosen day.</p>
+    </header>
+
+    {% if form.errors %}
+    <div class="form-errors">{{ form.errors }}</div>
+    {% endif %}
+
+    <section class="report-filter card shadow-sm border-0 rounded-4 mb-4">
+        <div class="card-body">
+            <form method="get">
+                <fieldset class="report-filter__fieldset border-0 p-0 m-0">
+                    <legend class="h5 mb-3">Choose date</legend>
+
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <div class="report-filter__field">
+                                {{ form.as_of_date.label_tag }}
+                                {{ form.as_of_date }}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-3">
+                        <button type="submit" class="btn btn-primary">Show report</button>
+                    </div>
+                </fieldset>
+            </form>
+        </div>
+    </section>
+
+    <section class="report-section card shadow-sm border-0 rounded-4 mb-4">
+        <div class="card-body">
+            <header class="section-header d-flex justify-content-between align-items-center mb-3">
+                <h2 class="h4 mb-0">Stock as of {{ as_of_date|date:"Y-m-d" }}</h2>
+                <button type="button" id="stock-as-of-export-btn" class="btn btn-outline-secondary btn-sm">Export to Excel</button>
+            </header>
+
+            {{ stock_data|json_script:"stock-as-of-table-data" }}
+            <div id="stock-as-of-table" class="table-sm"></div>
+        </div>
+    </section>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'vendor/sheetjs/xlsx.full.min.js' %}"></script>
+<script src="{% static 'vendor/tabulator/tabulator.min.js' %}"></script>
+<script src="{% static_v 'js/data-table.js' %}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    function qtyFormatter(cell) {
+        var v = Number(cell.getValue());
+        return isNaN(v) ? '' : v.toFixed(3).replace(/\.?0+$/, '') || '0';
+    }
+
+    var table = initExcelStyleTable('#stock-as-of-table', 'stock-as-of-table-data', [
+        {
+            title: '#', formatter: 'rownum', width: 50, hozAlign: 'center',
+            headerSort: false, headerFilter: false, hideable: false,
+        },
+        {title: 'Code', field: 'code', width: 100},
+        {title: 'Name', field: 'name', width: 250},
+        {title: 'Category', field: 'category', width: 150},
+        {title: 'Sold By', field: 'unit_type', width: 100},
+        {
+            title: 'Quantity as of date', field: 'quantity_as_of', width: 170, hozAlign: 'right',
+            formatter: qtyFormatter,
+        },
+        {
+            title: 'Current quantity', field: 'current_quantity', width: 150, hozAlign: 'right',
+            formatter: qtyFormatter, visible: false,
+        },
+    ], {placeholder: 'No products found.'});
+
+    document.getElementById('stock-as-of-export-btn').addEventListener('click', function () {
+        table.download('xlsx', 'stock_as_of_report.xlsx', {sheetName: 'Stock'});
+    });
+});
+</script>
+{% endblock %}

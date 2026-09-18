@@ -6,7 +6,7 @@
 <section class="reports-dashboard">
     <header class="page-header mb-4">
         <h1 class="h2 mb-1">Reports Dashboard</h1>
-        <p class="text-muted mb-0">Overview of sales, deliveries and stock status.</p>
+        <p class="text-muted mb-0">Pick a period, then open the report you need below.</p>
     </header>
 
     {% if form.errors %}
@@ -36,89 +36,69 @@
                     </div>
 
                     <div class="mt-3">
-                        <button type="submit" class="btn btn-primary">Show report</button>
+                        <button type="submit" class="btn btn-primary">Apply period</button>
                     </div>
                 </fieldset>
             </form>
         </div>
     </section>
 
-    <section class="report-summary mb-4">
-        <div class="row g-3">
-            <div class="col-md-6 col-lg-3">
-                <article class="report-card card shadow-sm border-0 rounded-4 h-100">
-                    <div class="card-body">
-                        <h3 class="h6 text-muted mb-2">Sales Count</h3>
-                        <p class="report-card__value display-6 mb-0">{{ total_sales_count }}</p>
-                    </div>
-                </article>
+    {% if can_view_ai_reports %}
+    <section class="report-section card shadow-sm border-0 rounded-4 mb-4" style="background: linear-gradient(135deg, #f0f4ff, #ffffff); border-left: 4px solid #4f6df5 !important;">
+        <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-3">
+            <div>
+                <h2 class="h4 mb-1">AI Reports</h2>
+                <p class="text-muted mb-0">Ask a question about the shop's data in plain language -- no fixed report covers it? Just ask.</p>
             </div>
-
-            <div class="col-md-6 col-lg-3">
-                <article class="report-card card shadow-sm border-0 rounded-4 h-100">
-                    <div class="card-body">
-                        <h3 class="h6 text-muted mb-2">Sales Amount</h3>
-                        <p class="report-card__value display-6 mb-0">{{ total_sales_amount }}</p>
-                    </div>
-                </article>
-            </div>
-
-            <div class="col-md-6 col-lg-3">
-                <article class="report-card card shadow-sm border-0 rounded-4 h-100">
-                    <div class="card-body">
-                        <h3 class="h6 text-muted mb-2">Deliveries Count</h3>
-                        <p class="report-card__value display-6 mb-0">{{ total_deliveries_count }}</p>
-                    </div>
-                </article>
-            </div>
-
-            <div class="col-md-6 col-lg-3">
-                <article class="report-card card shadow-sm border-0 rounded-4 h-100">
-                    <div class="card-body">
-                        <h3 class="h6 text-muted mb-2">Deliveries Amount</h3>
-                        <p class="report-card__value display-6 mb-0">{{ total_deliveries_amount }}</p>
-                    </div>
-                </article>
+            <div class="d-flex gap-2">
+                <a href="{% url 'ai_report_list' %}" class="btn btn-outline-primary">Saved AI reports</a>
+                <a href="{% url 'ai_report_create' %}" class="btn btn-primary">+ New AI report</a>
             </div>
         </div>
     </section>
+    {% endif %}
 
-    <section class="report-section card shadow-sm border-0 rounded-4 mb-4">
-        <div class="card-body p-0">
-            <header class="section-header px-4 pt-4 pb-3">
-                <h2 class="h4 mb-0">Low Stock Products</h2>
-            </header>
-
-            <div class="table-responsive px-4 pb-4">
-                <table class="report-table table table-hover align-middle mb-0">
-                    <thead class="table-dark">
-                        <tr>
-                            <th>Code</th>
-                            <th>Name</th>
-                            <th>Quantity</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for product in low_stock_products %}
-                        <tr>
-                            <td>{{ product.internal_code }}</td>
-                            <td>{{ product.name }}</td>
-                            <td>{{ product.quantity }}</td>
-                        </tr>
-                        {% empty %}
-                        <tr>
-                            <td colspan="3" class="text-center py-4 text-muted">No low stock products found.</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
+    <div class="row g-3">
+        <div class="col-md-4">
+            <section class="report-section card shadow-sm border-0 rounded-4 h-100">
+                <div class="card-body">
+                    <header class="section-header mb-3">
+                        <h2 class="h4 mb-0">Products</h2>
+                    </header>
+                    <ul class="list-unstyled d-flex flex-column gap-2 mb-0">
+                        <li><a href="{% url 'stock_as_of_report' %}" class="btn btn-outline-primary w-100 text-start">Stock as of date</a></li>
+                        <li><a href="{% url 'expiring_report' %}" class="btn btn-outline-primary w-100 text-start">Expiring products</a></li>
+                    </ul>
+                </div>
+            </section>
         </div>
-    </section>
 
-    <footer class="report-actions d-flex gap-2 flex-wrap">
-        <a href="{% url 'sales_report' %}" class="btn btn-outline-primary">Sales report</a>
-        <a href="{% url 'deliveries_report' %}" class="btn btn-outline-primary">Stock movements report</a>
-    </footer>
+        <div class="col-md-4">
+            <section class="report-section card shadow-sm border-0 rounded-4 h-100">
+                <div class="card-body">
+                    <header class="section-header mb-3">
+                        <h2 class="h4 mb-0">Sales</h2>
+                    </header>
+                    <ul class="list-unstyled d-flex flex-column gap-2 mb-0">
+                        <li><a href="{{ sales_report_url }}" class="btn btn-outline-primary w-100 text-start">Sales report</a></li>
+                        <li><a href="{{ sales_quantity_report_url }}" class="btn btn-outline-primary w-100 text-start">Sales quantity report</a></li>
+                    </ul>
+                </div>
+            </section>
+        </div>
+
+        <div class="col-md-4">
+            <section class="report-section card shadow-sm border-0 rounded-4 h-100">
+                <div class="card-body">
+                    <header class="section-header mb-3">
+                        <h2 class="h4 mb-0">Stock Movements</h2>
+                    </header>
+                    <ul class="list-unstyled d-flex flex-column gap-2 mb-0">
+                        <li><a href="{{ deliveries_report_url }}" class="btn btn-outline-primary w-100 text-start">Deliveries, write-offs, scrap</a></li>
+                    </ul>
+                </div>
+            </section>
+        </div>
+    </div>
 </section>
 {% endblock %}

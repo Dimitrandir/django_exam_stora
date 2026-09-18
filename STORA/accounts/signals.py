@@ -9,7 +9,8 @@ from STORA.accounts.models import Employee
 @receiver(post_migrate)
 def create_default_groups(sender, **kwargs):
     if sender.name not in {
-        'STORA.accounts', 'STORA.products', 'STORA.sales', 'STORA.deliveries', 'STORA.revisions', 'STORA.pricelists',
+        'STORA.accounts', 'STORA.products', 'STORA.sales', 'STORA.deliveries', 'STORA.revisions',
+        'STORA.pricelists', 'STORA.reports',
     }:
         return
 

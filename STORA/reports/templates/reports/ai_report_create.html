@@ -1,0 +1,46 @@
+{% extends 'base.html' %}
+
+{% block title %}STORA - New AI Report{% endblock %}
+
+{% block content %}
+<section class="reports-ai-create">
+    <header class="page-header mb-4">
+        <h1 class="h2 mb-1">New AI Report</h1>
+        <p class="text-muted mb-0">Ask a question about sales, stock, deliveries or margins, in plain language.</p>
+    </header>
+
+    {% if error %}
+    <div class="form-errors mb-3">{{ error }}</div>
+    {% endif %}
+
+    <section class="report-filter card shadow-sm border-0 rounded-4 mb-4">
+        <div class="card-body">
+            <form method="POST">
+                {% csrf_token %}
+                <div class="mb-3">
+                    <label for="id_prompt" class="form-label">Question</label>
+                    <textarea id="id_prompt" name="prompt" class="form-control" rows="3"
+                              placeholder="e.g. Какъв беше оборотът на магазина вчера, и коя категория продаде най-много?"
+                              required>{{ prompt|default:'' }}</textarea>
+                </div>
+                <button type="submit" class="btn btn-primary" id="ask-btn">Ask</button>
+            </form>
+        </div>
+    </section>
+
+    <p class="text-muted small">This can take a few seconds -- the AI may run several queries before answering.</p>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var form = document.querySelector('form');
+    var btn = document.getElementById('ask-btn');
+    form.addEventListener('submit', function () {
+        btn.disabled = true;
+        btn.textContent = 'Thinking…';
+    });
+});
+</script>
+{% endblock %}

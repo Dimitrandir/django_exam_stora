@@ -6,3 +6,4 @@ redis==7.4.0
 python-dotenv==1.1.1
 whitenoise==6.11.0
 waitress==3.0.2
+anthropic==1.6.0

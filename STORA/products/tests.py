@@ -376,6 +376,29 @@ class ProductHistoryViewTests(TestCase):
         self.assertEqual(delivery_event['quantity_change'], 10)
         self.assertEqual(delivery_event['supplier'], self.supplier)
 
+    def test_history_shows_write_off_as_negative_event_not_positive_delivery(self):
+        # Regression: delivery_quantity is always stored positive (see
+        # DeliveryItems.save()) -- a write-off used to show up here as a
+        # positive "Delivery" event (stock apparently increasing) instead
+        # of the negative reduction it actually was.
+        writeoff = DeliveryAttributes.objects.create(
+            receiver=self.manager, movement_type=DeliveryAttributes.MOVEMENT_WRITE_OFF,
+            document_date=self.today,
+        )
+        DeliveryItems.objects.create(
+            delivery=writeoff, delivery_item=self.product, delivery_quantity=Decimal('2'),
+        )
+
+        self.client.force_login(self.manager)
+        response = self.client.get(reverse('product_history', kwargs={'pk': self.product.pk}))
+        events = response.context['events']
+
+        write_off_event = next(e for e in events if e['event_type'] == 'Write-off')
+        self.assertEqual(write_off_event['quantity_change'], Decimal('-2'))
+
+        delivery_event = next(e for e in events if e['event_type'] == 'Delivery')
+        self.assertEqual(delivery_event['quantity_change'], 10)
+
     def test_history_filters_out_events_outside_selected_period(self):
         self.client.force_login(self.manager)
         old_start = self.today - timedelta(days=400)

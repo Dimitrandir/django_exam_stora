@@ -1,0 +1,104 @@
+{% extends 'base.html' %}
+
+{% block title %}STORA - Expiring Products{% endblock %}
+{% load static cache_bust %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
+{% endblock %}
+
+{% block content %}
+<section class="reports-expiring">
+    <header class="page-header mb-4">
+        <h1 class="h2 mb-1">Expiring Products</h1>
+        <p class="text-muted mb-0">Delivered batches with a known expiry date, soonest first (already-expired ones always included).</p>
+    </header>
+
+    {% if form.errors %}
+    <div class="form-errors">{{ form.errors }}</div>
+    {% endif %}
+
+    <section class="report-filter card shadow-sm border-0 rounded-4 mb-4">
+        <div class="card-body">
+            <form method="get">
+                <fieldset class="report-filter__fieldset border-0 p-0 m-0">
+                    <legend class="h5 mb-3">Look-ahead window</legend>
+
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <div class="report-filter__field">
+                                {{ form.days_ahead.label_tag }}
+                                {{ form.days_ahead }}
+                                <div class="form-text">{{ form.days_ahead.help_text }}</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-3">
+                        <button type="submit" class="btn btn-primary">Show report</button>
+                    </div>
+                </fieldset>
+            </form>
+        </div>
+    </section>
+
+    <section class="report-section card shadow-sm border-0 rounded-4 mb-4">
+        <div class="card-body">
+            <header class="section-header d-flex justify-content-between align-items-center mb-3">
+                <h2 class="h4 mb-0">Batches expiring within {{ days_ahead }} days</h2>
+                <button type="button" id="expiring-export-btn" class="btn btn-outline-secondary btn-sm">Export to Excel</button>
+            </header>
+
+            {{ batches_data|json_script:"expiring-table-data" }}
+            <div id="expiring-table" class="table-sm"></div>
+            <p class="text-muted small mt-2 mb-0">Click a row to open that delivery.</p>
+        </div>
+    </section>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'vendor/sheetjs/xlsx.full.min.js' %}"></script>
+<script src="{% static 'vendor/tabulator/tabulator.min.js' %}"></script>
+<script src="{% static_v 'js/data-table.js' %}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    function daysLeftFormatter(cell) {
+        var v = Number(cell.getValue());
+        var el = cell.getElement();
+        if (v < 0) {
+            el.classList.add('text-danger', 'fw-bold');
+            return 'Expired ' + Math.abs(v) + 'd ago';
+        }
+        if (v <= 7) {
+            el.classList.add('text-danger', 'fw-bold');
+        } else if (v <= 14) {
+            el.classList.add('text-warning', 'fw-bold');
+        }
+        return v + 'd';
+    }
+
+    var table = initExcelStyleTable('#expiring-table', 'expiring-table-data', [
+        {
+            title: '#', formatter: 'rownum', width: 50, hozAlign: 'center',
+            headerSort: false, headerFilter: false, hideable: false,
+        },
+        {title: 'Code', field: 'code', width: 100},
+        {title: 'Name', field: 'name', width: 250},
+        {title: 'Category', field: 'category', width: 150},
+        {title: 'Quantity', field: 'quantity', width: 110, hozAlign: 'right'},
+        {title: 'Expiry Date', field: 'expiry_date', width: 130},
+        {title: 'Days Left', field: 'days_left', width: 150, hozAlign: 'right', formatter: daysLeftFormatter},
+    ], {placeholder: 'No batches with an expiry date in this window.'});
+
+    table.on('rowClick', function (e, row) {
+        if (e.target.closest('.tabulator-header')) return;
+        window.location = row.getData().view_url;
+    });
+
+    document.getElementById('expiring-export-btn').addEventListener('click', function () {
+        table.download('xlsx', 'expiring_report.xlsx', {sheetName: 'Expiring'});
+    });
+});
+</script>
+{% endblock %}

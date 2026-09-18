@@ -1,17 +1,23 @@
 from datetime import timedelta
 from decimal import Decimal
 
+from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db.models import Sum
-from django.shortcuts import render
-from django.urls import reverse
+from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse, reverse_lazy
 from django.utils import timezone
+from django.utils.http import urlencode
 from django.views import View
+from django.views.generic import DeleteView, DetailView, ListView
 
 from STORA.core.mixins import StaffPermissionRequiredMixin
-from STORA.deliveries.models import DeliveryAttributes
+from STORA.deliveries.models import DeliveryAttributes, DeliveryItems
 from STORA.products.models import Product
-from STORA.reports.forms import ReportPeriodForm
+from STORA.reports.ai_service import AIReportsNotConfigured, rerun_stored_query, rows_to_dicts, run_ai_report
+from STORA.reports.forms import ExpiringPeriodForm, ReportPeriodForm, StockAsOfDateForm
+from STORA.reports.models import AIReport
+from STORA.reports.services import stock_as_of
 from STORA.sales.models import SaleAttributes, SaleItems, RefundItems
 
 
@@ -43,43 +49,28 @@ class ReportsBaseView(LoginRequiredMixin, View):
 
 
 class ReportsDashboardView(ReportsBaseView):
+    """Just the period picker plus links to every report, grouped by
+    category (Products / Sales / Stock Movements) -- the old aggregate
+    cards and low-stock table were removed per the user's redesign request,
+    not folded into another report. The chosen period is carried into the
+    links below for whichever reports accept one (dashboard.html appends
+    it to the querystring itself), so picking a period once here saves
+    re-picking it on each report."""
+
     template_name = 'reports/dashboard.html'
 
     def get(self, request, *args, **kwargs):
         form, start_date, end_date = self.get_period(request)
-
-        sales = SaleAttributes.objects.filter(
-            time_of_sale__date__range=(start_date, end_date)
-        )
-        deliveries = DeliveryAttributes.objects.filter(
-            movement_type=DeliveryAttributes.MOVEMENT_DELIVERY,
-            time_of_delivery__date__range=(start_date, end_date)
-        )
-
-        total_sales_count = sales.count()
-        total_sales_amount = sales.aggregate(total=Sum('total_amount'))['total'] or 0
-
-        total_deliveries_count = deliveries.count()
-        total_deliveries_amount = deliveries.aggregate(total=Sum('total_amount'))['total'] or 0
-
-        # A recipe product's own `quantity` is never touched by sales (only
-        # its ingredients are decremented -- see CLAUDE.md) -- it just sits
-        # at whatever it was left at (usually 0), so it would otherwise
-        # show up here forever regardless of real stock, drowning out
-        # products whose quantity actually means something.
-        low_stock_products = Product.objects.filter(
-            quantity__lte=5, is_recipe=False
-        ).order_by('quantity')[:10]
+        period_qs = urlencode({'start_date': start_date.isoformat(), 'end_date': end_date.isoformat()})
 
         context = {
             'form': form,
             'start_date': start_date,
             'end_date': end_date,
-            'total_sales_count': total_sales_count,
-            'total_sales_amount': total_sales_amount,
-            'total_deliveries_count': total_deliveries_count,
-            'total_deliveries_amount': total_deliveries_amount,
-            'low_stock_products': low_stock_products,
+            'sales_report_url': f"{reverse('sales_report')}?{period_qs}",
+            'sales_quantity_report_url': f"{reverse('sales_quantity_report')}?{period_qs}",
+            'deliveries_report_url': f"{reverse('deliveries_report')}?{period_qs}",
+            'can_view_ai_reports': request.user.has_perm('reports.view_aireport'),
         }
         return render(request, self.template_name, context)
 
@@ -236,3 +227,235 @@ class DeliveriesReportView(StaffPermissionRequiredMixin, ReportsBaseView):
                 price = price / (Decimal('1') + product.tax_group.rate / Decimal('100'))
             total += (item.delivery_quantity or Decimal('0')) * price
         return total.quantize(Decimal('0.01'))
+
+
+class StockAsOfDateReportView(LoginRequiredMixin, StaffPermissionRequiredMixin, View):
+    """"Наличност към дата" -- what each product's stock reportedly was at
+    the end of a chosen day. See reports/services.py::stock_as_of for how
+    that's reconstructed (there's no day-by-day snapshot to just read)."""
+
+    permission_required = 'products.view_product'
+    template_name = 'reports/stock_as_of_report.html'
+
+    def get(self, request, *args, **kwargs):
+        default_date = timezone.localdate()
+        form = StockAsOfDateForm(request.GET or None, initial={'as_of_date': default_date})
+
+        if form.is_valid():
+            as_of_date = form.cleaned_data['as_of_date']
+        else:
+            as_of_date = default_date
+
+        rows = stock_as_of(as_of_date)
+        stock_data = [
+            {
+                'code': row['product'].internal_code,
+                'name': row['product'].name,
+                'category': row['product'].category.name if row['product'].category else '',
+                'unit_type': row['product'].get_unit_type_display(),
+                'quantity_as_of': float(row['quantity_as_of']),
+                'current_quantity': float(row['current_quantity']),
+            }
+            for row in rows
+        ]
+
+        context = {
+            'form': form,
+            'as_of_date': as_of_date,
+            'stock_data': stock_data,
+        }
+        return render(request, self.template_name, context)
+
+
+class ExpiringProductsReportView(LoginRequiredMixin, StaffPermissionRequiredMixin, View):
+    """"Изтичащи срокове" -- delivered batches with a known expiry date,
+    soonest first, within a chosen look-ahead window (already-expired ones
+    always included). Batch-level, same as the scrap "pick a batch"
+    picker (see deliveries/views.py::BatchSearchView) -- the system
+    doesn't track remaining quantity per batch (only the product's total),
+    so this can't tell how much of a specific old batch is actually still
+    on the shelf, only that the batch existed and when it expires."""
+
+    permission_required = 'deliveries.view_deliveryattributes'
+    template_name = 'reports/expiring_report.html'
+    DEFAULT_DAYS_AHEAD = 30
+
+    def get(self, request, *args, **kwargs):
+        form = ExpiringPeriodForm(request.GET or None, initial={'days_ahead': self.DEFAULT_DAYS_AHEAD})
+
+        if form.is_valid():
+            days_ahead = form.cleaned_data['days_ahead']
+        else:
+            days_ahead = self.DEFAULT_DAYS_AHEAD
+
+        today = timezone.localdate()
+        cutoff = today + timedelta(days=days_ahead)
+
+        batches = DeliveryItems.objects.filter(
+            delivery__movement_type=DeliveryAttributes.MOVEMENT_DELIVERY,
+            expiry_date__isnull=False,
+            expiry_date__lte=cutoff,
+        ).select_related('delivery_item', 'delivery_item__category').order_by('expiry_date')
+
+        batches_data = [
+            {
+                'code': batch.delivery_item.internal_code,
+                'name': batch.delivery_item.name,
+                'category': batch.delivery_item.category.name if batch.delivery_item.category else '',
+                'quantity': float(batch.delivery_quantity),
+                'expiry_date': batch.expiry_date.isoformat(),
+                'days_left': (batch.expiry_date - today).days,
+                'view_url': reverse('delivery_details', args=[batch.delivery_id]),
+            }
+            for batch in batches
+        ]
+
+        context = {
+            'form': form,
+            'days_ahead': days_ahead,
+            'batches_data': batches_data,
+        }
+        return render(request, self.template_name, context)
+
+
+class SalesQuantityReportView(StaffPermissionRequiredMixin, ReportsBaseView):
+    """"Продажби за период (количество)" -- how much of each product sold
+    in a period, its group, and its delivery/sell price. Manager/Warehouse
+    only, same reasoning as DeliveriesReportView above: this exposes
+    delivery_price (what the shop pays), not just sales activity."""
+
+    permission_required = 'deliveries.add_deliveryattributes'
+    template_name = 'reports/sales_quantity_report.html'
+
+    def get(self, request, *args, **kwargs):
+        form, start_date, end_date = self.get_period(request)
+
+        totals_by_product = {
+            row['sale_item_id']: row
+            for row in (
+                SaleItems.objects
+                .filter(sale__time_of_sale__date__range=(start_date, end_date))
+                .values('sale_item_id')
+                .annotate(total_qty=Sum('sale_quantity'), total_amount=Sum('total_price_row'))
+            )
+        }
+
+        products = Product.objects.filter(pk__in=totals_by_product.keys()).select_related('category')
+
+        sales_quantity_data = [
+            {
+                'code': product.internal_code,
+                'name': product.name,
+                'category': product.category.name if product.category else '',
+                'quantity_sold': float(totals_by_product[product.pk]['total_qty'] or 0),
+                'delivery_price': float(product.delivery_price or 0),
+                'sell_price': float(product.sell_price),
+                'total_amount': float(totals_by_product[product.pk]['total_amount'] or 0),
+            }
+            for product in products
+        ]
+
+        context = {
+            'form': form,
+            'start_date': start_date,
+            'end_date': end_date,
+            'sales_quantity_data': sales_quantity_data,
+        }
+        return render(request, self.template_name, context)
+
+
+class AIReportListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListView):
+    """"AI mode" -- saved natural-language reports. Manager-only: unlike
+    every other report here, this one can read literally any table (see
+    CLAUDE.md/ai_service.py -- deliberately not restricted in what it can
+    query), so it gets the narrowest audience rather than the
+    Manager/Warehouse split used for merely cost-sensitive reports."""
+
+    permission_required = 'reports.view_aireport'
+    model = AIReport
+    template_name = 'reports/ai_report_list.html'
+    context_object_name = 'ai_reports'
+
+
+class AIReportCreateView(LoginRequiredMixin, StaffPermissionRequiredMixin, View):
+    permission_required = 'reports.add_aireport'
+    template_name = 'reports/ai_report_create.html'
+
+    def get(self, request, *args, **kwargs):
+        return render(request, self.template_name, {})
+
+    def post(self, request, *args, **kwargs):
+        prompt = request.POST.get('prompt', '').strip()
+        if not prompt:
+            return render(request, self.template_name, {'error': 'Type a question first.'})
+
+        try:
+            result = run_ai_report(prompt)
+        except AIReportsNotConfigured:
+            return render(request, self.template_name, {
+                'error': 'AI mode isn’t set up yet -- ANTHROPIC_API_KEY is missing from .env.',
+                'prompt': prompt,
+            })
+        except Exception as exc:
+            return render(request, self.template_name, {
+                'error': f'Something went wrong talking to the AI: {exc}',
+                'prompt': prompt,
+            })
+
+        report = AIReport.objects.create(
+            prompt=prompt,
+            generated_sql=result['sql'] or '',
+            last_answer=result['answer'],
+            created_by=request.user,
+            last_regenerated_at=timezone.now(),
+        )
+        return redirect('ai_report_detail', pk=report.pk)
+
+
+class AIReportDetailView(LoginRequiredMixin, StaffPermissionRequiredMixin, DetailView):
+    """Re-runs the report's stored SQL fresh on every view (see
+    AIReport's docstring) -- the numbers shown are never a stale snapshot,
+    only the SQL itself and the narrative answer stay put until someone
+    explicitly hits Regenerate."""
+
+    permission_required = 'reports.view_aireport'
+    model = AIReport
+    template_name = 'reports/ai_report_detail.html'
+    context_object_name = 'ai_report'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        columns, rows, error = rerun_stored_query(self.object.generated_sql)
+        context['columns'] = columns
+        context['table_data'] = rows_to_dicts(columns, rows)
+        context['rerun_error'] = error
+        return context
+
+
+class AIReportRegenerateView(LoginRequiredMixin, StaffPermissionRequiredMixin, View):
+    permission_required = 'reports.add_aireport'
+
+    def post(self, request, *args, **kwargs):
+        report = get_object_or_404(AIReport, pk=kwargs['pk'])
+        try:
+            result = run_ai_report(report.prompt)
+        except AIReportsNotConfigured:
+            messages.error(request, 'AI mode isn’t set up yet -- ANTHROPIC_API_KEY is missing from .env.')
+            return redirect('ai_report_detail', pk=report.pk)
+        except Exception as exc:
+            messages.error(request, f'Regenerate failed: {exc}')
+            return redirect('ai_report_detail', pk=report.pk)
+
+        report.generated_sql = result['sql'] or ''
+        report.last_answer = result['answer']
+        report.last_regenerated_at = timezone.now()
+        report.save(update_fields=['generated_sql', 'last_answer', 'last_regenerated_at'])
+        return redirect('ai_report_detail', pk=report.pk)
+
+
+class AIReportDeleteView(LoginRequiredMixin, StaffPermissionRequiredMixin, DeleteView):
+    permission_required = 'reports.delete_aireport'
+    model = AIReport
+    context_object_name = 'ai_report'
+    template_name = 'reports/ai_report_confirm_delete.html'
+    success_url = reverse_lazy('ai_report_list')

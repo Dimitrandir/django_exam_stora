@@ -34,6 +34,9 @@
                         <li><a class="dropdown-item" href="{% url 'tax_group_list' %}">Tax Groups</a></li>
                         <li><a class="dropdown-item" href="{% url 'suppliers_list' %}">Suppliers</a></li>
                         <li><a class="dropdown-item" href="{% url 'price_list_list' %}">Price Lists</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="{% url 'stock_as_of_report' %}">Stock as of date</a></li>
+                        <li><a class="dropdown-item" href="{% url 'expiring_report' %}">Expiring products</a></li>
                     </ul>
                 </li>
 
@@ -44,6 +47,7 @@
                     <ul class="dropdown-menu">
                         <li><a class="dropdown-item" href="{% url 'sale_add' %}">New sale</a></li>
                         <li><a class="dropdown-item" href="{% url 'sales_report' %}">Sales report</a></li>
+                        <li><a class="dropdown-item" href="{% url 'sales_quantity_report' %}">Sales quantity report</a></li>
                     </ul>
                 </li>
 
@@ -68,6 +72,12 @@
                 <li class="nav-item">
                     <a class="nav-link" href="{% url 'reports_dashboard' %}">Reports dashboard</a>
                 </li>
+
+                {% if perms.reports.view_aireport %}
+                <li class="nav-item">
+                    <a class="nav-link" href="{% url 'ai_report_list' %}">AI Reports</a>
+                </li>
+                {% endif %}
             </ul>
 
             {% if user.is_authenticated %}
