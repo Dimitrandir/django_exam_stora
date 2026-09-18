@@ -564,6 +564,12 @@
         // not something a cashier needs to filter or export mid-transaction.
         // Fixed `height` keeps the header pinned and scrolls just the rows
         // once there are more than fit -- see .sale-items-table-container.
+        // The value here is only a first-paint placeholder -- syncCartHeight()
+        // below overwrites it with the real number the instant the page's
+        // actual layout is known, instead of a guessed constant that leaves
+        // a growing gap of dead space on taller/shorter screens (confirmed
+        // live: a hardcoded `calc(100vh - 480px)` left ~150px of empty page
+        // below the footer on a 768px-tall viewport).
         const saleItemsTable = new Tabulator('#sale-items-table', {
             data: saleItemsInitial,
             layout: 'fitColumns',
@@ -595,6 +601,39 @@
             ],
         });
 
+        // Measures how much vertical room is ACTUALLY left for the cart
+        // (viewport height, minus wherever the table container really
+        // starts, minus the footer's real height, minus a small bottom
+        // margin) and sets the table to exactly that -- instead of the
+        // fixed `calc(100vh - 480px)` guess above, which doesn't know
+        // this page's real header/search-row/footer heights and so either
+        // clips the table or (as reported live) leaves a large dead strip
+        // of empty page below the footer. Re-run on resize and whenever
+        // something else changes how much space is above the cart (the
+        // on-screen keyboard toggling shifts the table container down).
+        function syncCartHeight() {
+            var container = document.querySelector('.sale-items-table-container');
+            var footer = document.querySelector('.page-actions');
+            if (!container || !footer) return;
+            var top = container.getBoundingClientRect().top;
+            var footerHeight = footer.getBoundingClientRect().height;
+            var bottomMargin = 20;
+            var newHeight = Math.round(window.innerHeight - top - footerHeight - bottomMargin);
+            // Never shrink below a usable minimum -- a very short/zoomed-in
+            // viewport should scroll the page rather than crush the cart
+            // down to a sliver.
+            saleItemsTable.setHeight(Math.max(newHeight, 240));
+        }
+        // Not called directly here -- setHeight() internally redraws right
+        // away, and calling it synchronously in the same tick as `new
+        // Tabulator(...)` hits a null ref inside Tabulator's own
+        // adjustTableSize() (confirmed live: `Cannot read properties of
+        // null (reading 'getBoundingClientRect')`, thrown from inside the
+        // vendored tabulator.min.js, not this code) -- the table hasn't
+        // finished its own internal first render yet at that point.
+        // 'tableBuilt' is Tabulator's own "I'm actually ready" event.
+        saleItemsTable.on('tableBuilt', syncCartHeight);
+
         // fitColumns only fits column widths to the container once, at
         // initial render -- doesn't recalculate on its own if the window is
         // resized afterwards (see the identical fix/comment in
@@ -605,6 +644,7 @@
         window.addEventListener('resize', function () {
             clearTimeout(saleItemsWindowResizeTimer);
             saleItemsWindowResizeTimer = setTimeout(function () {
+                syncCartHeight();
                 saleItemsTable.redraw(true);
                 // redraw(true) recalculates COLUMN widths but not ROW
                 // heights -- a row already rendered once (at the old
@@ -1024,6 +1064,10 @@
             keyboardEl.style.display = isHidden ? '' : 'none';
             keyboardToggleBtn.classList.toggle('is-active', isHidden);
             searchInput.focus();
+            // The keyboard sits above the cart in the layout -- showing/
+            // hiding it moves the table container's top edge, so the
+            // available height for the cart needs recomputing too.
+            syncCartHeight();
         });
 
         // -- Submit: rebuild items-<n>-<field> hidden inputs from the
