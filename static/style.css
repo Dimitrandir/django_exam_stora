@@ -467,11 +467,17 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
 
 /* Drag handle between the cart and the shortcuts panel -- width of the
    panel is a CSS variable (set from JS, restored from localStorage on
-   load) rather than a fixed flex ratio, so it can be resized live. */
+   load) rather than a fixed flex ratio, so it can be resized live.
+   Redesigned per live feedback ("looks a bit ugly") -- a thicker center
+   line running the bar's full height, the hide/show arrow pinned near
+   the top, and a small grip (three ticks) further down signaling "drag
+   anywhere along here", instead of a single thin line with the button
+   floating in the middle of it. */
 .sale-form__resizer {
     flex: 0 0 auto;
-    width: 14px;
+    width: 18px;
     align-self: stretch;
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -481,34 +487,57 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
     touch-action: none;
 }
 
-.sale-form__resizer::before {
+/* Rectangular bar (not a pill/stadium shape), narrower again per live
+   feedback -- no longer sized to fit grip dots (removed earlier), just
+   wide enough for the arrow button to sit inside it. */
+.sale-form__resizer::after {
     content: '';
-    width: 4px;
-    height: 70%;
-    background: #d5d5d5;
-    border-radius: 2px;
+    position: absolute;
+    top: 0.4rem;
+    bottom: 0.4rem;
+    left: 50%;
+    width: 10px;
+    transform: translateX(-50%);
+    background: #e1e4e7;
+    border-radius: 3px;
 }
 
-.sale-form__resizer:hover::before,
-.sale-form__resizer.is-dragging::before {
+.sale-form__resizer:hover::after,
+.sale-form__resizer.is-dragging::after {
     background: var(--accent-color);
 }
 
 /* The hide/show toggle rides on the resizer itself, not inside
    .sale-form__categories -- has to stay reachable even while that whole
-   section is display:none (see .categories-hidden below). */
+   section is display:none (see .categories-hidden below). z-index:1
+   lifts it above the bar's own ::after. Just the arrow glyph -- no
+   button-looking circle/border/background chrome around it. */
 .sale-form__resizer-toggle {
     position: relative;
-    width: 1.6rem;
-    height: 2.4rem;
-    padding: 0;
-    background: #ffffff;
-    color: #1c2b2d;
-    border: 1px solid #ccc;
-    border-radius: 0.4rem;
-    font-size: 1rem;
-    line-height: 1;
     z-index: 1;
+    width: 1.6rem;
+    height: 1.6rem;
+    padding: 0;
+    background: transparent;
+    color: #5f6a70;
+    border: none;
+    font-size: 1.1rem;
+    font-weight: 700;
+    line-height: 1;
+    /* Turns in place instead of swapping between '<' and '>' characters
+       -- .is-open (toggled in JS) is the shortcuts-panel-visible state,
+       which is the ROTATED glyph now (reversed per live feedback);
+       hidden is the un-rotated resting glyph. */
+    transition: transform 0.2s ease;
+}
+
+.sale-form__resizer-toggle.is-open {
+    transform: rotate(180deg);
+}
+
+.sale-form__resizer:hover .sale-form__resizer-toggle,
+.sale-form__resizer.is-dragging .sale-form__resizer-toggle {
+    color: #1d6fa5;
 }
 
 .sale-form__workspace.categories-hidden .sale-form__categories {
@@ -719,6 +748,21 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
     white-space: normal !important;
     text-overflow: clip !important;
     overflow-wrap: break-word !important;
+}
+
+/* Numbers never benefit from wrapping (there's no meaningful way to read
+   "549." on one line and "00" on the next) -- confirmed live: an
+   unusually large Qty (or any other right-aligned numeric column) wrapped
+   to 2 lines, and the row's height changed without the rest of the
+   row/footer re-syncing to it, leaving a stray extra border line that
+   looked like a duplicated row. Targets every hozAlign:'right' cell via
+   Tabulator's own inline `text-align: right` (that's this project's
+   existing convention for numeric columns everywhere, not just here) --
+   no per-table opt-in needed, and no per-column class to add/forget.
+   !important to beat the wrap-for-readability rule above, which also
+   uses !important. */
+.tabulator-cell[style*="text-align: right"] {
+    white-space: nowrap !important;
 }
 
 .sale-form__categories {
@@ -1287,4 +1331,339 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
     padding: 10px;
     font-size: 13px;
     color: #888;
+}
+
+/* Product create/edit form -- replaces the plain <p><label><input></p>
+   stack (no visual grouping, default browser input chrome) with real
+   section cards and styled fields, using the app's own existing palette
+   (--primary-color/--accent-color/--light-bg, see :root above) rather
+   than a new one -- this is one screen inside an established app, not a
+   fresh product, so visual consistency with Reports/POS/everywhere else
+   is the actual constraint here. Four blocks, in order: Product (code/
+   name/category -- what it IS), Barcode (how it gets scanned), Price,
+   Supplier (where it comes from). Money fields (.field--money) get a
+   warm paper tint + tabular numerals -- a deliberate echo of the
+   checkout modal's own till/receipt styling elsewhere in this app
+   (.checkout-modal-dialog in sale_add.html), not a new motif invented for
+   this one screen, so "this is a money field" reads the same way in both
+   places a cashier/manager sees prices. */
+.product-form {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    max-width: 900px;
+}
+
+.product-form__section {
+    background: white;
+    border: 1px solid #e3e7ea;
+    border-radius: 0.75rem;
+    padding: 1.25rem 1.5rem;
+}
+
+.product-form__section-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    margin: 0 0 1rem;
+}
+
+.product-form__section-header h2 {
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--primary-color);
+}
+
+/* Stacked/side-by-side toggle for the Code/Name/Sold By row -- both
+   variants are real, working fields (not two separate mockups to
+   maintain), this only switches how the SAME grid lays them out, so
+   comparing them costs nothing to keep in sync. */
+.product-form__layout-toggle {
+    display: flex;
+    gap: 0.2rem;
+    background: var(--light-bg);
+    border-radius: 0.5rem;
+    padding: 0.2rem;
+}
+
+.product-form__layout-toggle button {
+    background: transparent;
+    color: var(--secondary-color);
+    border: none;
+    border-radius: 0.4rem;
+    padding: 0.3rem 0.7rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.product-form__layout-toggle button.is-active {
+    background: white;
+    color: var(--accent-color);
+    box-shadow: 0 1px 3px rgba(0,0,0,.12);
+}
+
+.product-form__grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1rem;
+}
+
+.product-form__grid.is-grouped {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+/* Code and Sold By only need enough room for a few digits/a short pick --
+   Name gets whatever's left. Overrides the generic auto-fit rule above via
+   the ID (higher specificity), only while "Side by side" is selected. */
+#core-fields-grid.is-grouped {
+    grid-template-columns: minmax(90px, 120px) 1fr minmax(80px, 100px);
+}
+
+/* Tax group needs room to show its name+rate, Delivery/Sell Price are
+   normal money fields, Markup % stays tiny (see .field--tiny above). */
+#price-fields-grid.is-grouped {
+    grid-template-columns: minmax(150px, 1.4fr) minmax(110px, 1fr) minmax(110px, 1fr) minmax(80px, 100px);
+}
+
+.product-form__stack {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    min-width: 0;
+}
+
+.field label {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--secondary-color);
+}
+
+.field__label-row {
+    display: flex;
+    align-items: center;
+}
+
+.field input[type="text"],
+.field input[type="number"],
+.field select {
+    border: 1px solid #d3d9de;
+    border-radius: 0.5rem;
+    padding: 0.5rem 0.65rem;
+    font-size: 0.95rem;
+    background: white;
+    width: 100%;
+    box-sizing: border-box;
+    transition: border-color .15s, box-shadow .15s;
+}
+
+.field input:focus,
+.field select:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 3px rgba(52, 152, 219, .15);
+}
+
+.field__hint {
+    font-size: 0.78rem;
+    color: #7c8894;
+}
+
+/* "Popup Tip" pattern (NN/g) -- a small "?" next to a label that reveals
+   its explanation in a speech-bubble on demand, instead of permanent text
+   under the field. Click/tap-driven (see popup-tip.js), not hover -- this
+   app is touch-first, and hover never fires on a touchscreen. */
+.popup-tip {
+    position: relative;
+    display: inline-flex;
+    vertical-align: middle;
+    margin-left: 0.3rem;
+}
+
+.popup-tip__trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.05rem;
+    height: 1.05rem;
+    border-radius: 50%;
+    border: 1px solid #b7c0c7;
+    background: white;
+    color: #7c8894;
+    font-size: 0.65rem;
+    font-weight: 700;
+    line-height: 1;
+    padding: 0;
+    cursor: pointer;
+}
+
+.popup-tip__trigger:hover,
+.popup-tip__trigger:focus-visible {
+    border-color: var(--accent-color);
+    color: var(--accent-color);
+}
+
+.popup-tip__bubble {
+    display: none;
+    position: absolute;
+    z-index: 30;
+    top: 50%;
+    left: calc(100% + 10px);
+    transform: translateY(-50%);
+    width: max-content;
+    max-width: 240px;
+    background: white;
+    border: 1px solid #d3d9de;
+    border-radius: 0.5rem;
+    padding: 0.55rem 0.7rem;
+    font-size: 0.8rem;
+    font-weight: 400;
+    line-height: 1.35;
+    color: var(--secondary-color);
+    box-shadow: 0 4px 12px rgba(0,0,0,.18);
+    text-align: left;
+    white-space: normal;
+}
+
+/* Speech-bubble tail, pointing back at the trigger. */
+.popup-tip__bubble::before,
+.popup-tip__bubble::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: -7px;
+    width: 12px;
+    height: 12px;
+    transform: translateY(-50%) rotate(45deg);
+    background: white;
+    border-left: 1px solid #d3d9de;
+    border-bottom: 1px solid #d3d9de;
+}
+
+.popup-tip.is-open .popup-tip__bubble {
+    display: block;
+}
+
+/* Near the right edge of a narrow field (e.g. inside .field--tiny), a
+   bubble opening rightward would run off the page -- flip it to open
+   leftward instead via this modifier on the specific .popup-tip. */
+.popup-tip--left .popup-tip__bubble {
+    left: auto;
+    right: calc(100% + 10px);
+}
+
+.popup-tip--left .popup-tip__bubble::before,
+.popup-tip--left .popup-tip__bubble::after {
+    left: auto;
+    right: -7px;
+    transform: translateY(-50%) rotate(-135deg);
+}
+
+.field__row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.field__chip {
+    border: 1px solid #d3d9de;
+    background: white;
+    color: var(--secondary-color);
+    border-radius: 999px;
+    padding: 0.3rem 0.7rem;
+    font-size: 0.78rem;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.field__aux-link {
+    font-size: 0.82rem;
+    color: var(--accent-color);
+    text-decoration: none;
+    align-self: flex-start;
+}
+
+.field--checkbox {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 0.5rem;
+}
+
+.field--checkbox input {
+    margin-top: 0.2rem;
+}
+
+.field--checkbox .field__body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+}
+
+.field--checkbox label {
+    font-weight: 600;
+    color: var(--primary-color);
+}
+
+/* For a field that should visibly stay small regardless of what row/grid
+   it sits in -- Sold By (unit_type) and Markup % (see .product-form
+   comment above for why these two specifically). */
+.field--tiny {
+    max-width: 100px;
+}
+
+.field--narrow {
+    max-width: 160px;
+}
+
+/* Money fields -- see the section comment above for why this specific
+   tint/number style, not a generic input. Matches [type="number"] too
+   (not just `input`) -- needed to tie the specificity of the general
+   `.field input[type="number"] { background: white }` rule above (which
+   otherwise wins on specificity alone, source order or not). */
+.field--money input[type="number"] {
+    background: #f7f5f0;
+    font-variant-numeric: tabular-nums;
+}
+
+.product-form__vat-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.82rem;
+    color: var(--secondary-color);
+}
+
+.product-form__without-vat {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1rem;
+    padding-left: 1rem;
+    border-left: 2px solid #e4ddd0;
+}
+
+.product-form__markup {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.product-form__markup input {
+    width: 4.5rem;
+}
+
+.product-form__actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
 }

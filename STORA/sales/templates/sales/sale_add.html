@@ -163,7 +163,12 @@
         is hidden.
         {% endcomment %}
         <div class="sale-form__resizer" id="sale-form-resizer" title="Drag to resize">
-            <button type="button" id="sale-form-toggle-categories-btn" class="sale-form__resizer-toggle" title="Hide shortcuts">‹</button>
+            {% comment %} Single glyph, rotated in place via CSS (see
+            .sale-form__resizer-toggle.is-open below) instead of swapping
+            between '<' and '>' characters -- a smooth turn, not a jump
+            cut. Dragging from anywhere on the bar still works the same as
+            before -- see the e.target check in the resizer JS. {% endcomment %}
+            <button type="button" id="sale-form-toggle-categories-btn" class="sale-form__resizer-toggle is-open" title="Hide shortcuts">‹</button>
         </div>
 
         <section class="sale-form__categories" id="sale-form-categories">
@@ -436,13 +441,13 @@
 
             if (localStorage.getItem(STORAGE_HIDDEN_KEY) === '1') {
                 workspace.classList.add('categories-hidden');
-                toggleBtn.textContent = '›';
+                toggleBtn.classList.remove('is-open');
                 toggleBtn.title = 'Show shortcuts';
             }
 
             toggleBtn.addEventListener('click', () => {
                 const hidden = workspace.classList.toggle('categories-hidden');
-                toggleBtn.textContent = hidden ? '›' : '‹';
+                toggleBtn.classList.toggle('is-open', !hidden);
                 toggleBtn.title = hidden ? 'Show shortcuts' : 'Hide shortcuts';
                 localStorage.setItem(STORAGE_HIDDEN_KEY, hidden ? '1' : '0');
                 refitCart();
@@ -468,10 +473,12 @@
             }
 
             resizer.addEventListener('pointerdown', (e) => {
-                // Excludes the toggle button living inside this same
-                // element -- tapping it to hide/show must not also start
-                // a drag.
-                if (e.target !== resizer || workspace.classList.contains('categories-hidden')) return;
+                // Excludes only the toggle button living inside this same
+                // element -- tapping it to hide/show must not also start a
+                // drag. Everything else on the bar, including the
+                // decorative grip ticks, starts a drag (they're just a
+                // visual affordance, not a separate control).
+                if (e.target.closest('#sale-form-toggle-categories-btn') || workspace.classList.contains('categories-hidden')) return;
                 resizer.classList.add('is-dragging');
                 document.addEventListener('pointermove', onPointerMove);
                 document.addEventListener('pointerup', stopDrag);
@@ -743,14 +750,21 @@
                     // fine for an all-piece or all-weight cart, but mixing
                     // pcs and kg in the same sum stops being meaningful
                     // (same caveat as the Products grid's Stock column).
-                    // Narrower + a lower minWidth than before -- on a narrow
-                    // touch/phone viewport fitColumns needs the room to
-                    // shrink these three below their old fixed widths
-                    // before the CSS overflow-x:hidden clip (see style.css)
-                    // has to step in.
-                    title: 'Qty', field: 'sale_quantity', width: 56, minWidth: 48, hozAlign: 'right',
+                    // Widened back up a bit from an earlier round (was 56/48)
+                    // -- still narrower than the original 70/-- and the CSS
+                    // overflow-x:hidden backstop (style.css) still covers any
+                    // narrow-viewport edge case fitColumns can't shrink past.
+                    // bottomCalc shown to 2 decimals, not the row values'
+                    // full 3 -- a mixed piece+weight cart's running total
+                    // isn't fully meaningful to gram precision anyway (same
+                    // caveat as the mixed-unit sum note above), and this
+                    // matches Price/Sum's own 2-decimal display. Per-row
+                    // values/the editor are untouched -- a weighed item
+                    // still keeps its real entered precision (e.g. 0.125),
+                    // only the aggregate at the bottom rounds for display.
+                    title: 'Qty', field: 'sale_quantity', width: 66, minWidth: 54, hozAlign: 'right',
                     editor: numberEditor, editorParams: quantityEditorParams,
-                    bottomCalc: 'sum', bottomCalcFormatter: (cell) => Number(cell.getValue() || 0).toFixed(3),
+                    bottomCalc: 'sum', bottomCalcFormatter: (cell) => Number(cell.getValue() || 0).toFixed(2),
                 },
                 {
                     // Abbreviated -- "Unit Price" at the default header font
@@ -761,11 +775,13 @@
                     formatter: (cell) => Number(cell.getValue() || 0).toFixed(2),
                 },
                 {
-                    // A bit wider + a higher minWidth than before -- the
-                    // bottomCalc total (2 decimals) was getting clipped at
-                    // the old 68/55 width on a multi-item cart with a large
-                    // running total.
-                    title: 'Sum', field: 'total_price_row', width: 80, minWidth: 65, hozAlign: 'right',
+                    // Widened again -- even at the previous 80/65, the
+                    // trailing digit of a 2-decimal total (e.g. the final
+                    // "0" in "16.50") was still getting clipped live on a
+                    // real cart. Generous enough now that fitColumns has to
+                    // shrink genuinely hard (very narrow viewport) before
+                    // the overflow-x:hidden backstop needs to clip anything.
+                    title: 'Sum', field: 'total_price_row', width: 92, minWidth: 78, hozAlign: 'right',
                     editor: numberEditor, editorParams: {min: 0, step: 0.01},
                     formatter: (cell) => Number(cell.getValue() || 0).toFixed(2),
                     bottomCalc: 'sum', bottomCalcFormatter: (cell) => Number(cell.getValue() || 0).toFixed(2),

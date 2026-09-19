@@ -1,4 +1,5 @@
 from django import forms
+from django.core.validators import MaxLengthValidator
 from django.forms import inlineformset_factory
 
 from STORA.products.models import (
@@ -28,8 +29,41 @@ class ProductForms(forms.ModelForm):
             'show_on_pos': 'Show on POS screen',
         }
 
+        widgets = {
+            # A plain <select> doesn't scale as the category list grows
+            # (subcategories can nest arbitrarily deep, see Category.parent)
+            # -- product_create/edit.html render a search box instead (same
+            # trigram-search pattern as the Supplier picker) and set this
+            # hidden field's value via JS.
+            'category': forms.HiddenInput(),
+        }
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        # 6 digits, not the model's full max_length=8 -- the shop's own
+        # numbering scheme never needs more than that. Has to happen here,
+        # not via Meta.widgets: CharField.__init__() re-derives `maxlength`
+        # from the model field's max_length (8) and overwrites whatever
+        # Meta.widgets set, at class-definition time -- confirmed live, the
+        # attrs={'maxlength': 6} version above rendered as maxlength="8"
+        # in the browser. Setting it here, after that's already happened,
+        # is what actually sticks. max_length is set too so a value already
+        # a bit longer than 6 (typed before JS/HTML5 could stop it, or
+        # posted directly) still gets a clean validation error, not saved.
+        code_field = self.fields['internal_code']
+        code_field.widget.attrs.update({'inputmode': 'numeric', 'autocomplete': 'off'})
+        # Only for a genuinely NEW product -- an existing one may already
+        # carry a longer legacy code (model max_length is still 8), and
+        # capping that retroactively here would block saving any OTHER
+        # edit on that product too. Same "new only" guard as the tax_group
+        # default above.
+        if not self.instance.pk:
+            code_field.max_length = 6
+            code_field.validators = [
+                v for v in code_field.validators if not isinstance(v, MaxLengthValidator)
+            ]
+            code_field.validators.append(MaxLengthValidator(6))
+            code_field.widget.attrs['maxlength'] = 6
         # `disabled=True` (not just a readonly widget attr) makes Django
         # ignore whatever value is posted for this field and keep the
         # current one -- a readonly HTML attribute alone can be bypassed by
@@ -47,6 +81,20 @@ class ProductForms(forms.ModelForm):
         # error, easy to mistake for "did this even save?". Matches the
         # same fix already used in ProductInlineEditForm below.
         self.fields['category'].required = False
+
+        # Every product in this shop is VAT group "Б" (20%) unless someone
+        # picks something else -- defaulting the dropdown to it saves
+        # re-selecting the same thing on nearly every new product. Only for
+        # a genuinely NEW product (no pk yet) -- editing an existing one
+        # must never silently override whatever tax_group it already has.
+        # Looked up by name, not a hardcoded pk (which can differ between
+        # dev/pilot/production databases) -- if "Б" doesn't exist in a
+        # given database, this just quietly does nothing instead of
+        # crashing the form.
+        if not self.instance.pk:
+            default_tax_group = TaxGroup.objects.filter(name='Б').first()
+            if default_tax_group:
+                self.fields['tax_group'].initial = default_tax_group.pk
 
 
 class ProductInlineEditForm(forms.ModelForm):
@@ -145,6 +193,11 @@ class ProductSupplierForm(forms.ModelForm):
         model = ProductSupplier
         fields = ['supplier', 'position']
         widgets = {
+            # A plain <select> doesn't scale (a shop can have many
+            # suppliers) -- _supplier_formset.html renders a search box per
+            # row instead (same trigram-search pattern as the Deliveries
+            # supplier picker) and sets this hidden field's value via JS.
+            'supplier': forms.HiddenInput(),
             # Same idea as Barcode.position -- kept in sync by JS numbering,
             # not typed in manually.
             'position': forms.HiddenInput(),

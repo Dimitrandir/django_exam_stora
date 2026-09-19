@@ -7,117 +7,204 @@
 
 <h1>Edit product: {{ product.name }}</h1>
 
-<form method="post">
+<form method="post" class="product-form">
     {% csrf_token %}
-     <p>
-            {{ form.internal_code.label_tag }}
-            {{ form.internal_code }}
-            <button type="button" id="suggest-first-free-code-btn" style="margin-left: 10px;">First free ({{ first_free_code }})</button>
-            <button type="button" id="suggest-next-free-code-btn">Next free ({{ next_free_code }})</button>
-            {{ form.internal_code.errors }}
-        </p>
 
-        <p>
-            {{ form.name.label_tag }}
-            {{ form.name }}
-            {{ form.name.errors }}
-        </p>
+    {% comment %}
+    Block order: Product (code/name/category -- what it IS) -> Barcode
+    (how it gets scanned) -> Price -> Supplier (where it comes from).
+    {% endcomment %}
+    <section class="product-form__section">
+        <header class="product-form__section-header">
+            <h2>Product</h2>
+            {% comment %}
+            Try both -- switches ONLY how this one row lays out (real
+            fields either way, nothing duplicated), so comparing them
+            costs nothing.
+            {% endcomment %}
+            <div class="product-form__layout-toggle" role="group" aria-label="Field layout" id="layout-toggle">
+                <button type="button" data-layout="grouped">Side by side</button>
+                <button type="button" data-layout="stacked">Stacked</button>
+            </div>
+        </header>
 
-        <p>
-            <label>{{ form.is_recipe }} {{ form.is_recipe.label }}</label>
-            <small>{{ form.is_recipe.help_text }}</small>
-            {% if product.is_recipe and not product.ingredients_backfilled_at %}
-            <br><small style="color: #b8860b;">Ingredient stock for past sales of this product is being backfilled in the background.</small>
-            {% endif %}
-            {{ form.is_recipe.errors }}
-        </p>
+        <div class="product-form__grid is-grouped" id="core-fields-grid">
+            <div class="field">
+                {{ form.internal_code.label_tag }}
+                <div class="field__row">
+                    {{ form.internal_code }}
+                    <button type="button" id="suggest-next-free-code-btn" class="field__chip">Next free ({{ next_free_code }})</button>
+                </div>
+                {{ form.internal_code.errors }}
+            </div>
 
-        <div id="recipe-section">
-            {% include 'products/_recipe_formset.html' %}
+            <div class="field">
+                {{ form.name.label_tag }}
+                {{ form.name }}
+                {{ form.name.errors }}
+            </div>
+
+            <div class="field field--tiny">
+                <span class="field__label-row">
+                    {{ form.unit_type.label_tag }}
+                    <span class="popup-tip popup-tip--left">
+                        <button type="button" class="popup-tip__trigger" aria-label="Explanation">?</button>
+                        <span class="popup-tip__bubble">{{ form.unit_type.help_text }}</span>
+                    </span>
+                </span>
+                {{ form.unit_type }}
+                {{ form.unit_type.errors }}
+            </div>
         </div>
 
-        <p>
-            {{ form.unit_type.label_tag }}
-            {{ form.unit_type }}
-            <small>{{ form.unit_type.help_text }}</small>
-            {{ form.unit_type.errors }}
-        </p>
+        <div class="product-form__stack">
+            <div class="field">
+                {{ form.category.label_tag }}
+                <div class="field__row">
+                    <div class="position-relative category-search-wrapper" style="max-width: 320px;">
+                        <input type="text" id="category-search-input" class="form-control form-control-sm" placeholder="Search category by name..." autocomplete="off"
+                               value="{% if form.instance.category_id %}{{ form.instance.category.name }}{% endif %}">
+                        <div id="category-search-results" class="global-search-results"></div>
+                    </div>
+                    {{ form.category }}
+                    <a href="{% url 'category_create' %}?popup=1" target="_blank" class="field__aux-link">+ New category</a>
+                </div>
+                {{ form.category.errors }}
+            </div>
 
-        <fieldset style="border:1px solid #ddd; border-radius:4px; padding:12px; margin-bottom:12px;">
-            <legend>Prices</legend>
+            <div class="field">
+                <span class="field__label-row">
+                    {{ form.quantity.label_tag }}
+                    <span class="popup-tip">
+                        <button type="button" class="popup-tip__trigger" aria-label="Explanation">?</button>
+                        <span class="popup-tip__bubble">{{ form.quantity.help_text }}</span>
+                    </span>
+                </span>
+                {{ form.quantity }}
+                {{ form.quantity.errors }}
+            </div>
 
-            <p>
+            <div class="field field--checkbox">
+                {{ form.is_recipe }}
+                <div class="field__body">
+                    <span class="field__label-row">
+                        <label for="{{ form.is_recipe.id_for_label }}">{{ form.is_recipe.label }}</label>
+                        <span class="popup-tip">
+                            <button type="button" class="popup-tip__trigger" aria-label="Explanation">?</button>
+                            <span class="popup-tip__bubble">{{ form.is_recipe.help_text }}</span>
+                        </span>
+                    </span>
+                    {% if product.is_recipe and not product.ingredients_backfilled_at %}
+                    <span class="field__hint" style="color: #b8860b;">Ingredient stock for past sales of this product is being backfilled in the background.</span>
+                    {% endif %}
+                    {{ form.is_recipe.errors }}
+                </div>
+            </div>
+
+            <div id="recipe-section">
+                {% include 'products/_recipe_formset.html' %}
+            </div>
+
+            <div class="field field--checkbox">
+                {{ form.show_on_pos }}
+                <div class="field__body">
+                    <span class="field__label-row">
+                        <label for="{{ form.show_on_pos.id_for_label }}">{{ form.show_on_pos.label }}</label>
+                        <span class="popup-tip">
+                            <button type="button" class="popup-tip__trigger" aria-label="Explanation">?</button>
+                            <span class="popup-tip__bubble">{{ form.show_on_pos.help_text }}</span>
+                        </span>
+                    </span>
+                    {{ form.show_on_pos.errors }}
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="product-form__section">
+        <header class="product-form__section-header"><h2>Barcode</h2></header>
+        {% include 'products/_barcode_formset.html' %}
+    </section>
+
+    <section class="product-form__section">
+        <header class="product-form__section-header">
+            <h2>Price</h2>
+            <div class="product-form__layout-toggle" role="group" aria-label="Field layout" id="price-layout-toggle">
+                <button type="button" data-layout="grouped">Side by side</button>
+                <button type="button" data-layout="stacked">Stacked</button>
+            </div>
+        </header>
+
+        <div class="product-form__grid is-grouped" id="price-fields-grid">
+            <div class="field">
                 {{ form.tax_group.label_tag }}
                 {{ form.tax_group }}
-                <a href="{% url 'tax_group_create' %}?popup=1" target="_blank" style="margin-left: 10px;">+ New tax group</a>
                 {{ form.tax_group.errors }}
-            </p>
+            </div>
 
-            <label><input type="checkbox" id="show-prices-without-vat"> Show prices without VAT too</label>
-
-            <p>
+            <div class="field field--money">
                 {{ form.delivery_price.label_tag }}
                 {{ form.delivery_price }}
-                <small id="delivery-price-recipe-hint" class="text-muted" style="display:none;">Auto-calculated from ingredient costs.</small>
+                <span id="delivery-price-recipe-hint" class="field__hint" style="display:none;">Auto-calculated from ingredient costs.</span>
                 {{ form.delivery_price.errors }}
-            </p>
-            <p id="delivery-price-without-vat-row" style="display:none;">
-                <label for="delivery-price-without-vat-input">Delivery Price (without VAT):</label>
-                <input type="number" id="delivery-price-without-vat-input" step="0.01" style="width: 120px;">
-            </p>
+            </div>
 
-            <p>
+            <div class="field field--money field--narrow">
                 {{ form.sell_price.label_tag }}
                 {{ form.sell_price }}
                 {{ form.sell_price.errors }}
-                <span style="margin-left: 10px;">
-                    <label for="markup-percent-input">Markup %:</label>
-                    <input type="number" id="markup-percent-input" step="0.1" style="width: 90px;">
+            </div>
+
+            <div class="field field--tiny">
+                <span class="field__label-row">
+                    <label for="markup-percent-input">Markup %</label>
+                    <span class="popup-tip popup-tip--left">
+                        <button type="button" class="popup-tip__trigger" aria-label="Explanation">?</button>
+                        <span class="popup-tip__bubble">Type either Selling Price or Markup % -- the other fills in, based on Last Delivery Price.</span>
+                    </span>
                 </span>
-                <br><small class="text-muted">Type either one -- Selling Price or Markup % -- and the other fills in, based on Last Delivery Price.</small>
-            </p>
-            <p id="sell-price-without-vat-row" style="display:none;">
-                <label for="sell-price-without-vat-input">Selling Price (without VAT):</label>
-                <input type="number" id="sell-price-without-vat-input" step="0.01" style="width: 120px;">
-            </p>
-        </fieldset>
+                <div class="product-form__markup">
+                    <input type="number" id="markup-percent-input" step="0.1">
+                </div>
+            </div>
+        </div>
 
-         <p>
-            {{ form.quantity.label_tag }}
-            {{ form.quantity }}
-             <small>{{ form.quantity.help_text }}</small>
-            {{ form.quantity.errors }}
-        </p>
+        <div class="product-form__stack">
+            <label class="product-form__vat-row">
+                <input type="checkbox" id="show-prices-without-vat"> Show prices without VAT too
+            </label>
 
-        <p>
-            {{ form.category.label_tag }}
-            {{ form.category }}
-            <a href="{% url 'category_create' %}?popup=1" target="_blank" style="margin-left: 10px;">+ New category</a>
-            {{ form.category.errors }}
-        </p>
+            <div class="product-form__without-vat" id="without-vat-fields" style="display:none;">
+                <div class="field field--money">
+                    <label for="delivery-price-without-vat-input">Delivery Price (without VAT)</label>
+                    <input type="number" id="delivery-price-without-vat-input" step="0.01">
+                </div>
+                <div class="field field--money">
+                    <label for="sell-price-without-vat-input">Selling Price (without VAT)</label>
+                    <input type="number" id="sell-price-without-vat-input" step="0.01">
+                </div>
+            </div>
+        </div>
+    </section>
 
-        <p>
-            <label>{{ form.show_on_pos }} {{ form.show_on_pos.label }}</label>
-            <small>{{ form.show_on_pos.help_text }}</small>
-            {{ form.show_on_pos.errors }}
-        </p>
-
-        <hr>
-        {% include 'products/_barcode_formset.html' %}
-        <hr>
+    <section class="product-form__section">
+        <header class="product-form__section-header">
+            <h2>Supplier</h2>
+            <a href="{% url 'suppliers_create' %}?popup=1" target="_blank" class="field__aux-link">+ New supplier</a>
+        </header>
         {% include 'products/_supplier_formset.html' %}
-        <a href="{% url 'suppliers_create' %}?popup=1" target="_blank">+ New supplier</a>
-        <hr>
+    </section>
 
-    <button type="submit"> Update Product</button>
+    <div class="product-form__actions">
+        <button type="submit">Update Product</button>
+        <a href="{% url 'product_list'%}">Cancel and back to Products</a>
+        {% if perms.products.delete_product %}<a href="{% url 'product_delete' product.pk %}" class="button_delete">DELETE this product</a>{% endif %}
+    </div>
 </form>
 
 {{ tax_group_rates|json_script:"tax-group-rates" }}
 
 <script>
-document.getElementById('suggest-first-free-code-btn').addEventListener('click', function () {
-    document.getElementById('id_internal_code').value = '{{ first_free_code }}';
-});
 document.getElementById('suggest-next-free-code-btn').addEventListener('click', function () {
     document.getElementById('id_internal_code').value = '{{ next_free_code }}';
 });
@@ -130,32 +217,97 @@ document.getElementById('suggest-next-free-code-btn').addEventListener('click', 
     sync();
 })();
 
-// "+ New category" opens in a new tab (?popup=1) so any unsaved edits here
-// aren't lost. That tab's window.opener still points back here (target=
-// "_blank" without rel=noopener), so once the category is saved it can
-// hand the new category back via postMessage instead of the user having
-// to reload this page to see it in the dropdown.
-window.addEventListener('message', function (e) {
-    if (e.origin !== window.location.origin || !e.data) return;
-    if (e.data.type === 'category-created') {
-        var select = document.getElementById('id_category');
-        var opt = document.createElement('option');
-        opt.value = e.data.id;
-        opt.textContent = e.data.name;
-        select.appendChild(opt);
-        select.value = e.data.id;
+// Shared by both the Product section's Code/Name/Sold By row and the Price
+// section's Tax group/Delivery/Sell/Markup row: side-by-side (default,
+// compact -- one row) or stacked (one field per row, more breathing room)
+// -- purely a CSS class swap on the same real fields, so there's nothing
+// to keep in sync between the two.
+function wireLayoutToggle(toggleId, gridId) {
+    var grid = document.getElementById(gridId);
+    var toggle = document.getElementById(toggleId);
+    toggle.addEventListener('click', function (e) {
+        var btn = e.target.closest('button[data-layout]');
+        if (!btn) return;
+        toggle.querySelectorAll('button').forEach(function (b) { b.classList.remove('is-active'); });
+        btn.classList.add('is-active');
+        grid.classList.toggle('is-grouped', btn.dataset.layout === 'grouped');
+    });
+    toggle.querySelector('[data-layout="grouped"]').classList.add('is-active');
+}
+wireLayoutToggle('layout-toggle', 'core-fields-grid');
+wireLayoutToggle('price-layout-toggle', 'price-fields-grid');
+
+// Category: searchable picker (same debounced trigram-search pattern as
+// the Supplier picker) instead of a <select> -- categories can nest
+// arbitrarily deep (Category.parent), so the list doesn't stay short.
+(function () {
+    var searchInput = document.getElementById('category-search-input');
+    var resultsBox = document.getElementById('category-search-results');
+    var hiddenInput = document.getElementById('id_category');
+    var debounceTimer = null;
+    var currentController = null;
+
+    function renderResults(data) {
+        resultsBox.innerHTML = '';
+        if (!data.results.length) {
+            var empty = document.createElement('div');
+            empty.className = 'global-search-empty';
+            empty.textContent = 'No matches';
+            resultsBox.appendChild(empty);
+            resultsBox.classList.add('is-open');
+            return;
+        }
+        data.results.forEach(function (category) {
+            var row = document.createElement('div');
+            row.className = 'global-search-result';
+            row.textContent = category.name;
+            row.addEventListener('click', function () {
+                hiddenInput.value = category.id;
+                searchInput.value = category.name;
+                resultsBox.classList.remove('is-open');
+            });
+            resultsBox.appendChild(row);
+        });
+        resultsBox.classList.add('is-open');
     }
-    if (e.data.type === 'tax-group-created') {
-        var tgSelect = document.getElementById('id_tax_group');
-        var tgOpt = document.createElement('option');
-        tgOpt.value = e.data.id;
-        tgOpt.textContent = e.data.name;
-        tgSelect.appendChild(tgOpt);
-        tgSelect.value = e.data.id;
-        taxGroupRates[String(e.data.id)] = e.data.rate;
-        tgSelect.dispatchEvent(new Event('change', {bubbles: true}));
+
+    function runSearch() {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(function () {
+            if (currentController) currentController.abort();
+            currentController = new AbortController();
+            var params = new URLSearchParams();
+            var q = searchInput.value.trim();
+            if (q) params.set('q', q);
+            fetch('{% url "category_search" %}?' + params.toString(), {signal: currentController.signal})
+                .then(function (r) { return r.json(); })
+                .then(renderResults)
+                .catch(function (e) { if (e.name !== 'AbortError') { /* transient network error -- ignore */ } });
+        }, 200);
     }
-});
+
+    searchInput.addEventListener('input', function () {
+        hiddenInput.value = '';
+        runSearch();
+    });
+    searchInput.addEventListener('focus', runSearch);
+    document.addEventListener('click', function (e) {
+        if (!e.target.closest('#category-search-input') && !e.target.closest('#category-search-results')) {
+            resultsBox.classList.remove('is-open');
+        }
+    });
+
+    // "+ New category" opens in a new tab (?popup=1) so any unsaved edits
+    // here aren't lost. That tab's window.opener still points back here
+    // (target="_blank" without rel=noopener), so once the category is
+    // saved it can hand the new category back via postMessage instead of
+    // the user having to reload this page to find it.
+    window.addEventListener('message', function (e) {
+        if (e.origin !== window.location.origin || !e.data || e.data.type !== 'category-created') return;
+        hiddenInput.value = e.data.id;
+        searchInput.value = e.data.name;
+    });
+})();
 
 // Prices section: tax_group rates come from the server (same idea as
 // products_data/barcodes_data elsewhere) so the VAT math below doesn't
@@ -164,9 +316,7 @@ var taxGroupRatesEl = document.getElementById('tax-group-rates');
 var taxGroupRates = taxGroupRatesEl ? JSON.parse(taxGroupRatesEl.textContent) : {};
 
 document.getElementById('show-prices-without-vat').addEventListener('change', function (e) {
-    var display = e.target.checked ? '' : 'none';
-    document.getElementById('delivery-price-without-vat-row').style.display = display;
-    document.getElementById('sell-price-without-vat-row').style.display = display;
+    document.getElementById('without-vat-fields').style.display = e.target.checked ? '' : 'none';
 });
 
 function currentTaxRate() {
@@ -177,8 +327,21 @@ function currentTaxRate() {
 
 function wireVatPair(withVatInput, withoutVatInput) {
     var lastEdited = null; // 'with' or 'without'
+    // Guards against the round-trip below stomping on whatever the user is
+    // actively typing. Typing in the without-VAT field calls fillWith(),
+    // which writes withVatInput.value and dispatches a synthetic 'input'
+    // on it (so Markup %/recipe-cost stay in sync) -- but that synthetic
+    // event also fires THIS pair's own with-VAT listener, which called
+    // fillWithout() and immediately overwrote withoutVatInput.value (the
+    // field being typed into) with a rounded round-trip value, right in
+    // the middle of the user's own keystroke. Confirmed live: typing a
+    // second digit into the without-VAT field never landed -- every
+    // keystroke reset the field back to a 1-digit rounded value the
+    // instant it was typed.
+    var syncing = false;
 
     function fillWithout() {
+        if (syncing) return;
         var rate = currentTaxRate();
         var withVat = parseFloat(withVatInput.value);
         if (rate === null || isNaN(withVat)) return;
@@ -192,8 +355,12 @@ function wireVatPair(withVatInput, withoutVatInput) {
         withVatInput.value = (withoutVat * (1 + rate / 100)).toFixed(2);
         // Setting .value via JS doesn't fire 'input' on its own -- the
         // Markup %/recipe-cost calculators listen for it on this same
-        // field to stay in sync.
+        // field to stay in sync. syncing stays true for the whole
+        // (synchronous) dispatch so fillWithout() above no-ops instead of
+        // echoing straight back into the field the user is editing.
+        syncing = true;
         withVatInput.dispatchEvent(new Event('input', {bubbles: true}));
+        syncing = false;
     }
 
     withVatInput.addEventListener('input', function () { lastEdited = 'with'; fillWithout(); });
@@ -242,10 +409,5 @@ wireVatPair(document.getElementById('id_sell_price'), document.getElementById('s
     markupFromSellPrice();
 })();
 </script>
-
-<hr>
-
-<a href="{% url 'product_list'%}">Cancel and back to Products</a>
-{% if perms.products.delete_product %}<a href="{% url 'product_delete' product.pk %}" class="button_delete">DELETE this product</a>{% endif %}
 
 {% endblock%}

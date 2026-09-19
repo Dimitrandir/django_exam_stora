@@ -473,6 +473,39 @@ class SupplierSearchView(LoginRequiredMixin, StaffPermissionRequiredMixin, View)
         ]})
 
 
+class CategorySearchView(LoginRequiredMixin, StaffPermissionRequiredMixin, View):
+    """Backs the searchable category picker on the product create/edit
+    pages -- same reasoning as SupplierSearchView/IngredientSearchView, and
+    reuses the GinIndex already on Category.name (see core.utils
+    multi_token_icontains_q). Category.name is unique, so the result name
+    alone is enough to tell categories apart -- no need to also show the
+    parent for disambiguation."""
+
+    permission_required = 'products.view_category'
+    RESULTS_LIMIT = 30
+
+    def get(self, request):
+        query = request.GET.get('q', '').strip()
+        categories = Category.objects.all()
+
+        if query:
+            categories = (
+                categories
+                .filter(multi_token_icontains_q(query, ['name']))
+                .annotate(similarity=TrigramSimilarity('name', query))
+                .order_by('-similarity', 'name')
+            )
+        else:
+            categories = categories.order_by('name')
+
+        categories = categories[:self.RESULTS_LIMIT]
+
+        return JsonResponse({'results': [
+            {'id': category.pk, 'name': category.name}
+            for category in categories
+        ]})
+
+
 class ProductCreateView(LoginRequiredMixin, StaffPermissionRequiredMixin, CreateView):
     permission_required = 'products.add_product'
     model = Product

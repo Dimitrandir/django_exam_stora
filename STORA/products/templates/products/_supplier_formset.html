@@ -1,16 +1,19 @@
 {{ supplier_formset.management_form }}
 
-<p><strong>Suppliers</strong></p>
-
 <div id="supplier-forms-container">
     {% for supplier_form in supplier_formset %}
     <div class="supplier-row" style="border:1px solid #ddd; border-radius:4px; padding:8px 12px; margin-bottom:8px;">
         <strong>{% if forloop.first %}Primary Supplier{% else %}Alternate Supplier #<span class="supplier-index">{{ forloop.counter0 }}</span>{% endif %}</strong>
         {{ supplier_form.id }}
         {{ supplier_form.position }}
+        {{ supplier_form.supplier }}
         <p>
-            {{ supplier_form.supplier.label_tag }}
-            {{ supplier_form.supplier }}
+            <label>Supplier</label>
+            <div class="position-relative supplier-search-wrapper" style="max-width: 320px;">
+                <input type="text" class="form-control form-control-sm supplier-search-input" placeholder="Search supplier by name..." autocomplete="off"
+                       value="{% if supplier_form.instance.supplier_id %}{{ supplier_form.instance.supplier.name }}{% endif %}">
+                <div class="global-search-results supplier-search-results"></div>
+            </div>
             {{ supplier_form.supplier.errors }}
         </p>
         {% if supplier_form.instance.pk %}
@@ -27,9 +30,13 @@
         <strong>Alternate Supplier #<span class="supplier-index"></span></strong>
         {{ supplier_formset.empty_form.id }}
         {{ supplier_formset.empty_form.position }}
+        {{ supplier_formset.empty_form.supplier }}
         <p>
-            {{ supplier_formset.empty_form.supplier.label_tag }}
-            {{ supplier_formset.empty_form.supplier }}
+            <label>Supplier</label>
+            <div class="position-relative supplier-search-wrapper" style="max-width: 320px;">
+                <input type="text" class="form-control form-control-sm supplier-search-input" placeholder="Search supplier by name..." autocomplete="off">
+                <div class="global-search-results supplier-search-results"></div>
+            </div>
         </p>
     </div>
 </template>
@@ -40,6 +47,7 @@
     var totalForms = document.getElementById('id_supplier-TOTAL_FORMS');
     var addBtn = document.getElementById('add-supplier-btn');
     var template = document.getElementById('empty-supplier-form');
+    var searchUrl = '{% url "supplier_search" %}';
 
     // Same idea as the barcode formset: position 1 = primary, matching
     // whatever's first in the list; renumbering keeps the hidden position
@@ -53,36 +61,83 @@
         });
     }
 
-    // Suppliers created via the "+ New supplier" popup (see product_create/
-    // edit.html) while this page is open: applied to every row's <select>
-    // already on the page, and re-applied to each new row the "+ Add
-    // another supplier" button creates afterwards (its <select> is cloned
-    // from server-rendered HTML captured at page load, so it doesn't know
-    // about them either without this).
-    var newlyCreatedSuppliers = [];
+    // `supplier` is now a HiddenInput (see ProductSupplierForm) -- this
+    // wires the visible search box next to it, same debounced trigram
+    // search as the Deliveries supplier picker (supplier-search-input in
+    // delivery_add.html). Wired per row (not once for the whole page)
+    // because a product can have several supplier rows open at once, each
+    // with its own hidden pk field to fill in.
+    function wireSupplierRow(row) {
+        var searchInput = row.querySelector('.supplier-search-input');
+        var resultsBox = row.querySelector('.supplier-search-results');
+        var hiddenInput = row.querySelector('input[name$="-supplier"]');
+        var debounceTimer = null;
+        var currentController = null;
 
-    function addSupplierOption(select, supplier) {
-        var opt = document.createElement('option');
-        opt.value = supplier.id;
-        opt.textContent = supplier.name;
-        select.appendChild(opt);
+        function renderResults(data) {
+            resultsBox.innerHTML = '';
+            if (!data.results.length) {
+                var empty = document.createElement('div');
+                empty.className = 'global-search-empty';
+                empty.textContent = 'No matches';
+                resultsBox.appendChild(empty);
+                resultsBox.classList.add('is-open');
+                return;
+            }
+            data.results.forEach(function (supplier) {
+                var option = document.createElement('div');
+                option.className = 'global-search-result';
+                option.textContent = supplier.name;
+                option.addEventListener('click', function () {
+                    hiddenInput.value = supplier.id;
+                    searchInput.value = supplier.name;
+                    resultsBox.classList.remove('is-open');
+                });
+                resultsBox.appendChild(option);
+            });
+            resultsBox.classList.add('is-open');
+        }
+
+        function runSearch() {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(function () {
+                if (currentController) currentController.abort();
+                currentController = new AbortController();
+                var params = new URLSearchParams();
+                var q = searchInput.value.trim();
+                if (q) params.set('q', q);
+                fetch(searchUrl + '?' + params.toString(), {signal: currentController.signal})
+                    .then(function (r) { return r.json(); })
+                    .then(renderResults)
+                    .catch(function (e) { if (e.name !== 'AbortError') { /* transient network error -- ignore */ } });
+            }, 200);
+        }
+
+        searchInput.addEventListener('input', function () {
+            hiddenInput.value = '';
+            runSearch();
+        });
+        searchInput.addEventListener('focus', runSearch);
+        document.addEventListener('click', function (e) {
+            if (!row.contains(e.target)) resultsBox.classList.remove('is-open');
+        });
     }
 
+    // Suppliers created via the "+ New supplier" popup (see product_create/
+    // edit.html) while this page is open: fills the first still-empty row
+    // (most likely the one the user clicked the link for) -- already-filled
+    // rows are left alone.
     window.addEventListener('message', function (e) {
         if (e.origin !== window.location.origin || !e.data || e.data.type !== 'supplier-created') return;
-        var supplier = {id: e.data.id, name: e.data.name};
-        newlyCreatedSuppliers.push(supplier);
-        var autoSelected = false;
-        container.querySelectorAll('select[name$="-supplier"]').forEach(function (select) {
-            addSupplierOption(select, supplier);
-            // Pick it for the first still-empty row -- most likely the one
-            // the user clicked "+ New supplier" for. Leave already-filled
-            // rows alone.
-            if (!autoSelected && !select.value) {
-                select.value = String(supplier.id);
-                autoSelected = true;
+        var rows = container.querySelectorAll('.supplier-row');
+        for (var i = 0; i < rows.length; i++) {
+            var hiddenInput = rows[i].querySelector('input[name$="-supplier"]');
+            if (!hiddenInput.value) {
+                hiddenInput.value = e.data.id;
+                rows[i].querySelector('.supplier-search-input').value = e.data.name;
+                break;
             }
-        });
+        }
     });
 
     addBtn.addEventListener('click', function () {
@@ -91,13 +146,13 @@
         var wrapper = document.createElement('div');
         wrapper.innerHTML = html.trim();
         var row = wrapper.firstElementChild;
-        var select = row.querySelector('select[name$="-supplier"]');
-        newlyCreatedSuppliers.forEach(function (supplier) { addSupplierOption(select, supplier); });
         container.appendChild(row);
         totalForms.value = index + 1;
+        wireSupplierRow(row);
         renumber();
     });
 
+    container.querySelectorAll('.supplier-row').forEach(wireSupplierRow);
     renumber();
 })();
 </script>

@@ -1,7 +1,5 @@
 {{ barcode_formset.management_form }}
 
-<p><strong>Barcodes</strong></p>
-
 <div id="barcode-forms-container">
     {% for barcode_form in barcode_formset %}
     <div class="barcode-row" style="border:1px solid #ddd; border-radius:4px; padding:8px 12px; margin-bottom:8px;">
@@ -14,7 +12,10 @@
             {{ barcode_form.code.errors }}
         </p>
         <label><small>{{ barcode_form.is_scale_code }} {{ barcode_form.is_scale_code.label }}</small></label>
-        <br><small class="text-muted">{{ barcode_form.is_scale_code.help_text }}</small>
+        <span class="popup-tip">
+            <button type="button" class="popup-tip__trigger" aria-label="Explanation">?</button>
+            <span class="popup-tip__bubble">{{ barcode_form.is_scale_code.help_text }}</span>
+        </span>
         {% if barcode_form.instance.pk %}
         <br><label>{{ barcode_form.DELETE }} Remove this barcode</label>
         {% endif %}
@@ -55,14 +56,37 @@
         });
     }
 
-    addBtn.addEventListener('click', function () {
+    function addRow() {
         var index = parseInt(totalForms.value, 10);
         var html = template.innerHTML.replace(/__prefix__/g, index);
         var wrapper = document.createElement('div');
         wrapper.innerHTML = html.trim();
-        container.appendChild(wrapper.firstElementChild);
+        var row = wrapper.firstElementChild;
+        container.appendChild(row);
         totalForms.value = index + 1;
         renumber();
+        return row;
+    }
+
+    addBtn.addEventListener('click', function () { addRow(); });
+
+    // A USB/Bluetooth barcode scanner types the code then fires Enter on
+    // its own -- inside a <form>, Enter on a text input submits the form
+    // natively. Confirmed live: scanning a barcode into this field
+    // submitted (and left) the whole product page mid-entry, before the
+    // rest of the form was even filled in. Delegated to the container (not
+    // bound per-row) so it also covers rows added later. Enter now adds a
+    // fresh row and focuses its code field instead of submitting --
+    // continuous scanning, one barcode after another, without touching
+    // anything else.
+    container.addEventListener('keydown', function (e) {
+        if (e.key !== 'Enter') return;
+        var input = e.target.closest('input[name$="-code"]');
+        if (!input) return;
+        e.preventDefault();
+        var newRow = addRow();
+        var newInput = newRow.querySelector('input[name$="-code"]');
+        if (newInput) newInput.focus();
     });
 
     renumber();

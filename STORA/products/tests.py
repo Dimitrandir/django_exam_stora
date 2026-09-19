@@ -121,7 +121,7 @@ class ProductModelValidationTests(TestCase):
         click (no request sent at all) whenever category was left unset,
         with no visible error to explain why."""
         form = ProductForms(data={
-            'internal_code': 'P1000012', 'name': 'No Category Widget', 'unit_type': 'piece',
+            'internal_code': 'P10012', 'name': 'No Category Widget', 'unit_type': 'piece',
             'sell_price': '1.00', 'quantity': 0,
         })
         self.assertTrue(form.is_valid(), form.errors)
@@ -191,7 +191,7 @@ class ProductBarcodeFormsetTests(TestCase):
         category = Category.objects.create(name='Test Category')
         self.client.force_login(manager)
         response = self.client.post(reverse('product_create'), {
-            'internal_code': 'P1000009',
+            'internal_code': 'P10009',
             'name': 'Multi Barcode Widget',
             'unit_type': 'piece',
             'sell_price': '3.00',
@@ -213,7 +213,7 @@ class ProductBarcodeFormsetTests(TestCase):
             'recipe-MAX_NUM_FORMS': '1000',
         })
         self.assertEqual(response.status_code, 302)
-        product = Product.objects.get(internal_code='P1000009')
+        product = Product.objects.get(internal_code='P10009')
         self.assertEqual(
             set(product.barcode.values_list('code', flat=True)),
             {'1111111111116', '2222222222225'},
@@ -824,7 +824,7 @@ class ProductSupplierFormsetTests(TestCase):
 
         self.client.force_login(manager)
         response = self.client.post(reverse('product_create'), {
-            'internal_code': 'P3000002',
+            'internal_code': 'P30002',
             'name': 'Multi Supplier Widget',
             'unit_type': 'piece',
             'sell_price': '3.00',
@@ -848,7 +848,7 @@ class ProductSupplierFormsetTests(TestCase):
             'recipe-MAX_NUM_FORMS': '1000',
         })
         self.assertEqual(response.status_code, 302)
-        product = Product.objects.get(internal_code='P3000002')
+        product = Product.objects.get(internal_code='P30002')
         names = [link.supplier.name for link in product.product_suppliers.all()]
         self.assertEqual(names, ['Formset Supplier A', 'Formset Supplier B'])
 
@@ -868,7 +868,7 @@ class ProductSupplierFormsetTests(TestCase):
 
         self.client.force_login(manager)
         response = self.client.post(reverse('product_create'), {
-            'internal_code': 'P3000003',
+            'internal_code': 'P30003',
             'name': 'Primary Only Widget',
             'unit_type': 'piece',
             'sell_price': '3.00',
@@ -895,7 +895,7 @@ class ProductSupplierFormsetTests(TestCase):
             'recipe-MAX_NUM_FORMS': '1000',
         })
         self.assertEqual(response.status_code, 302)
-        product = Product.objects.get(internal_code='P3000003')
+        product = Product.objects.get(internal_code='P30003')
         names = [link.supplier.name for link in product.product_suppliers.all()]
         self.assertEqual(names, ['Only Primary Supplier'])
 
@@ -967,7 +967,7 @@ class WeightBasedProductTests(TestCase):
         category = Category.objects.create(name='Loose Produce')
         self.client.force_login(manager)
         response = self.client.post(reverse('product_create'), {
-            'internal_code': 'W000003',
+            'internal_code': 'W00003',
             'name': 'Loose Bananas',
             'unit_type': 'weight',
             'sell_price': '1.80',
@@ -987,7 +987,7 @@ class WeightBasedProductTests(TestCase):
             'recipe-MAX_NUM_FORMS': '1000',
         })
         self.assertEqual(response.status_code, 302)
-        product = Product.objects.get(internal_code='W000003')
+        product = Product.objects.get(internal_code='W00003')
         self.assertEqual(product.unit_type, Product.WEIGHT)
 
     def test_products_list_grid_includes_unit_type_and_float_quantity(self):
@@ -1053,7 +1053,7 @@ class RecipeProductTests(TestCase):
         category = Category.objects.create(name='Drinks Recipe Category')
         self.client.force_login(self.manager)
         response = self.client.post(reverse('product_create'), {
-            'internal_code': 'R000006',
+            'internal_code': 'R00006',
             'name': 'Latte',
             'unit_type': 'piece',
             'sell_price': '3.50',
@@ -1076,7 +1076,7 @@ class RecipeProductTests(TestCase):
             'recipe-0-quantity': '0.200',
         })
         self.assertEqual(response.status_code, 302)
-        product = Product.objects.get(internal_code='R000006')
+        product = Product.objects.get(internal_code='R00006')
         self.assertTrue(product.is_recipe)
         links = list(product.recipe_ingredients.all())
         self.assertEqual(len(links), 1)
@@ -1113,7 +1113,7 @@ class RecipeProductTests(TestCase):
         category = Category.objects.create(name='Cost Category')
         self.client.force_login(self.manager)
         response = self.client.post(reverse('product_create'), {
-            'internal_code': 'R000007',
+            'internal_code': 'R00007',
             'name': 'Cost Test Latte',
             'unit_type': 'piece',
             'sell_price': '3.50',
@@ -1139,7 +1139,7 @@ class RecipeProductTests(TestCase):
             'recipe-0-quantity': '0.200',
         })
         self.assertEqual(response.status_code, 302)
-        product = Product.objects.get(internal_code='R000007')
+        product = Product.objects.get(internal_code='R00007')
         # 0.200 * 1.80 = 0.36 -- not the posted 999.00.
         self.assertEqual(product.delivery_price, Decimal('0.36'))
 
@@ -1527,7 +1527,7 @@ class TaxGroupTests(TestCase):
         category = Category.objects.create(name='VAT Test Category')
         self.client.force_login(self.manager)
         response = self.client.post(reverse('product_create'), {
-            'internal_code': 'TG000003',
+            'internal_code': 'TG0003',
             'name': 'VAT Test Product',
             'unit_type': 'piece',
             'delivery_price': '1.00',
@@ -1549,7 +1549,7 @@ class TaxGroupTests(TestCase):
             'recipe-MAX_NUM_FORMS': '1000',
         })
         self.assertEqual(response.status_code, 302)
-        product = Product.objects.get(internal_code='TG000003')
+        product = Product.objects.get(internal_code='TG0003')
         self.assertEqual(product.tax_group, self.standard)
 
 

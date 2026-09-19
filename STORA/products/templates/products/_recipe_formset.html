@@ -76,20 +76,24 @@ document.addEventListener('DOMContentLoaded', function () {
     var costSummary = document.getElementById('recipe-cost-summary');
     var CATEGORY_STORAGE_KEY = 'stora_ingredient_category_filter';
 
-    // Reuses the category choices already loaded for the product's own
-    // Category field -- no extra request needed just to fill this dropdown.
-    var sourceCategorySelect = document.getElementById('id_category');
-    if (sourceCategorySelect) {
-        Array.prototype.forEach.call(sourceCategorySelect.options, function (opt) {
-            if (!opt.value) return;
-            var clone = document.createElement('option');
-            clone.value = opt.value;
-            clone.textContent = opt.textContent;
-            categoryFilter.appendChild(clone);
-        });
-    }
+    // The product's own Category field is a searchable picker now (see
+    // product_create/edit.html), not a <select> with every category as an
+    // option, so this filter dropdown can't just clone its options anymore
+    // -- it asks the same category-search endpoint directly instead (one
+    // request, on load, no query -- returns categories ordered by name).
     var rememberedCategory = localStorage.getItem(CATEGORY_STORAGE_KEY);
-    if (rememberedCategory) categoryFilter.value = rememberedCategory;
+    fetch('{% url "category_search" %}')
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            data.results.forEach(function (category) {
+                var opt = document.createElement('option');
+                opt.value = category.id;
+                opt.textContent = category.name;
+                categoryFilter.appendChild(opt);
+            });
+            if (rememberedCategory) categoryFilter.value = rememberedCategory;
+        })
+        .catch(function () { /* filter just stays at "All categories" */ });
 
     function existingIngredientIds() {
         var ids = [];
