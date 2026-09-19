@@ -106,7 +106,7 @@
         {{ form.card_amount }}
         {{ form.change_due }}
 
-        <div class="sale-form__workspace">
+        <div class="sale-form__workspace" id="sale-form-workspace">
         <section class="sale-form__items">
             {{ formset.management_form }}
             <div id="sale-items-hidden-inputs"></div>
@@ -153,7 +153,20 @@
             </div>
         </section>
 
-        <section class="sale-form__categories">
+        {% comment %}
+        Drag left/right to resize the shortcuts panel next to it (width
+        saved in localStorage per browser/device, see syncCategoriesWidth
+        below) -- the toggle button inside it hides/shows the whole panel
+        instead, for when a cashier just wants the full cart width and no
+        shortcuts at all. Lives OUTSIDE .sale-form__categories, not inside
+        it, so the toggle stays reachable even while that section itself
+        is hidden.
+        {% endcomment %}
+        <div class="sale-form__resizer" id="sale-form-resizer" title="Drag to resize">
+            <button type="button" id="sale-form-toggle-categories-btn" class="sale-form__resizer-toggle" title="Hide shortcuts">‹</button>
+        </div>
+
+        <section class="sale-form__categories" id="sale-form-categories">
             <header class="section-header">
                 <h2>Shortcuts</h2>
                 <button type="button" id="category-edit-mode-btn" class="category-edit-btn">Edit</button>
@@ -381,6 +394,88 @@
                 } else {
                     document.documentElement.requestFullscreen().catch(() => {});
                 }
+            });
+        })();
+
+        // -- Shortcuts panel: drag-to-resize + hide/show, persisted per
+        // browser/device in localStorage -- this is a per-till screen
+        // preference (how THIS touchscreen is set up), not a business
+        // setting, so it deliberately doesn't go through the server/
+        // database like PosPin etc. does. See .sale-form__resizer /
+        // .sale-form__categories in style.css for the CSS half (the width
+        // itself lives in a CSS variable, not a flex ratio, so it can be
+        // dragged to a specific size instead of just a couple of fixed
+        // presets). References saleItemsTable (declared further down in
+        // this same script) only inside handlers that fire from a later
+        // user action, never at this top-level point -- by the time any
+        // of them actually run, the whole script has finished executing
+        // and it's long since been assigned. --
+        (function () {
+            const STORAGE_WIDTH_KEY = 'sale_categories_width';
+            const STORAGE_HIDDEN_KEY = 'sale_categories_hidden';
+            const workspace = document.getElementById('sale-form-workspace');
+            const resizer = document.getElementById('sale-form-resizer');
+            const toggleBtn = document.getElementById('sale-form-toggle-categories-btn');
+            const MIN_WIDTH = 200;
+            const MAX_WIDTH_RATIO = 0.7; // matches .sale-form__categories max-width: 70vw
+
+            function applyWidth(px) {
+                document.documentElement.style.setProperty('--categories-width', px + 'px');
+            }
+
+            function refitCart() {
+                // Resizing a sibling panel doesn't fire a 'resize' event --
+                // fitColumns needs telling explicitly, same reasoning as the
+                // window-resize/column-drag handlers below.
+                saleItemsTable.redraw(true);
+                saleItemsTable.rowManager.normalizeHeight(true);
+            }
+
+            const savedWidth = parseInt(localStorage.getItem(STORAGE_WIDTH_KEY), 10);
+            if (savedWidth) applyWidth(savedWidth);
+
+            if (localStorage.getItem(STORAGE_HIDDEN_KEY) === '1') {
+                workspace.classList.add('categories-hidden');
+                toggleBtn.textContent = '›';
+                toggleBtn.title = 'Show shortcuts';
+            }
+
+            toggleBtn.addEventListener('click', () => {
+                const hidden = workspace.classList.toggle('categories-hidden');
+                toggleBtn.textContent = hidden ? '›' : '‹';
+                toggleBtn.title = hidden ? 'Show shortcuts' : 'Hide shortcuts';
+                localStorage.setItem(STORAGE_HIDDEN_KEY, hidden ? '1' : '0');
+                refitCart();
+            });
+
+            function onPointerMove(e) {
+                const workspaceRect = workspace.getBoundingClientRect();
+                // The panel sits to the right of the resizer -- its width
+                // is just the distance from the pointer to the
+                // workspace's own right edge.
+                const maxWidth = workspaceRect.width * MAX_WIDTH_RATIO;
+                const newWidth = Math.min(Math.max(workspaceRect.right - e.clientX, MIN_WIDTH), maxWidth);
+                applyWidth(Math.round(newWidth));
+            }
+
+            function stopDrag() {
+                resizer.classList.remove('is-dragging');
+                const px = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--categories-width'), 10);
+                if (px) localStorage.setItem(STORAGE_WIDTH_KEY, String(px));
+                refitCart();
+                document.removeEventListener('pointermove', onPointerMove);
+                document.removeEventListener('pointerup', stopDrag);
+            }
+
+            resizer.addEventListener('pointerdown', (e) => {
+                // Excludes the toggle button living inside this same
+                // element -- tapping it to hide/show must not also start
+                // a drag.
+                if (e.target !== resizer || workspace.classList.contains('categories-hidden')) return;
+                resizer.classList.add('is-dragging');
+                document.addEventListener('pointermove', onPointerMove);
+                document.addEventListener('pointerup', stopDrag);
+                e.preventDefault();
             });
         })();
 
@@ -639,7 +734,10 @@
             placeholder: 'Scan or search a product above to start the sale.',
             columns: [
                 {formatter: 'rownum', title: '#', width: 34, minWidth: 30, hozAlign: 'center', headerSort: false},
-                {title: 'Name', field: 'product_name', widthGrow: 3, minWidth: 70},
+                // Slightly narrower by default than before (widthGrow 3 -> 2.2)
+                // -- gives the numeric columns more of the row to work with,
+                // per live feedback that Name was hogging space it didn't need.
+                {title: 'Name', field: 'product_name', widthGrow: 2.2, minWidth: 70},
                 {
                     // bottomCalc sums the raw numbers regardless of unit --
                     // fine for an all-piece or all-weight cart, but mixing
@@ -655,12 +753,19 @@
                     bottomCalc: 'sum', bottomCalcFormatter: (cell) => Number(cell.getValue() || 0).toFixed(3),
                 },
                 {
-                    title: 'Unit Price', field: 'price_at_sale', width: 68, minWidth: 55, hozAlign: 'right',
+                    // Abbreviated -- "Unit Price" at the default header font
+                    // size was the widest header label in the row, forcing
+                    // the column wider than the numbers in it actually need.
+                    title: 'Price', field: 'price_at_sale', width: 68, minWidth: 55, hozAlign: 'right',
                     editor: numberEditor, editorParams: {min: 0.01, step: 0.01},
                     formatter: (cell) => Number(cell.getValue() || 0).toFixed(2),
                 },
                 {
-                    title: 'Sum', field: 'total_price_row', width: 68, minWidth: 55, hozAlign: 'right',
+                    // A bit wider + a higher minWidth than before -- the
+                    // bottomCalc total (2 decimals) was getting clipped at
+                    // the old 68/55 width on a multi-item cart with a large
+                    // running total.
+                    title: 'Sum', field: 'total_price_row', width: 80, minWidth: 65, hozAlign: 'right',
                     editor: numberEditor, editorParams: {min: 0, step: 0.01},
                     formatter: (cell) => Number(cell.getValue() || 0).toFixed(2),
                     bottomCalc: 'sum', bottomCalcFormatter: (cell) => Number(cell.getValue() || 0).toFixed(2),
@@ -684,7 +789,9 @@
             if (!container || !footer) return;
             var top = container.getBoundingClientRect().top;
             var footerHeight = footer.getBoundingClientRect().height;
-            var bottomMargin = 20;
+            // Was 20 -- live testing found the footer buttons sitting right
+            // against the bottom edge of the screen, not just close to it.
+            var bottomMargin = 40;
             var newHeight = Math.round(window.innerHeight - top - footerHeight - bottomMargin);
             // Never shrink below a usable minimum -- a very short/zoomed-in
             // viewport should scroll the page rather than crush the cart

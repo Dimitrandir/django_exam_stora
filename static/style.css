@@ -54,6 +54,23 @@ main.main-wide {
     border-radius: 0;
 }
 
+/* Cashier POS screen only -- live testing found real unused space left
+   and right (main's own 2rem horizontal padding) and above (main's 1rem
+   margin-top + 1.5rem padding-top) on a touchscreen till where every
+   pixel of the cart/category panel matters more than on a desktop admin
+   screen. Scoped to body.pos-compact-nav so the same trim doesn't apply
+   to every other main-wide page (Products list, reports, ...), which
+   have no such complaint. */
+body.pos-compact-nav main.main-wide {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+    /* Bootstrap's own .py-4 utility (on <main> in base.html) sets
+       padding-top/bottom with !important -- needed here too, or this
+       override loses despite having higher selector specificity. */
+    padding-top: 0.5rem !important;
+    margin-top: 0.25rem;
+}
+
 h1 { color: var(--primary-color); border-bottom: 2px solid var(--accent-color); padding-bottom: 10px; }
 
 /* Tables */
@@ -253,6 +270,14 @@ input[type="text"], input[type="number"], input[type="email"], select, textarea 
     box-shadow: 0 0.5rem 1rem rgba(0,0,0,.05);
 }
 
+/* Trims .sale-form's own left/right padding too, on top of main.main-wide's
+   trim above -- .delivery-form is deliberately untouched (no complaint
+   there, and it isn't a touchscreen-only screen). */
+body.pos-compact-nav .sale-form {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+}
+
 /* Cashier POS screen (sale_add.html) -- a full-width blue strip across the
    top (operator name + clock on the left), with the Total/Change window
    and the 3 basket tabs sitting raised on top of it, right-aligned. Design
@@ -436,8 +461,58 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
 }
 
 .sale-form__items {
-    flex: 2;
+    flex: 1 1 auto;
     min-width: 0;
+}
+
+/* Drag handle between the cart and the shortcuts panel -- width of the
+   panel is a CSS variable (set from JS, restored from localStorage on
+   load) rather than a fixed flex ratio, so it can be resized live. */
+.sale-form__resizer {
+    flex: 0 0 auto;
+    width: 14px;
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: col-resize;
+    /* Without this, dragging on a touchscreen scrolls/pans the page
+       instead of the pointer events reaching this element. */
+    touch-action: none;
+}
+
+.sale-form__resizer::before {
+    content: '';
+    width: 4px;
+    height: 70%;
+    background: #d5d5d5;
+    border-radius: 2px;
+}
+
+.sale-form__resizer:hover::before,
+.sale-form__resizer.is-dragging::before {
+    background: var(--accent-color);
+}
+
+/* The hide/show toggle rides on the resizer itself, not inside
+   .sale-form__categories -- has to stay reachable even while that whole
+   section is display:none (see .categories-hidden below). */
+.sale-form__resizer-toggle {
+    position: relative;
+    width: 1.6rem;
+    height: 2.4rem;
+    padding: 0;
+    background: #ffffff;
+    color: #1c2b2d;
+    border: 1px solid #ccc;
+    border-radius: 0.4rem;
+    font-size: 1rem;
+    line-height: 1;
+    z-index: 1;
+}
+
+.sale-form__workspace.categories-hidden .sale-form__categories {
+    display: none;
 }
 
 .sale-item-search-row {
@@ -576,6 +651,15 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
     overflow-x: hidden !important;
 }
 
+/* Smaller header labels -- at the default size "Unit Price"/"Sum" etc.
+   were the widest thing in their own column, forcing the column wider
+   than the actual numbers in it needed (compounds with the narrower
+   widths/minWidths on these columns in sale_add.html -- both were needed
+   together, not just one). */
+#sale-items-table .tabulator-col-title {
+    font-size: 0.8rem;
+}
+
 /* Thinner than a regular data row -- it's a running summary (Qty/Sum
    totals), not another line item, and doesn't need the same row height.
    Tabulator sets the row's own height/min-height inline via JS (measured
@@ -638,8 +722,13 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
 }
 
 .sale-form__categories {
-    flex: 1;
-    min-width: 280px;
+    /* Width, not a flex ratio, so it can be dragged to a specific size --
+       --categories-width is set from JS (syncCategoriesWidth), restored
+       from localStorage on load, 320px the first time anyone opens this
+       screen on a given browser/device. */
+    flex: 0 0 var(--categories-width, 320px);
+    min-width: 200px;
+    max-width: 70vw;
 }
 
 .section-header {
