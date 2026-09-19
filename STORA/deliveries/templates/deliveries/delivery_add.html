@@ -74,6 +74,10 @@
                     {{ form.document_date.label_tag }}
                     {{ form.document_date }}
                 </p>
+                <p>
+                    {{ form.comment.label_tag }}
+                    {{ form.comment }}
+                </p>
             </div>
         </section>
 
@@ -189,7 +193,8 @@
                             time_of_delivery: document.querySelector('[name="time_of_delivery"]') ? document.querySelector('[name="time_of_delivery"]').value : '',
                             document_type: document.getElementById('id_document_type') ? document.getElementById('id_document_type').value : '',
                             document_number: document.querySelector('[name="document_number"]') ? document.querySelector('[name="document_number"]').value : '',
-                            document_date: document.querySelector('[name="document_date"]') ? document.querySelector('[name="document_date"]').value : ''
+                            document_date: document.querySelector('[name="document_date"]') ? document.querySelector('[name="document_date"]').value : '',
+                            comment: document.querySelector('[name="comment"]') ? document.querySelector('[name="comment"]').value : ''
                         },
                         formset_data: window.getDeliveryItemsDraftState ? window.getDeliveryItemsDraftState() : {TOTAL_FORMS: 0, forms: []}
                     })

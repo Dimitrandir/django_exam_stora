@@ -7,20 +7,25 @@ from STORA.deliveries.models import DeliveryAttributes, DeliveryItems, DocumentT
 class DeliveryForms(forms.ModelForm):
     class Meta:
         model = DeliveryAttributes
-        fields = ['receiver', 'supplier', 'time_of_delivery', 'document_type', 'document_number', 'document_date']
+        fields = [
+            'receiver', 'supplier', 'time_of_delivery', 'document_type', 'document_number', 'document_date',
+            'comment',
+        ]
         labels = {
             'receiver': 'Receiver',
             'time_of_delivery': 'Delivery Date',
             'document_type': 'Document Type',
             'document_number': 'Document Number',
             'document_date': 'Document Date',
-            'supplier': 'Supplier'
+            'supplier': 'Supplier',
+            'comment': 'Comment',
         }
         widgets = {
             'document_date': forms.DateInput(attrs={'type': 'date'}),
             # Rendered as a plain <select> by default -- the template swaps
             # this for a search+popup picker in JS, same as `supplier` below.
             'supplier': forms.HiddenInput(),
+            'comment': forms.Textarea(attrs={'rows': 2}),
         }
 
     def __init__(self, *args, current_user=None, **kwargs):
@@ -40,18 +45,20 @@ class WriteOffForm(forms.ModelForm):
 
     class Meta:
         model = DeliveryAttributes
-        fields = ['receiver', 'supplier', 'time_of_delivery', 'document_number', 'document_date']
+        fields = ['receiver', 'supplier', 'time_of_delivery', 'document_number', 'document_date', 'comment']
         labels = {
             'receiver': 'Receiver',
             'time_of_delivery': 'Write-off Date',
             'document_number': 'Internal Number',
             'document_date': 'Document Date',
             'supplier': 'Supplier',
+            'comment': 'Comment',
         }
         widgets = {
             'document_date': forms.DateInput(attrs={'type': 'date'}),
             'supplier': forms.HiddenInput(),
             'document_number': forms.TextInput(attrs={'placeholder': 'Leave blank to auto-generate'}),
+            'comment': forms.Textarea(attrs={'rows': 2}),
         }
 
     def __init__(self, *args, current_user=None, **kwargs):
@@ -71,16 +78,18 @@ class ScrapForm(forms.ModelForm):
 
     class Meta:
         model = DeliveryAttributes
-        fields = ['receiver', 'time_of_delivery', 'document_number', 'document_date']
+        fields = ['receiver', 'time_of_delivery', 'document_number', 'document_date', 'comment']
         labels = {
             'receiver': 'Receiver',
             'time_of_delivery': 'Scrap Date',
             'document_number': 'Internal Number',
             'document_date': 'Document Date',
+            'comment': 'Comment',
         }
         widgets = {
             'document_date': forms.DateInput(attrs={'type': 'date'}),
             'document_number': forms.TextInput(attrs={'placeholder': 'Leave blank to auto-generate'}),
+            'comment': forms.Textarea(attrs={'rows': 2}),
         }
 
     def __init__(self, *args, current_user=None, **kwargs):

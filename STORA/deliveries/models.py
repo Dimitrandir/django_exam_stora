@@ -79,6 +79,11 @@ class DeliveryAttributes(models.Model):
     # to tell apart same-day write-offs to the same supplier.
     document_number = models.CharField(max_length=20, blank=True, null=True, verbose_name='Document Number')
     document_date = models.DateField(verbose_name='Document Date')
+    # Free-text note -- shared by all three movement types (Delivery/
+    # Write-off/Scrap), same as every other field on this model. TextField,
+    # not CharField, since a receiver/warehouse clerk may want more than a
+    # short label (e.g. "3 crates damaged in transit, supplier notified").
+    comment = models.TextField(blank=True, null=True, verbose_name='Comment')
     total_amount = models.DecimalField(default=0.00, decimal_places=2, max_digits=12)
 
     class Meta:

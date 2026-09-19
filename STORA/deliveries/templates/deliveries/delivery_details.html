@@ -36,6 +36,12 @@
             <strong>Total Amount:</strong>
             <span>{{ delivery.total_amount|currency }}</span>
         </div>
+        {% if delivery.comment %}
+        <div class="summary-item">
+            <strong>Comment:</strong>
+            <span>{{ delivery.comment }}</span>
+        </div>
+        {% endif %}
     </section>
 
     <section class="delivery-items">

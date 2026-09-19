@@ -193,6 +193,7 @@ class DeliveriesReportView(StaffPermissionRequiredMixin, ReportsBaseView):
                 'document_number': delivery.document_number or '',
                 'document_date': delivery.document_date.isoformat() if delivery.document_date else '',
                 'supplier': delivery.supplier.name if delivery.supplier else '',
+                'comment': delivery.comment or '',
                 'total_amount': float(delivery.total_amount or 0),
                 'total_amount_without_vat': float(self._total_without_vat(delivery)),
                 'view_url': reverse('delivery_details', args=[delivery.pk]),

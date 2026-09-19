@@ -132,6 +132,7 @@ def deliveries_add(request, movement_type=DeliveryAttributes.MOVEMENT_DELIVERY):
                 'document_type': request.POST.get('document_type', ''),
                 'document_number': request.POST.get('document_number', ''),
                 'document_date': request.POST.get('document_date', ''),
+                'comment': request.POST.get('comment', ''),
             },
             formset_data=extracted_state,
             active=True,
