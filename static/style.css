@@ -267,6 +267,53 @@ input[type="text"], input[type="number"], input[type="email"], select, textarea 
     padding: 0.6rem 1.5rem;
 }
 
+/* The site navbar wastes a full horizontal strip on a touchscreen till --
+   hidden entirely on this page (see body.pos-compact-nav below); these two
+   buttons replace it: one reopens the exact same menu as an overlay
+   (nothing duplicated -- see the JS wiring in sale_add.html), the other
+   toggles real browser fullscreen (kiosk-style, no address bar). Explicit
+   color/background here, not inherited -- the global `button { color:
+   white }` rule (see the note further down this file) would otherwise
+   make these invisible against their own light background. */
+.pos-header__controls {
+    display: flex;
+    gap: 0.4rem;
+}
+
+.pos-icon-btn {
+    background: #ffffff;
+    color: #1c2b2d;
+    border: 1px solid #ccc;
+    border-radius: 0.4rem;
+    width: 2.4rem;
+    height: 2.4rem;
+    padding: 0;
+    font-size: 1.2rem;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* body.pos-compact-nav: the site's own top navbar (STORA brand + its full
+   menu strip) is dead weight on the cashier screen -- hidden by default,
+   and only reappears (as a fixed overlay, so it doesn't push the page's
+   own content down) while pos-nav-open is toggled on by the ☰ button
+   above. Nothing about the navbar's own markup/links/JS changes -- this
+   is purely a show/hide layer over the exact same element. */
+body.pos-compact-nav nav.navbar {
+    display: none;
+}
+
+body.pos-compact-nav.pos-nav-open nav.navbar {
+    display: flex;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 2000;
+}
+
 .pos-header__info {
     display: flex;
     flex-direction: column;
@@ -401,6 +448,22 @@ input[type="text"], input[type="number"], input[type="email"], select, textarea 
     min-width: 0;
 }
 
+/* The results dropdown (.global-search-results, shared with the navbar
+   search) normally opens downward via `top: 100%` -- fine when the
+   on-screen keyboard is hidden, but the keyboard sits only a few px below
+   this same input once it's open, leaving no usable room to shrink into.
+   Flipping it to open upward instead -- into the page content above the
+   search row, which always has plenty of room -- is what actually keeps
+   it clear of the keyboard, not a smaller max-height (confirmed live: the
+   real gap measured ~6px, well under any usable dropdown size). Toggled
+   by syncResultsDropdownDirection() in sale_add.html. */
+.sale-item-search-wrapper.keyboard-open .global-search-results {
+    top: auto;
+    bottom: 100%;
+    margin-top: 0;
+    margin-bottom: 2px;
+}
+
 /* Docked inside the search box itself, flush right, instead of sitting
    next to it as a separate button. */
 #sale-item-search-input {
@@ -499,6 +562,18 @@ input[type="text"], input[type="number"], input[type="email"], select, textarea 
    scrolls just the rows once there are more than fit on screen. */
 .sale-items-table-container {
     margin-bottom: 0.75rem;
+}
+
+/* fitColumns shrinks the cart's columns to fit, but only down to
+   Tabulator's own per-column floor -- on a narrow touch tablet/phone
+   viewport the Qty/Unit Price/Sum columns' combined floor can still be
+   wider than what's actually left next to the categories panel, and
+   fitColumns responds to that by scrolling sideways rather than clipping.
+   A cashier mid-sale scrolling a table left/right on a touchscreen is
+   exactly the wrong interaction, so this hard-clips it instead -- worst
+   case a very narrow screen packs the columns tightly, never scrolls. */
+#sale-items-table .tabulator-tableholder {
+    overflow-x: hidden !important;
 }
 
 /* Thinner than a regular data row -- it's a running summary (Qty/Sum

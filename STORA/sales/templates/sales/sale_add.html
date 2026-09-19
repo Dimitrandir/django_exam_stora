@@ -5,6 +5,7 @@
 
 {% block main_class %}main-wide{% endblock %}
 {% block container_class %}container-fluid{% endblock %}
+{% block body_class %}pos-compact-nav{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
@@ -13,6 +14,17 @@
 {% block content %}
 <section class="sale-form">
     <header class="page-header pos-header">
+        {% comment %}
+        Replaces the full site navbar (hidden on this page -- see
+        .pos-compact-nav in style.css) with one small trigger that opens
+        the exact same menu as an overlay, plus a fullscreen toggle for a
+        touchscreen till where the browser chrome/address bar is just
+        wasted space.
+        {% endcomment %}
+        <div class="pos-header__controls">
+            <button type="button" id="pos-menu-toggle-btn" class="pos-icon-btn" title="Menu">☰</button>
+            <button type="button" id="pos-fullscreen-btn" class="pos-icon-btn" title="Fullscreen">⛶</button>
+        </div>
         <div class="pos-header__info">
             <h1>New Sale</h1>
             <p class="pos-header__meta"><span id="live-clock"></span> — {{ user.username }}</p>
@@ -322,6 +334,56 @@
             setInterval(tick, 1000);
         })();
 
+        // -- Compact menu button -- reopens the site's own navbar (hidden
+        // on this page, see body.pos-compact-nav in style.css) as a fixed
+        // overlay instead of duplicating its links. Reuses Bootstrap's own
+        // Collapse for the actual menu content -- looked up lazily INSIDE
+        // the click handler, not at this top-level IIFE: base.html loads
+        // bootstrap.bundle.min.js AFTER this whole content block (right
+        // before </main>), so `bootstrap` genuinely doesn't exist yet the
+        // instant this script runs. Referencing it here at page-load time
+        // threw a ReferenceError that silently killed everything ELSE in
+        // this same <script> tag below it (autofocus, the cart Tabulator,
+        // category panel...) -- confirmed live. By the time a cashier
+        // actually taps the button, the page has long finished loading. --
+        (function () {
+            const menuBtn = document.getElementById('pos-menu-toggle-btn');
+            const navbarCollapseEl = document.getElementById('mainNavbar');
+
+            function closeMenu() {
+                document.body.classList.remove('pos-nav-open');
+                bootstrap.Collapse.getOrCreateInstance(navbarCollapseEl, {toggle: false}).hide();
+            }
+
+            menuBtn.addEventListener('click', () => {
+                if (document.body.classList.contains('pos-nav-open')) {
+                    closeMenu();
+                } else {
+                    document.body.classList.add('pos-nav-open');
+                    bootstrap.Collapse.getOrCreateInstance(navbarCollapseEl, {toggle: false}).show();
+                }
+            });
+
+            document.addEventListener('click', (e) => {
+                if (
+                    document.body.classList.contains('pos-nav-open')
+                    && !e.target.closest('nav.navbar')
+                    && !e.target.closest('#pos-menu-toggle-btn')
+                ) {
+                    closeMenu();
+                }
+            });
+
+            const fullscreenBtn = document.getElementById('pos-fullscreen-btn');
+            fullscreenBtn.addEventListener('click', () => {
+                if (document.fullscreenElement) {
+                    document.exitFullscreen();
+                } else {
+                    document.documentElement.requestFullscreen().catch(() => {});
+                }
+            });
+        })();
+
         // -- Basket tabs (top right) -- tapping a different tab switches
         // which draft the server loads on the next request, then reloads
         // the page to actually show it (simplest thing that works, same
@@ -576,24 +638,29 @@
             height: 'calc(100vh - 480px)',
             placeholder: 'Scan or search a product above to start the sale.',
             columns: [
-                {formatter: 'rownum', title: '#', width: 40, hozAlign: 'center', headerSort: false},
-                {title: 'Name', field: 'product_name', widthGrow: 3},
+                {formatter: 'rownum', title: '#', width: 34, minWidth: 30, hozAlign: 'center', headerSort: false},
+                {title: 'Name', field: 'product_name', widthGrow: 3, minWidth: 70},
                 {
                     // bottomCalc sums the raw numbers regardless of unit --
                     // fine for an all-piece or all-weight cart, but mixing
                     // pcs and kg in the same sum stops being meaningful
                     // (same caveat as the Products grid's Stock column).
-                    title: 'Qty', field: 'sale_quantity', width: 70, hozAlign: 'right',
+                    // Narrower + a lower minWidth than before -- on a narrow
+                    // touch/phone viewport fitColumns needs the room to
+                    // shrink these three below their old fixed widths
+                    // before the CSS overflow-x:hidden clip (see style.css)
+                    // has to step in.
+                    title: 'Qty', field: 'sale_quantity', width: 56, minWidth: 48, hozAlign: 'right',
                     editor: numberEditor, editorParams: quantityEditorParams,
                     bottomCalc: 'sum', bottomCalcFormatter: (cell) => Number(cell.getValue() || 0).toFixed(3),
                 },
                 {
-                    title: 'Unit Price', field: 'price_at_sale', width: 85, hozAlign: 'right',
+                    title: 'Unit Price', field: 'price_at_sale', width: 68, minWidth: 55, hozAlign: 'right',
                     editor: numberEditor, editorParams: {min: 0.01, step: 0.01},
                     formatter: (cell) => Number(cell.getValue() || 0).toFixed(2),
                 },
                 {
-                    title: 'Sum', field: 'total_price_row', width: 85, hozAlign: 'right',
+                    title: 'Sum', field: 'total_price_row', width: 68, minWidth: 55, hozAlign: 'right',
                     editor: numberEditor, editorParams: {min: 0, step: 0.01},
                     formatter: (cell) => Number(cell.getValue() || 0).toFixed(2),
                     bottomCalc: 'sum', bottomCalcFormatter: (cell) => Number(cell.getValue() || 0).toFixed(2),
@@ -702,6 +769,7 @@
             clearRowSelection();
             selectedRowForDelete = row;
             row.getElement().classList.add('is-selected-for-delete');
+            row.getElement().scrollIntoView({block: 'nearest'});
         });
 
         // Sends removed lines to the audit log (log_removed_sale_item) --
@@ -760,6 +828,16 @@
         // picking/scanning a match in the search box just below -- already-
         // in-the-cart bumps quantity by one instead of adding a duplicate
         // row, same as scanning the same barcode twice.
+        // Tabulator doesn't scroll to a row on its own just because it was
+        // added or updated -- on a cart with more rows than fit, a freshly
+        // scanned/bumped item could land outside the visible area with
+        // nothing telling the cashier it actually got added. scrollToRow
+        // rejects if the row isn't currently rendered (virtualization edge
+        // case) -- harmless here, just means it was already visible.
+        function scrollToRowSafely(row) {
+            saleItemsTable.scrollToRow(row, 'nearest', false).catch(() => {});
+        }
+
         function addProductToCart(product) {
             clearHeaderChangeDisplay();
             const existing = saleItemsTable.getRows()
@@ -768,8 +846,12 @@
                 const newQty = (parseFloat(existing.getData().sale_quantity) || 0) + 1;
                 existing.update({sale_quantity: newQty});
                 recalcRow(existing, 'sale_quantity');
+                scrollToRowSafely(existing);
             } else {
-                saleItemsTable.addRow(buildRow(product)).then(updateTransactionTotal);
+                saleItemsTable.addRow(buildRow(product)).then((row) => {
+                    updateTransactionTotal();
+                    scrollToRowSafely(row);
+                });
             }
             saveDraft();
         }
@@ -786,6 +868,29 @@
         let currentResults = [];
         let highlightedIndex = -1;
 
+        // Ready for the very first scan/type the instant the screen opens --
+        // without this, a cashier scanning immediately on a fresh "New
+        // Sale" page (nothing else clicked yet) would have it go nowhere.
+        searchInput.focus();
+
+        // -- Telling a barcode-scanner "keystroke burst" apart from a human
+        // typing, so Enter always resolves a scan to an exact
+        // code/barcode match -- even if the digits happen to also fuzzy-
+        // match some product's name/code in the dropdown below (rare, but
+        // possible for a numeric internal_code), which would otherwise
+        // make Enter pick that WRONG highlighted suggestion instead of the
+        // scanned product. A USB/Bluetooth HID scanner emulates keystrokes
+        // at roughly 1-10ms apart; even fast human typing rarely holds
+        // under ~60ms/char for a whole code -- 30ms/char is comfortably
+        // between the two. burstStartTime resets on the first character
+        // after the box was empty (a fresh scan or a fresh manual entry).
+        let burstStartTime = null;
+
+        function looksLikeScannerInput(value) {
+            if (!burstStartTime || value.length < 4) return false;
+            return (performance.now() - burstStartTime) / value.length < 30;
+        }
+
         function highlightResult(index) {
             const items = resultsBox.querySelectorAll('.global-search-result');
             items.forEach(el => el.classList.remove('is-highlighted'));
@@ -794,6 +899,21 @@
                 items[index].scrollIntoView({block: 'nearest'});
             }
             highlightedIndex = index;
+        }
+
+        // The results dropdown normally opens downward, right below the
+        // search input -- fine when the on-screen keyboard is hidden, but
+        // the keyboard sits only ~6px below that same input once it's
+        // open, leaving essentially no room to shrink into (confirmed
+        // live -- there's no usable "smaller max-height" that avoids the
+        // overlap, the gap is just too small). Flipping the dropdown to
+        // open UPWARD instead -- into the page content above the search
+        // row, which always has plenty of room -- is what actually keeps
+        // it off the keyboard, not a smaller size. See
+        // .sale-item-search-wrapper.keyboard-open in style.css.
+        function syncResultsDropdownDirection() {
+            const searchWrapper = searchInput.closest('.sale-item-search-wrapper');
+            searchWrapper.classList.toggle('keyboard-open', keyboardEl.style.display !== 'none');
         }
 
         function renderResults(results) {
@@ -812,6 +932,7 @@
                 resultsBox.appendChild(row);
             });
             resultsBox.classList.add('is-open');
+            syncResultsDropdownDirection();
             // First match pre-highlighted -- Enter immediately picks it
             // without needing an extra arrow-down first.
             highlightResult(0);
@@ -858,6 +979,7 @@
         }
 
         searchInput.addEventListener('input', () => {
+            if (searchInput.value.length === 1) burstStartTime = performance.now();
             runSearch();
             updateScaleHint(searchInput.value);
         });
@@ -897,12 +1019,15 @@
             if (e.key !== 'Enter') return;
             e.preventDefault();
 
-            if (hasOpenResults) {
+            // A scan always resolves as an exact code/barcode, even if the
+            // digits happened to also fuzzy-match something in the open
+            // dropdown -- see looksLikeScannerInput above.
+            if (hasOpenResults && !looksLikeScannerInput(searchInput.value.trim())) {
                 selectProduct(currentResults[highlightedIndex >= 0 ? highlightedIndex : 0]);
                 return;
             }
 
-            // No dropdown match -- fall back to an exact code/barcode match
+            // No dropdown match (or a scan bypassing it above) -- fall back to an exact code/barcode match
             // (including a decoded scale barcode), for a barcode scanner's
             // rapid type-then-Enter faster than the search above catches up.
             const code = searchInput.value.trim();
@@ -1068,6 +1193,7 @@
             // hiding it moves the table container's top edge, so the
             // available height for the cart needs recomputing too.
             syncCartHeight();
+            syncResultsDropdownDirection();
         });
 
         // -- Submit: rebuild items-<n>-<field> hidden inputs from the

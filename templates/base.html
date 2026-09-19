@@ -11,7 +11,7 @@
     <link rel="stylesheet" href="{% static_v 'style.css' %}">
     {% block extra_css %}{% endblock %}
 </head>
-<body class="bg-light d-flex flex-column min-vh-100">
+<body class="bg-light d-flex flex-column min-vh-100 {% block body_class %}{% endblock %}">
 
 <nav class="navbar navbar-expand-xl navbar-dark bg-dark">
     <div class="container">
