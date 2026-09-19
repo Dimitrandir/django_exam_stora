@@ -30,7 +30,61 @@ uses, independent of whether this delivery gets submitted at all.
                placeholder="Search product by name or code, or scan a barcode..." autocomplete="off">
         <div id="delivery-item-search-results" class="global-search-results"></div>
     </div>
-    <button type="button" id="delivery-items-export-btn" class="btn btn-outline-secondary btn-sm ms-2">Export to Excel</button>
+    <div>
+        <button type="button" id="delivery-delete-line-btn" class="button-delete-line btn btn-sm ms-2">Delete Line</button>
+        <button type="button" id="delivery-discount-btn" class="btn btn-outline-primary btn-sm ms-2">Discount</button>
+        <button type="button" id="delivery-items-export-btn" class="btn btn-outline-secondary btn-sm ms-2">Export to Excel</button>
+    </div>
+</div>
+<p class="text-muted small mb-2">Tap a row to select it, then Delete Line to remove it, or Discount to discount just that line.</p>
+
+<!-- Discount tool -- pure price-adjustment convenience (rewrites Unit
+     Price/Line Total on the affected rows, same as typing new values by
+     hand), not a stored/persisted discount record -- see the JS below for
+     why. Reuses the row-tap selection above (selectedRow) for "Selected
+     line" scope, same as Delete Line. -->
+<div class="modal fade" id="deliveryDiscountModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Apply Discount</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label d-block">Apply to</label>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" name="discount-target" id="discount-target-document" value="document" checked>
+                        <label class="form-check-label" for="discount-target-document">Whole document</label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" name="discount-target" id="discount-target-line" value="line">
+                        <label class="form-check-label" for="discount-target-line">Selected line</label>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label d-block">Type</label>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" name="discount-type" id="discount-type-percent" value="percent" checked>
+                        <label class="form-check-label" for="discount-type-percent">Percentage %</label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" name="discount-type" id="discount-type-amount" value="amount">
+                        <label class="form-check-label" for="discount-type-amount">Fixed amount</label>
+                    </div>
+                </div>
+                <div class="mb-2">
+                    <label for="discount-value-input" class="form-label">Value</label>
+                    <input type="number" id="discount-value-input" class="form-control" min="0" step="0.01">
+                </div>
+                <p class="text-muted small mb-0">Applied before VAT -- each affected row's price without VAT is reduced first, then VAT is recalculated on top of the new price.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" id="discount-apply-btn" class="btn btn-primary">Apply</button>
+            </div>
+        </div>
+    </div>
 </div>
 
 {% if is_scrap %}
@@ -452,18 +506,133 @@ document.addEventListener('DOMContentLoaded', function () {
             formatter: scrapReasonFormatter,
         },
         {% endif %}
-        {
-            title: 'Remove', field: 'remove', width: 90, hozAlign: 'center', headerFilter: false, hideable: false,
-            formatter: function () { return '<button type="button" class="btn btn-sm btn-outline-danger">Remove</button>'; },
-            cellClick: function (e, cell) {
-                var data = cell.getRow().getData();
-                if (data.id) {
-                    pendingDeletions.push(data);
-                }
-                cell.getRow().delete();
-            },
-        },
     ], {placeholder: 'No products added to this delivery yet.'});
+
+    // -- Selecting a line to delete -- tap its row (same pattern as the
+    // Sales cart, see CLAUDE.md "Триене на ред вече не е бутон в самия
+    // грид"), instead of a per-row Remove button. A cell with its own
+    // editor swallows the click (Tabulator's usual behavior), so in
+    // practice this fires from tapping Code/Name/Expiry Date/etc. --
+    var selectedRow = null;
+
+    function clearRowSelection() {
+        if (selectedRow) {
+            selectedRow.getElement().classList.remove('is-selected-for-delete');
+            selectedRow = null;
+        }
+    }
+
+    table.on('rowClick', function (e, row) {
+        if (selectedRow === row) {
+            clearRowSelection();
+            return;
+        }
+        clearRowSelection();
+        selectedRow = row;
+        row.getElement().classList.add('is-selected-for-delete');
+    });
+
+    document.getElementById('delivery-delete-line-btn').addEventListener('click', function () {
+        if (!selectedRow) {
+            alert('Select a line first (tap its row).');
+            return;
+        }
+        if (!confirm('Сигурен ли си, че искаш да изтриеш този ред?')) return;
+        var data = selectedRow.getData();
+        if (data.id) pendingDeletions.push(data);
+        selectedRow.delete();
+        selectedRow = null;
+    });
+
+    // -- Discount: a data-entry convenience, not a stored/persisted
+    // discount record -- it just rewrites the affected row(s)' price
+    // without VAT (and everything derived from it: price with VAT, line
+    // totals, markup %) via the same recalcRow() the editable Unit Price
+    // cell already uses, exactly as if the clerk had retyped each unit
+    // price by hand after a supplier discount. Applied to price WITHOUT
+    // VAT first, then VAT is recalculated on top -- discounts apply to the
+    // taxable base, not the VAT-inclusive price. --
+    var discountModalEl = document.getElementById('deliveryDiscountModal');
+
+    document.getElementById('delivery-discount-btn').addEventListener('click', function () {
+        var lineRadio = document.getElementById('discount-target-line');
+        var docRadio = document.getElementById('discount-target-document');
+        if (selectedRow) {
+            lineRadio.disabled = false;
+            lineRadio.checked = true;
+        } else {
+            lineRadio.disabled = true;
+            lineRadio.checked = false;
+            docRadio.checked = true;
+        }
+        document.getElementById('discount-value-input').value = '';
+        // Lazy reference -- bootstrap.bundle.min.js loads after this
+        // content block in base.html, so a top-level `bootstrap.*`
+        // reference would throw before the page ever finished loading
+        // (see CLAUDE.md "Технически капани" for the exact incident this
+        // mirrors on the POS screen's own menu button).
+        bootstrap.Modal.getOrCreateInstance(discountModalEl).show();
+    });
+
+    document.getElementById('discount-apply-btn').addEventListener('click', function () {
+        var target = document.querySelector('input[name="discount-target"]:checked').value;
+        var type = document.querySelector('input[name="discount-type"]:checked').value;
+        var value = parseFloat(document.getElementById('discount-value-input').value);
+        if (isNaN(value) || value <= 0) {
+            alert('Enter a discount value greater than 0.');
+            return;
+        }
+
+        var rows = (target === 'line' && selectedRow) ? [selectedRow] : table.getRows();
+        if (!rows.length) {
+            alert('No rows to apply a discount to.');
+            return;
+        }
+
+        if (type === 'percent') {
+            if (value >= 100) {
+                alert('Percentage discount must be less than 100.');
+                return;
+            }
+            rows.forEach(function (row) {
+                var d = row.getData();
+                var withoutVat = parseFloat(d.price_without_vat) || 0;
+                row.update({price_without_vat: round2(withoutVat * (1 - value / 100))});
+                recalcRow(row, 'price_without_vat');
+            });
+        } else {
+            // Fixed amount, without VAT -- split proportionally across the
+            // affected rows' current (without-VAT) line totals, weighted
+            // by each row's own share. A single selected line just gets
+            // the whole amount taken off its own line total -- same
+            // formula, "proportional across one row" is just 100% of it.
+            var totalWithoutVat = rows.reduce(function (sum, row) {
+                var d = row.getData();
+                var qty = parseFloat(d.delivery_quantity) || 0;
+                return sum + qty * (parseFloat(d.price_without_vat) || 0);
+            }, 0);
+            if (totalWithoutVat <= 0) {
+                alert('Add a price to the affected row(s) first.');
+                return;
+            }
+            if (value > totalWithoutVat) {
+                alert('Discount amount is larger than the total it would be applied to.');
+                return;
+            }
+            rows.forEach(function (row) {
+                var d = row.getData();
+                var qty = parseFloat(d.delivery_quantity) || 0;
+                var withoutVat = parseFloat(d.price_without_vat) || 0;
+                var rowTotalWithoutVat = qty * withoutVat;
+                var share = rowTotalWithoutVat / totalWithoutVat * value;
+                var newWithoutVat = qty ? (rowTotalWithoutVat - share) / qty : 0;
+                row.update({price_without_vat: round2(newWithoutVat)});
+                recalcRow(row, 'price_without_vat');
+            });
+        }
+
+        bootstrap.Modal.getInstance(discountModalEl).hide();
+    });
 
     // Pressing Enter in any editable cell jumps straight to the NEXT
     // editable cell in the row -- not just Qty -> Price, all the way to the
