@@ -33,6 +33,16 @@ DEBUG = os.environ.get('DEBUG', 'True') == 'True'
 
 ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '*').split(',')
 
+# Needed only behind a reverse proxy that terminates TLS itself (e.g. Railway,
+# any cloud host) -- the app receives plain HTTP from the proxy and would
+# otherwise think every request is insecure, breaking CSRF checks on POSTs
+# made over real HTTPS. The Windows pilot (waitress with no proxy in front,
+# see DEPLOYMENT.md) never sends this header, so this is a no-op there.
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+CSRF_TRUSTED_ORIGINS = [
+    origin for origin in os.environ.get('CSRF_TRUSTED_ORIGINS', '').split(',') if origin
+]
+
 
 # Application definition
 
