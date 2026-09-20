@@ -216,6 +216,86 @@ input[type="text"], input[type="number"], input[type="email"], select, textarea 
     color: #842029;
 }
 
+.button-increment-qty {
+    background: #d1e7dd;
+    border: 1px solid var(--success-color);
+    color: #0a3622;
+}
+
+.button-edit-line {
+    background: #e2e3ff;
+    border: 1px solid #5c5ce0;
+    color: #2c2c8a;
+}
+
+/* Edit Line modal: tap Quantity or Price to make it the keypad's target
+   (same idea as the checkout modal's Paid/Card-amount, just chosen by tap
+   here instead of by payment method) -- .is-editing highlights whichever
+   one is currently live. --readonly is the Price tile for anyone without
+   can_edit_price: visible for reference, but not a tappable target. */
+#edit-line-qty-tile,
+#edit-line-price-tile {
+    cursor: pointer;
+}
+
+.checkout-tile.is-editing {
+    border-left-color: var(--accent-color);
+    box-shadow: 0 0 0 2px rgba(52, 152, 219, .25);
+}
+
+.checkout-tile--readonly {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+/* Cart text size +/- (sale_add.html) -- --sale-table-font-size is set
+   inline by JS (persisted per browser via localStorage), this default is
+   only what shows before that first runs. Scoped to #sale-items-table
+   specifically -- no other Tabulator grid in the app is affected. */
+#sale-items-table {
+    --sale-table-font-size: 0.95rem;
+}
+
+#sale-items-table .tabulator-cell,
+#sale-items-table .tabulator-col-title {
+    font-size: var(--sale-table-font-size);
+}
+
+/* Tucked into the Name column's own bottom-calc cell (nothing else uses
+   that space -- Name has no sum) instead of a separate row above the
+   table, per live feedback ("да не заемат от мястото"). Sized to fit the
+   calc row's own short height, not the 1.8rem used elsewhere on this
+   screen (the checkout/discount modals' buttons have a whole row to
+   themselves; this one doesn't). */
+.sale-table-font-controls {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.sale-table-font-controls__label {
+    font-size: 0.72rem;
+    color: #7c8894;
+}
+
+.sale-table-font-btn {
+    width: 1.3rem;
+    height: 1.3rem;
+    padding: 0;
+    border: 1px solid #ccc;
+    border-radius: 0.3rem;
+    background: white;
+    color: var(--primary-color);
+    font-size: 0.8rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.sale-table-font-btn:hover {
+    border-color: var(--accent-color);
+    color: var(--accent-color);
+}
+
 /* Pushed to the far right of the footer (margin-left: auto), separate
    from the Delete Line/Void Sale/Complete Sale cluster -- a visually
    distinct, deliberate destination, not just another cart-correction
@@ -1566,6 +1646,64 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
     left: auto;
     right: -7px;
     transform: translateY(-50%) rotate(-135deg);
+}
+
+/* "Choose a category" tree modal (static/js/category-tree-picker.js) --
+   alternative to typing in the search box, for browsing Category.parent's
+   hierarchy directly. Rows sized for a touchscreen tap, not just a mouse
+   click -- this app is used on a POS touchscreen as much as a desktop. */
+.category-tree-picker {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.category-tree {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 360px;
+    overflow-y: auto;
+}
+
+.category-tree.is-collapsed {
+    display: none;
+}
+
+.category-tree__row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.65rem 0.5rem;
+    border-radius: 0.4rem;
+    cursor: pointer;
+}
+
+.category-tree__row:hover {
+    background: var(--light-bg);
+}
+
+.category-tree__toggle {
+    flex: 0 0 auto;
+    width: 1.6rem;
+    height: 1.6rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    color: #7c8894;
+    font-size: 1rem;
+    transition: transform 0.15s ease;
+}
+
+.category-tree__toggle.is-open {
+    transform: rotate(90deg);
+}
+
+.category-tree__label {
+    font-size: 0.92rem;
+    color: var(--primary-color);
 }
 
 .field__row {

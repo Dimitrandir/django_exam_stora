@@ -488,6 +488,14 @@ class CategorySearchView(LoginRequiredMixin, StaffPermissionRequiredMixin, View)
         query = request.GET.get('q', '').strip()
         categories = Category.objects.all()
 
+        # Used by the "Parent Category" picker on the category form itself
+        # -- a category can't be its own parent or a descendant's, the same
+        # cycle-prevention CategoryForm's <select> queryset already
+        # enforces server-side (see CategoryUpdateView.excluded_category_ids).
+        exclude_ids = [v for v in request.GET.get('exclude', '').split(',') if v]
+        if exclude_ids:
+            categories = categories.exclude(pk__in=exclude_ids)
+
         if query:
             categories = (
                 categories
@@ -502,6 +510,27 @@ class CategorySearchView(LoginRequiredMixin, StaffPermissionRequiredMixin, View)
 
         return JsonResponse({'results': [
             {'id': category.pk, 'name': category.name}
+            for category in categories
+        ]})
+
+
+class CategoryTreeView(LoginRequiredMixin, StaffPermissionRequiredMixin, View):
+    """Backs the "Choose a category" tree modal (see static/js/category-
+    tree-picker.js) -- an alternative to typing in the search box above,
+    for when it's easier to browse the hierarchy than to know the name
+    up front. Unlike CategorySearchView, this always returns EVERY
+    category (no query, no RESULTS_LIMIT) -- the client needs the whole
+    set to build the tree, and the category count in this app is small
+    enough (single digits to low dozens) that this is one cheap request,
+    not a scalability concern the way a full product/supplier dump would
+    be."""
+
+    permission_required = 'products.view_category'
+
+    def get(self, request):
+        categories = Category.objects.order_by('name')
+        return JsonResponse({'results': [
+            {'id': category.pk, 'name': category.name, 'parent_id': category.parent_id}
             for category in categories
         ]})
 
@@ -689,6 +718,14 @@ class CategoryCreateView(LoginRequiredMixin, StaffPermissionRequiredMixin, Creat
     template_name = 'products/category_form.html'
     success_url = reverse_lazy('category_list')
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        # Nothing to exclude yet for a brand-new category -- there's no
+        # instance/descendants to form a cycle with. See CategoryUpdateView
+        # for the real exclusion list.
+        context['excluded_category_ids'] = []
+        return context
+
     def form_valid(self, form):
         response = super().form_valid(form)
         # "+ New category" on the product form opens this in a popup window
@@ -711,6 +748,16 @@ class CategoryUpdateView(LoginRequiredMixin, StaffPermissionRequiredMixin, Updat
     template_name = 'products/category_form.html'
     context_object_name = 'category'
     success_url = reverse_lazy('category_list')
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        # Same cycle-prevention set CategoryForm already restricts the
+        # `parent` <select>'s queryset to (self + every descendant) --
+        # exposed here too so the search box/tree picker's JS can leave
+        # the same categories out client-side, instead of only catching an
+        # invalid pick server-side after a round trip.
+        context['excluded_category_ids'] = [self.object.pk] + self.object.get_descendant_ids()
+        return context
 
 
 class CategoryDeleteView(LoginRequiredMixin, StaffPermissionRequiredMixin, DeleteView):

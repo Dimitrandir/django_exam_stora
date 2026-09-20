@@ -10,6 +10,7 @@
     <select id="ingredient-category-filter" class="form-select form-select-sm" style="max-width: 220px;">
         <option value="">All categories</option>
     </select>
+    <button type="button" id="ingredient-category-tree-btn" class="btn btn-outline-secondary btn-sm" title="Browse categories as a tree">Browse</button>
     <div class="position-relative flex-grow-1" style="max-width: 360px;">
         <input type="search" id="ingredient-search-input" class="form-control form-control-sm"
                placeholder="Search ingredient by name or code..." autocomplete="off">
@@ -94,6 +95,18 @@ document.addEventListener('DOMContentLoaded', function () {
             if (rememberedCategory) categoryFilter.value = rememberedCategory;
         })
         .catch(function () { /* filter just stays at "All categories" */ });
+
+    // "Browse" opens the full category tree as an alternative to hunting
+    // through the flat dropdown above -- picking a node just selects the
+    // matching <option> (added a couple of lines up) and fires the same
+    // 'change' the dropdown itself would, so the remembered-category
+    // localStorage write above stays in sync either way.
+    document.getElementById('ingredient-category-tree-btn').addEventListener('click', function () {
+        openCategoryTreePicker(function (category) {
+            categoryFilter.value = String(category.id);
+            categoryFilter.dispatchEvent(new Event('change', {bubbles: true}));
+        });
+    });
 
     function existingIngredientIds() {
         var ids = [];

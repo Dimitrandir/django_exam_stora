@@ -53,6 +53,7 @@
 <script src="{% static 'vendor/sheetjs/xlsx.full.min.js' %}"></script>
 <script src="{% static 'vendor/tabulator/tabulator.min.js' %}"></script>
 <script src="{% static_v 'js/data-table.js' %}"></script>
+<script src="{% static_v 'js/category-tree-picker.js' %}"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     function currencyFormatter(cell) {
@@ -90,7 +91,30 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     var editMode = false;
-    var categoryChoices = JSON.parse(document.getElementById('category-choices-data').textContent);
+
+    // Opens the shared "Choose a category" tree modal instead of a flat
+    // dropdown -- same reasoning as the Product form's own Category field
+    // (Category.parent can nest arbitrarily deep). Commits the category's
+    // NAME (matching what ProductInlineUpdateView already expects to
+    // resolve back to an instance -- see postInlineUpdate/cellEdited
+    // below), not its id.
+    function categoryTreeEditor(cell, onRendered, success, cancel) {
+        var span = document.createElement('span');
+        span.textContent = cell.getValue() || '';
+        var picked = false;
+        onRendered(function () {
+            openCategoryTreePicker(function (category) {
+                picked = true;
+                success(category.name);
+            });
+            var modalEl = document.getElementById('categoryTreeModal');
+            modalEl.addEventListener('hidden.bs.modal', function onHidden() {
+                modalEl.removeEventListener('hidden.bs.modal', onHidden);
+                if (!picked) cancel();
+            });
+        });
+        return span;
+    }
 
     // A column that merely *can* be edited (has an `editor`) swallows its
     // clicks internally in Tabulator -- even while `editable` returns
@@ -101,7 +125,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // column.updateDefinition() -- see below.
     var editorConfig = {
         name: {editor: 'input'},
-        category: {editor: 'list', editorParams: {values: categoryChoices, clearable: true}},
+        category: {editor: categoryTreeEditor},
         unit_type: {editor: 'list', editorParams: {values: unitTypeLabels}},
         sell_price: {editor: 'number', editorParams: {min: 0, step: 0.01}},
         delivery_price: {editor: 'number', editorParams: {min: 0, step: 0.01}},

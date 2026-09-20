@@ -189,6 +189,7 @@
 
             <div id="category-pin-picker" class="category-pin-picker" style="display:none;">
                 <select id="category-pin-picker-select"></select>
+                <button type="button" id="category-pin-picker-tree-btn" title="Browse categories as a tree">Browse</button>
                 <button type="button" id="category-pin-picker-add-btn">Add</button>
                 <button type="button" id="category-pin-picker-cancel-btn">Cancel</button>
             </div>
@@ -217,6 +218,8 @@
             -- see SaleItemVoidLog / log_removed_sale_item.
             {% endcomment %}
             <button type="button" id="delete-line-btn" class="button-delete-line">Delete Line</button>
+            <button type="button" id="increment-qty-btn" class="button-increment-qty" title="Add 1 to the selected line">+1</button>
+            <button type="button" id="edit-line-btn" class="button-edit-line" title="Edit the selected line's quantity{% if can_edit_price %}/price{% endif %}">&#9998; Edit</button>
             <button type="button" id="void-sale-btn" class="button-void-sale">Void Sale</button>
             <button type="button" id="complete-sale-btn" class="button-save">Complete Sale</button>
             <a href="{% url 'refund_find' %}" class="btn button-refund" role="button">Refund</a>
@@ -321,6 +324,57 @@
         </div>
     </div>
 
+    {% comment %}
+    "Edit Line" -- opened by the footer's pencil button on the currently
+    selected cart row (same .is-selected-for-delete tap-to-select as
+    Delete Line/+1). Reuses the checkout modal's own tile/keypad look
+    (.checkout-tile/.checkout-keypad) -- tap Quantity or Price to make it
+    the keypad's target, same idea as Paid/Card amount over there. Price
+    is always shown but only actually editable for a Manager/admin (see
+    can_edit_price in the view) -- everyone else sees it as a plain,
+    read-only reference while they fix the quantity.
+    {% endcomment %}
+    <div class="modal fade" id="editLineModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Edit Line</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body d-flex gap-3">
+                    <div class="d-flex flex-column gap-2" style="flex: 1; min-width: 0;">
+                        <div class="checkout-tile checkout-tile--input" id="edit-line-qty-tile">
+                            <span class="checkout-tile__label">Quantity</span>
+                            <span class="checkout-tile__value" id="edit-line-qty-display">1</span>
+                        </div>
+                        <div class="checkout-tile checkout-tile--input" id="edit-line-price-tile">
+                            <span class="checkout-tile__label">Price</span>
+                            <span class="checkout-tile__value" id="edit-line-price-display">0.00</span>
+                        </div>
+                    </div>
+                    <div class="checkout-keypad" id="edit-line-keypad">
+                        <button type="button" class="keypad-btn" data-key="7">7</button>
+                        <button type="button" class="keypad-btn" data-key="8">8</button>
+                        <button type="button" class="keypad-btn" data-key="9">9</button>
+                        <button type="button" class="keypad-btn" data-key="4">4</button>
+                        <button type="button" class="keypad-btn" data-key="5">5</button>
+                        <button type="button" class="keypad-btn" data-key="6">6</button>
+                        <button type="button" class="keypad-btn" data-key="1">1</button>
+                        <button type="button" class="keypad-btn" data-key="2">2</button>
+                        <button type="button" class="keypad-btn" data-key="3">3</button>
+                        <button type="button" class="keypad-btn" data-key="0">0</button>
+                        <button type="button" class="keypad-btn" data-key=".">.</button>
+                        <button type="button" class="keypad-btn keypad-btn--del" data-key="del">&larr;</button>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-success" id="edit-line-save-btn">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     {{ products_data|json_script:"products-data" }}
     {{ barcodes_data|json_script:"barcodes-data" }}
     {{ categories_data|json_script:"categories-data" }}
@@ -330,6 +384,7 @@
 
     <script src="{% static 'vendor/tabulator/tabulator.min.js' %}"></script>
     <script src="{% static_v 'js/data-table.js' %}"></script>
+    <script src="{% static_v 'js/category-tree-picker.js' %}"></script>
     <script>
         const productsData = JSON.parse(document.getElementById('products-data').textContent);
         const barcodesData = JSON.parse(document.getElementById('barcodes-data').textContent);
@@ -338,6 +393,16 @@
         const saleDraftElement = document.getElementById('sale-draft');
         const saleDraft = saleDraftElement ? JSON.parse(saleDraftElement.textContent || 'null') : null;
         const saleItemsInitial = JSON.parse(document.getElementById('sale-items-seed-data').textContent);
+
+        // The "#" column shows the order items were ADDED (scanned), not
+        // their current visual position -- Tabulator's built-in 'rownum'
+        // formatter recomputes on every sort, so clicking a column header
+        // to sort the cart used to renumber "#" to match the new visual
+        // order instead of leaving it as a record of scan sequence.
+        // Assigned once per row (here for a resumed draft's rows, in
+        // buildRow() for every row added afterwards) and never recomputed.
+        let nextSaleSeq = 1;
+        saleItemsInitial.forEach((row) => { row.seq = nextSaleSeq++; });
 
         // -- Live clock, top-left, next to the operator name (matches the
         // reference cash-register screenshot). --
@@ -675,6 +740,7 @@
             const quantity = overrides.sale_quantity || 1;
             const price = overrides.price_at_sale !== undefined ? overrides.price_at_sale : product.sell_price;
             return Object.assign({
+                seq: nextSaleSeq++,
                 sale_item: product.id,
                 product_name: product.name,
                 unit_type: product.unit_type,
@@ -740,11 +806,34 @@
             height: 'calc(100vh - 480px)',
             placeholder: 'Scan or search a product above to start the sale.',
             columns: [
-                {formatter: 'rownum', title: '#', width: 34, minWidth: 30, hozAlign: 'center', headerSort: false},
+                // field:'seq' (assigned once, at add time -- see above),
+                // not formatter:'rownum' -- rownum reflects the row's
+                // current SORTED position, which isn't what "#" is meant
+                // to mean here.
+                {field: 'seq', title: '#', width: 34, minWidth: 30, hozAlign: 'center', headerSort: false},
                 // Slightly narrower by default than before (widthGrow 3 -> 2.2)
                 // -- gives the numeric columns more of the row to work with,
                 // per live feedback that Name was hogging space it didn't need.
-                {title: 'Name', field: 'product_name', widthGrow: 2.2, minWidth: 70},
+                {
+                    // The Name column's own bottom-calc cell has nothing to
+                    // sum -- reused for the text-size +/- buttons instead
+                    // of a separate row above the table just for them (per
+                    // live feedback: "не заемат от мястото"). bottomCalc
+                    // itself is a no-op (just needs SOME value so the
+                    // formatter runs); the buttons' own clicks are wired
+                    // via delegation on #sale-items-table, not a direct
+                    // listener here -- Tabulator redraws this cell (window
+                    // resize, column changes, ...), which would otherwise
+                    // detach a directly-attached listener.
+                    title: 'Name', field: 'product_name', widthGrow: 2.2, minWidth: 70,
+                    bottomCalc: () => '',
+                    bottomCalcFormatter: () =>
+                        '<span class="sale-table-font-controls">' +
+                        '<span class="sale-table-font-controls__label">Text size</span>' +
+                        '<button type="button" class="sale-table-font-btn" data-font-step="-1" title="Decrease text size">－</button>' +
+                        '<button type="button" class="sale-table-font-btn" data-font-step="1" title="Increase text size">＋</button>' +
+                        '</span>',
+                },
                 {
                     // bottomCalc sums the raw numbers regardless of unit --
                     // fine for an all-piece or all-weight cart, but mixing
@@ -823,6 +912,43 @@
         // finished its own internal first render yet at that point.
         // 'tableBuilt' is Tabulator's own "I'm actually ready" event.
         saleItemsTable.on('tableBuilt', syncCartHeight);
+
+        // Cart text size +/- -- persisted per browser/device, same pattern
+        // as the shortcuts panel width/hidden state (localStorage, not a
+        // server-side preference). Only this table's own font-size, via a
+        // CSS custom property scoped to #sale-items-table -- doesn't touch
+        // any other Tabulator grid in the app. normalizeHeight(true) after
+        // each change: taller text needs taller rows, and Tabulator doesn't
+        // recompute that on its own from a CSS-only font change.
+        (function () {
+            var MIN_SIZE = 0.75, MAX_SIZE = 1.5, STEP = 0.1;
+            var STORAGE_KEY = 'sale_table_font_size';
+            var tableEl = document.getElementById('sale-items-table');
+
+            function applyFontSize(size) {
+                tableEl.style.setProperty('--sale-table-font-size', size + 'rem');
+                saleItemsTable.rowManager.normalizeHeight(true);
+            }
+
+            var saved = parseFloat(localStorage.getItem(STORAGE_KEY));
+            var currentSize = (!isNaN(saved) && saved >= MIN_SIZE && saved <= MAX_SIZE) ? saved : 0.95;
+            applyFontSize(currentSize);
+
+            // Delegated on the table's own container, not a direct listener
+            // on the buttons -- they live in the Name column's bottom-calc
+            // cell (see the column definition above), which Tabulator
+            // redraws from scratch on things like a window resize or a
+            // column width change, silently detaching any listener bound
+            // straight to the old button elements.
+            tableEl.addEventListener('click', function (e) {
+                var btn = e.target.closest('[data-font-step]');
+                if (!btn) return;
+                var step = Number(btn.dataset.fontStep) * STEP;
+                currentSize = Math.min(MAX_SIZE, Math.max(MIN_SIZE, Math.round((currentSize + step) * 10) / 10));
+                applyFontSize(currentSize);
+                localStorage.setItem(STORAGE_KEY, String(currentSize));
+            });
+        })();
 
         // fitColumns only fits column widths to the container once, at
         // initial render -- doesn't recalculate on its own if the window is
@@ -927,6 +1053,104 @@
             selectedRowForDelete = null;
             updateTransactionTotal();
             saveDraft();
+        });
+
+        // "+1" -- same tap-to-select target as Delete Line, quick bump for
+        // when the customer just wants one more of what's already in the
+        // cart. Flat +1 regardless of unit_type, matching the existing
+        // scan-the-same-barcode-again behavior (addProductToCart above) --
+        // not a smaller step for a weight item, so the two ways of
+        // incrementing a line agree with each other.
+        document.getElementById('increment-qty-btn').addEventListener('click', () => {
+            if (!selectedRowForDelete) {
+                alert('Select a line first (tap its row).');
+                return;
+            }
+            const data = selectedRowForDelete.getData();
+            const newQty = (parseFloat(data.sale_quantity) || 0) + 1;
+            selectedRowForDelete.update({sale_quantity: newQty});
+            recalcRow(selectedRowForDelete, 'sale_quantity');
+            saveDraft();
+        });
+
+        // "Edit Line" -- opens a keypad modal for the selected row's
+        // Quantity (everyone) and Price (Manager/admin only -- see
+        // can_edit_price from the view). Reuses the checkout modal's own
+        // tile+keypad look; tapping a tile picks which one the keypad
+        // types into, same idea as Paid/Card-amount there.
+        const canEditPrice = {{ can_edit_price|yesno:"true,false" }};
+        const editLineModalEl = document.getElementById('editLineModal');
+        const editLineQtyTile = document.getElementById('edit-line-qty-tile');
+        const editLinePriceTile = document.getElementById('edit-line-price-tile');
+        const editLineQtyDisplay = document.getElementById('edit-line-qty-display');
+        const editLinePriceDisplay = document.getElementById('edit-line-price-display');
+        let editLineTarget = 'qty';
+        let editLineNeedsReset = true;
+
+        function setEditLineTarget(target) {
+            if (target === 'price' && !canEditPrice) return;
+            editLineTarget = target;
+            editLineNeedsReset = true;
+            editLineQtyTile.classList.toggle('is-editing', target === 'qty');
+            editLinePriceTile.classList.toggle('is-editing', target === 'price');
+        }
+
+        editLineQtyTile.addEventListener('click', () => setEditLineTarget('qty'));
+        editLinePriceTile.addEventListener('click', () => setEditLineTarget('price'));
+        editLinePriceTile.classList.toggle('checkout-tile--readonly', !canEditPrice);
+
+        document.getElementById('edit-line-keypad').addEventListener('click', (e) => {
+            const btn = e.target.closest('.keypad-btn');
+            if (!btn || (editLineTarget === 'price' && !canEditPrice)) return;
+            const key = btn.dataset.key;
+            const display = editLineTarget === 'qty' ? editLineQtyDisplay : editLinePriceDisplay;
+            if (editLineNeedsReset && key !== 'del') {
+                display.textContent = '';
+                editLineNeedsReset = false;
+            }
+            if (key === 'del') {
+                display.textContent = display.textContent.slice(0, -1);
+            } else if (key === '.') {
+                if (!display.textContent.includes('.')) display.textContent += '.';
+            } else {
+                display.textContent += key;
+            }
+        });
+
+        document.getElementById('edit-line-btn').addEventListener('click', () => {
+            if (!selectedRowForDelete) {
+                alert('Select a line first (tap its row).');
+                return;
+            }
+            const data = selectedRowForDelete.getData();
+            editLineQtyDisplay.textContent = String(data.sale_quantity);
+            editLinePriceDisplay.textContent = Number(data.price_at_sale || 0).toFixed(2);
+            setEditLineTarget('qty');
+            // Lazy reference -- bootstrap.bundle.min.js loads after this
+            // content block in base.html (see CLAUDE.md "Технически капани").
+            bootstrap.Modal.getOrCreateInstance(editLineModalEl).show();
+        });
+
+        document.getElementById('edit-line-save-btn').addEventListener('click', () => {
+            if (!selectedRowForDelete) return;
+            const newQty = parseFloat(editLineQtyDisplay.textContent);
+            if (isNaN(newQty) || newQty <= 0) {
+                alert('Enter a quantity greater than 0.');
+                return;
+            }
+            const updates = {sale_quantity: newQty};
+            if (canEditPrice) {
+                const newPrice = parseFloat(editLinePriceDisplay.textContent);
+                if (isNaN(newPrice) || newPrice < 0) {
+                    alert('Enter a valid price.');
+                    return;
+                }
+                updates.price_at_sale = newPrice;
+            }
+            selectedRowForDelete.update(updates);
+            recalcRow(selectedRowForDelete, 'price_at_sale');
+            saveDraft();
+            bootstrap.Modal.getInstance(editLineModalEl).hide();
         });
 
         document.getElementById('void-sale-btn').addEventListener('click', () => {
@@ -1438,6 +1662,7 @@
             const editModeBtn = document.getElementById('category-edit-mode-btn');
             const pinPickerEl = document.getElementById('category-pin-picker');
             const pinPickerSelect = document.getElementById('category-pin-picker-select');
+            const pinPickerTreeBtn = document.getElementById('category-pin-picker-tree-btn');
             const pinPickerAddBtn = document.getElementById('category-pin-picker-add-btn');
             const pinPickerCancelBtn = document.getElementById('category-pin-picker-cancel-btn');
             // "/sales/pos-pins/remove/999999/" with a placeholder pk, so the
@@ -1638,6 +1863,17 @@
             }
 
             pinPickerCancelBtn.addEventListener('click', () => { pinPickerEl.style.display = 'none'; });
+
+            // "Browse" opens the tree modal restricted to the exact same
+            // categories the <select> above already offers (show_on_pos,
+            // not already pinned) -- picking a node just selects the
+            // matching <option> instead of bypassing that filtering.
+            pinPickerTreeBtn.addEventListener('click', () => {
+                const availableCategories = posCategories.filter(c => !pinnedCategoryIds.has(String(c.id)));
+                openCategoryTreePicker((category) => {
+                    pinPickerSelect.value = `category:${category.id}`;
+                }, {categories: availableCategories});
+            });
 
             pinPickerAddBtn.addEventListener('click', async () => {
                 const value = pinPickerSelect.value;

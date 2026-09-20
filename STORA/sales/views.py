@@ -16,6 +16,7 @@ from STORA.sales.tasks import log_sale_completed
 
 import json
 
+from STORA.accounts.models import Employee
 from STORA.core.mixins import StaffPermissionRequiredMixin
 from STORA.core.session_service import extract_formset_state
 from STORA.core.utils import build_restore_formset_data, dispatch_task, multi_token_icontains_q
@@ -205,6 +206,13 @@ def sales_add(request):
         'active_tab': active_tab,
         'sale_tabs_summary': tabs_summary(request),
         'last_change': get_last_change(request, active_tab),
+        # The Price cell in the cart grid has always been directly editable
+        # by anyone on this screen -- no permission gate on it existed
+        # before this. This one's specifically for the new "Edit Line"
+        # keypad (see sale_add.html): everyone sees the Price field there,
+        # but only a Manager (or superuser/admin) can actually change it --
+        # a Cashier sees it read-only, Qty stays editable for everyone.
+        'can_edit_price': request.user.role == Employee.MANAGER or request.user.is_superuser,
     }
     return render(request, 'sales/sale_add.html', context)
 

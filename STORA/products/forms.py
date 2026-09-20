@@ -124,6 +124,14 @@ class CategoryForm(forms.ModelForm):
             'show_on_pos': 'Show on POS screen',
         }
 
+        widgets = {
+            # A plain <select> doesn't scale as the category tree grows --
+            # category_form.html renders a search box + "Browse" tree modal
+            # instead (same pattern as the Product form's own Category
+            # field) and sets this hidden field's value via JS.
+            'parent': forms.HiddenInput(),
+        }
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if self.instance.pk:

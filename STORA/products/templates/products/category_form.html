@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load static cache_bust %}
 
 {% block title %}STORA - {% if category %}Edit Category{% else %}New Category{% endif %}{% endblock %}
 
@@ -12,7 +13,31 @@
 
     <form method="post">
         {% csrf_token %}
-        {{ form.as_p }}
+        <p>
+            {{ form.name.label_tag }}
+            {{ form.name }}
+            {{ form.name.errors }}
+        </p>
+        <p>
+            {{ form.description.label_tag }}
+            {{ form.description }}
+            {{ form.description.errors }}
+        </p>
+        <p>
+            {{ form.parent.label_tag }}
+            <span style="position:relative; display:inline-block; max-width: 320px;">
+                <input type="text" id="parent-search-input" autocomplete="off"
+                       placeholder="Search category by name..."
+                       value="{% if form.instance.parent_id %}{{ form.instance.parent.name }}{% endif %}">
+                <div id="parent-search-results" class="global-search-results"></div>
+            </span>
+            <button type="button" id="parent-tree-btn">Browse</button>
+            {{ form.parent }}
+            {{ form.parent.errors }}
+        </p>
+        <p>
+            <label>{{ form.show_on_pos }} {{ form.show_on_pos.label }}</label>
+        </p>
         <button type="submit">Save</button>
     </form>
 
@@ -20,4 +45,76 @@
 
     <a href="{% url 'category_list' %}">Cancel</a>
 
+{{ excluded_category_ids|json_script:"excluded-category-ids" }}
+<script src="{% static_v 'js/category-tree-picker.js' %}"></script>
+<script>
+(function () {
+    var excludeIds = JSON.parse(document.getElementById('excluded-category-ids').textContent);
+    var searchInput = document.getElementById('parent-search-input');
+    var resultsBox = document.getElementById('parent-search-results');
+    var hiddenInput = document.getElementById('id_parent');
+    var debounceTimer = null;
+    var currentController = null;
+
+    function renderResults(data) {
+        resultsBox.innerHTML = '';
+        var allOption = document.createElement('div');
+        allOption.className = 'global-search-result';
+        allOption.textContent = '— No parent (top-level) —';
+        allOption.addEventListener('click', function () {
+            hiddenInput.value = '';
+            searchInput.value = '';
+            resultsBox.classList.remove('is-open');
+        });
+        resultsBox.appendChild(allOption);
+
+        data.results.forEach(function (cat) {
+            var row = document.createElement('div');
+            row.className = 'global-search-result';
+            row.textContent = cat.name;
+            row.addEventListener('click', function () {
+                hiddenInput.value = cat.id;
+                searchInput.value = cat.name;
+                resultsBox.classList.remove('is-open');
+            });
+            resultsBox.appendChild(row);
+        });
+        resultsBox.classList.add('is-open');
+    }
+
+    function runSearch() {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(function () {
+            if (currentController) currentController.abort();
+            currentController = new AbortController();
+            var params = new URLSearchParams();
+            var q = searchInput.value.trim();
+            if (q) params.set('q', q);
+            if (excludeIds.length) params.set('exclude', excludeIds.join(','));
+            fetch('{% url "category_search" %}?' + params.toString(), {signal: currentController.signal})
+                .then(function (r) { return r.json(); })
+                .then(renderResults)
+                .catch(function (e) { if (e.name !== 'AbortError') { /* transient network error -- ignore */ } });
+        }, 200);
+    }
+
+    searchInput.addEventListener('input', function () {
+        hiddenInput.value = '';
+        runSearch();
+    });
+    searchInput.addEventListener('focus', runSearch);
+    document.addEventListener('click', function (e) {
+        if (!e.target.closest('#parent-search-input') && !e.target.closest('#parent-search-results')) {
+            resultsBox.classList.remove('is-open');
+        }
+    });
+
+    document.getElementById('parent-tree-btn').addEventListener('click', function () {
+        openCategoryTreePicker(function (category) {
+            hiddenInput.value = category.id;
+            searchInput.value = category.name;
+        }, {excludeIds: excludeIds});
+    });
+})();
+</script>
 {% endblock %}

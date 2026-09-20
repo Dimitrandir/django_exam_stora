@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load static cache_bust %}
 
 {% block title %}STORA - Edit Product: {{ product.name }}{% endblock %}
 
@@ -66,6 +67,7 @@
                                value="{% if form.instance.category_id %}{{ form.instance.category.name }}{% endif %}">
                         <div id="category-search-results" class="global-search-results"></div>
                     </div>
+                    <button type="button" id="category-tree-btn" class="field__chip" title="Browse categories as a tree">Browse</button>
                     {{ form.category }}
                     <a href="{% url 'category_create' %}?popup=1" target="_blank" class="field__aux-link">+ New category</a>
                 </div>
@@ -204,6 +206,7 @@
 
 {{ tax_group_rates|json_script:"tax-group-rates" }}
 
+<script src="{% static_v 'js/category-tree-picker.js' %}"></script>
 <script>
 document.getElementById('suggest-next-free-code-btn').addEventListener('click', function () {
     document.getElementById('id_internal_code').value = '{{ next_free_code }}';
@@ -306,6 +309,15 @@ wireLayoutToggle('price-layout-toggle', 'price-fields-grid');
         if (e.origin !== window.location.origin || !e.data || e.data.type !== 'category-created') return;
         hiddenInput.value = e.data.id;
         searchInput.value = e.data.name;
+    });
+
+    // "Browse" opens the full category tree as an alternative to typing a
+    // name -- same hidden field/search box it fills either way.
+    document.getElementById('category-tree-btn').addEventListener('click', function () {
+        openCategoryTreePicker(function (category) {
+            hiddenInput.value = category.id;
+            searchInput.value = category.name;
+        });
     });
 })();
 
