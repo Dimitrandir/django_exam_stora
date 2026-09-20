@@ -1413,6 +1413,48 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
     color: #888;
 }
 
+/* Navbar dropdown "open in new tab" button -- injected by JS (base.html)
+   next to every dropdown-item link, so a manager can open e.g. Reports
+   without losing whatever list/form is currently on screen. The <li>
+   becomes a flex row (link + button side by side) instead of the plain
+   full-width block Bootstrap gives .dropdown-item by default. */
+.dropdown-item-row {
+    display: flex;
+    align-items: stretch;
+}
+
+.dropdown-item-row .dropdown-item {
+    flex: 1 1 auto;
+}
+
+.dropdown-newtab-btn {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    /* Overrides the global `button` rule (accent-color bg, white text,
+       8px/15px padding) -- this is a quiet icon-only control living
+       inside a dropdown row, not an action button. */
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    color: #9aa5b1;
+}
+
+.dropdown-newtab-btn:hover,
+.dropdown-newtab-btn:focus-visible {
+    background-color: var(--light-bg);
+    color: var(--accent-color);
+}
+
+.dropdown-newtab-btn svg {
+    width: 14px;
+    height: 14px;
+    pointer-events: none;
+}
+
 /* Product create/edit form -- replaces the plain <p><label><input></p>
    stack (no visual grouping, default browser input chrome) with real
    section cards and styled fields, using the app's own existing palette
