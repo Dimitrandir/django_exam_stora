@@ -172,6 +172,15 @@ document.addEventListener('DOMContentLoaded', function () {
     function round2(n) { return Math.round((n + Number.EPSILON) * 100) / 100; }
     function round1(n) { return Math.round((n + Number.EPSILON) * 10) / 10; }
 
+    // The "#" column shows the order items were ADDED to this delivery, not
+    // their current visual position -- Tabulator's built-in 'rownum'
+    // formatter recomputes on every sort, so clicking a column header to
+    // sort the grid used to renumber "#" to match the new visual order
+    // instead of leaving it as a record of entry sequence. Assigned once
+    // per row (every row goes through buildRow, seed rows included) and
+    // never recomputed.
+    var nextSeq = 1;
+
     function buildRow(product, raw) {
         var qty = parseFloat(raw.delivery_quantity) || 0;
         var withVat = parseFloat(raw.price_at_delivery);
@@ -182,6 +191,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (isNaN(sellPrice)) sellPrice = 0;
         var markup = withVat ? (sellPrice - withVat) / withVat * 100 : 0;
         return {
+            seq: nextSeq++,
             id: raw.id || '',
             delivery_item: product.id,
             internal_code: product.internal_code,
@@ -453,7 +463,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
     var table = initExcelStyleTable('#delivery-items-table', 'delivery-items-seed-data', [
         {
-            title: '#', formatter: 'rownum', width: 40, hozAlign: 'center',
+            // field:'seq' (assigned once, at add time -- see buildRow
+            // above), not formatter:'rownum' -- rownum reflects the row's
+            // current SORTED position, which isn't what "#" is meant to
+            // mean here.
+            title: '#', field: 'seq', width: 40, hozAlign: 'center',
             headerSort: false, headerFilter: false, hideable: false,
         },
         {title: 'Code', field: 'internal_code', width: 110},
@@ -736,6 +750,58 @@ document.addEventListener('DOMContentLoaded', function () {
         // (focusCellEditor), so the clerk can type the quantity right
         // away without an extra click.
     }
+
+    // -- Scan-anywhere: same fix as the Sales cart (sale_add.html) -- a
+    // physical scanner "types" wherever focus happens to be, not
+    // necessarily this search box, so a receiving clerk who'd clicked a
+    // grid cell/button first and then scanned got nothing. A document-
+    // level keydown listener buffers digit keys by burst timing (scanner
+    // keystrokes land well under 30ms apart; even fast human typing
+    // doesn't), and on a burst-terminating Enter, redirects the whole
+    // code into this search box exactly as if it had been typed there --
+    // via a synthetic dispatch that runs the real Enter handler further
+    // down, not a second copy of its match logic. Only engages when focus
+    // isn't already on a text field (an open Qty/Price editor, the
+    // Comment textarea, the Discount modal's value input, ...), so
+    // scanning can never corrupt a value someone's mid-typing elsewhere
+    // on the page.
+    function isTextEntryElement(el) {
+        if (!el) return false;
+        if (el.tagName === 'TEXTAREA' || el.isContentEditable) return true;
+        if (el.tagName === 'INPUT') {
+            var type = (el.type || 'text').toLowerCase();
+            return ['text', 'search', 'number', 'email', 'tel', 'url', 'password', 'date'].indexOf(type) !== -1;
+        }
+        return false;
+    }
+
+    var globalScanBuffer = '';
+    var globalScanLastKeyTime = 0;
+
+    document.addEventListener('keydown', function (e) {
+        if (isTextEntryElement(document.activeElement)) return;
+
+        var gap = performance.now() - globalScanLastKeyTime;
+        globalScanLastKeyTime = performance.now();
+
+        if (e.key === 'Enter') {
+            var code = globalScanBuffer;
+            globalScanBuffer = '';
+            if (code.length >= 4) {
+                e.preventDefault();
+                searchInput.value = code;
+                searchInput.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true, cancelable: true}));
+                searchInput.focus();
+            }
+            return;
+        }
+
+        if (/^[0-9]$/.test(e.key)) {
+            globalScanBuffer = (gap < 30 || globalScanBuffer === '') ? globalScanBuffer + e.key : e.key;
+        } else {
+            globalScanBuffer = '';
+        }
+    }, true);
 
     function renderResults(data) {
         resultsBox.innerHTML = '';
