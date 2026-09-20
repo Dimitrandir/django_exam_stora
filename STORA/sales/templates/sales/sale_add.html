@@ -1101,6 +1101,65 @@
             searchInput.focus();
         }
 
+        // -- Scan-anywhere: a physical scanner "types" wherever the browser's
+        // focus happens to be, not necessarily this search box -- confirmed
+        // live: clicking a category button, or tapping a cart row to select
+        // it, then scanning did nothing at all, because the digits landed on
+        // whatever had focus (which ignores keystrokes), never reaching the
+        // cart. A document-level keydown listener buffers digit keys using
+        // the same 30ms/char burst timing as looksLikeScannerInput above,
+        // and on a burst-terminating Enter, redirects the whole code into
+        // this search box exactly as if it had been typed there -- via a
+        // synthetic dispatch that runs the REAL Enter handler further down,
+        // not a second copy of the exact-match/scale-decode logic. Only
+        // engages when focus is on something that isn't itself a text field
+        // (buttons, table rows, the page body, ...) -- an already-open Qty/
+        // Price editor is left alone, so scanning can never corrupt a value
+        // someone's mid-typing there. Same idea planned for Deliveries/
+        // Write-off/Scrap once confirmed working here.
+        function isTextEntryElement(el) {
+            if (!el) return false;
+            if (el.tagName === 'TEXTAREA' || el.isContentEditable) return true;
+            if (el.tagName === 'INPUT') {
+                const type = (el.type || 'text').toLowerCase();
+                return ['text', 'search', 'number', 'email', 'tel', 'url', 'password', 'date'].includes(type);
+            }
+            return false;
+        }
+
+        let globalScanBuffer = '';
+        let globalScanLastKeyTime = 0;
+
+        document.addEventListener('keydown', (e) => {
+            if (isTextEntryElement(document.activeElement)) return;
+
+            const gap = performance.now() - globalScanLastKeyTime;
+            globalScanLastKeyTime = performance.now();
+
+            if (e.key === 'Enter') {
+                const code = globalScanBuffer;
+                globalScanBuffer = '';
+                if (code.length >= 4) {
+                    // Stops a focused button from also "activating" on this
+                    // same Enter (the browser's own default for that case).
+                    e.preventDefault();
+                    searchInput.value = code;
+                    searchInput.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true, cancelable: true}));
+                    searchInput.focus();
+                }
+                return;
+            }
+
+            if (/^[0-9]$/.test(e.key)) {
+                // A slow gap means this digit starts a fresh sequence, not a
+                // continuation of the last one -- same reasoning as
+                // looksLikeScannerInput's own burstStartTime reset.
+                globalScanBuffer = (gap < 30 || globalScanBuffer === '') ? globalScanBuffer + e.key : e.key;
+            } else {
+                globalScanBuffer = '';
+            }
+        }, true);
+
         searchInput.addEventListener('input', () => {
             if (searchInput.value.length === 1) burstStartTime = performance.now();
             runSearch();
