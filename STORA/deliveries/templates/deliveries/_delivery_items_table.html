@@ -487,7 +487,19 @@ document.addEventListener('DOMContentLoaded', function () {
         {
             title: 'Qty', field: 'delivery_quantity', width: 100, hozAlign: 'right',
             editor: numberEditor,
-            editorParams: function (cell) { return {min: 0.001, step: quantityStep(cell.getData())}; },
+            // min must match step's own base value, not a fixed 0.001 --
+            // HTML5 <input type="number"> step validity is relative to
+            // min (valid values are min, min+step, min+2*step, ...), so
+            // min:0.001 + step:1 (a piece-counted product) makes 1, 2,
+            // 3... ALL invalid (only 0.001, 1.001, 2.001... pass) --
+            // exactly the trap already documented in CLAUDE.md for
+            // SaleItemForm's widget, just not fixed here yet. Confirmed
+            // live: this silently blocked the whole form's submit with no
+            // network request and no visible error at all (worse than the
+            // per-item formset error case) whenever a newly-added row's
+            // Qty editor was left open (its default value 1 already
+            // "invalid") at Save time.
+            editorParams: function (cell) { return {min: quantityStep(cell.getData()), step: quantityStep(cell.getData())}; },
             formatter: quantityFormatter,
             bottomCalc: 'sum',
             bottomCalcFormatter: quantityFormatter,
@@ -1006,6 +1018,25 @@ document.addEventListener('DOMContentLoaded', function () {
         var container = document.getElementById('delivery-items-hidden-inputs');
         container.innerHTML = '';
         var rows = table.getData().concat(pendingDeletions);
+
+        // Django's inline formset requires every form INDEX below
+        // INITIAL_FORMS (the item count the page was rendered with) to
+        // carry a real id -- even a row marked DELETE=on (see
+        // BaseModelFormSet._construct_form: `pk_required = i <
+        // self.initial_form_count()`, which then makes that form's id
+        // field required=True). Existing rows (kept on-screen, or moved to
+        // pendingDeletions when removed) always carry their original id;
+        // brand-new rows (added via search) never do -- so together they
+        // always add up to exactly the original item count. Sorting
+        // id-bearing rows first guarantees indices [0, INITIAL_FORMS) line
+        // up with real ids regardless of the on-screen add/remove order --
+        // without this, replacing an existing row (delete it, add a
+        // different product) can leave a brand-new, id-less row sitting at
+        // an early index that Django demands an id for, confirmed live:
+        // "Product row N: id -- This field is required."
+        rows.sort(function (a, b) {
+            return (b.id ? 1 : 0) - (a.id ? 1 : 0);
+        });
 
         rows.forEach(function (data, index) {
             var isDeleted = pendingDeletions.indexOf(data) !== -1;
