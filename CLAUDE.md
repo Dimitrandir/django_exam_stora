@@ -1179,6 +1179,25 @@ Apps: accounts, core, products, deliveries, sales, reports.
   независимо какво декларира оригиналната дефиниция. Диагностицирано
   чрез директна инспекция на vendored `tabulator.min.js` изходния код
   (`mergeDefinition`/`_buildColumnHeader`), не по документация.
+- **Tabulator `formatter: 'rowSelection'` изяжда клика на чекбокса**
+  **изцяло вътрешно — никога не стига до колонния ** **`cellClick`** ** изобщо, и**
+  **`selectableRows: N` не гарантира лимита сам по себе си.** Открито на
+  Categories List (checkbox колона, лимит 1 избран ред наведнъж, за да
+  знае бутонът "Delete" долу под таблицата кой ред да трие) — добавен
+  `cellClick` на тази колона (за explicit "деселектирай всичко друго,
+  после селектирай тоя ред") никога не гърмеше; потвърдено чрез
+  `console.log` вътре в него, който просто не излизаше в конзолата при
+  реален клик на чекбокса. `selectableRows: 1`, подадено на
+  `initExcelStyleTable`, също не пречеше на втори чекбокс да си остане
+  маркиран заедно с първия (потвърдено през `table.getSelectedData()`,
+  не само през визуалното състояние на чекбоксите — виж следващия капан
+  защо самото визуално `.checked` състояние на чекбокс не е надеждно за
+  диагностика в тази среда). Фикс: **не** пипай колоната с `cellClick`;
+  вместо това `table.on('rowSelected', function(row) { ... })` — това
+  събитие Tabulator РЕАЛНО гърми при всяка нова селекция (за разлика от
+  `cellClick` на тази конкретна колона) — вътре разселектирай всеки друг
+  избран ред (`table.getSelectedRows().forEach(...)`), оставяйки само
+  току-що маркирания.
 - **Три свързани Tabulator re-entrancy капана, открити при правене на**
   **редактируема derived колонка (Markup %):**
   1. Колона с ЕДНОВРЕМЕННО `mutator` и `editor` — mutator-ът се вика
@@ -1305,15 +1324,32 @@ helper в `core/utils.py` (разбива по whitespace, AND между дум
  str()/float() преди сериализация) в context, напр. products_data.  
 2. Темплейтът: {% block extra_css %} за tabulator_bootstrap5.min.css,  
  {{ products_data|json_script:"products-table-data" }} +  
- <div id="..." class="table-sm"> (table-sm е вграден в bootstrap5  
+ <div id="X-table-card" class="data-table-card"><div id="X-table" class="table-sm"></div></div> (table-sm е вграден в bootstrap5  
    
  темата на Tabulator — прави header/редовете компактни; без него header-ът  
    
- излиза неразумно висок), {% block extra_js %} зарежда  
+ излиза неразумно висок; data-table-card е мека заоблена "card" обвивка  
+   
+ около грида — STYLES.md пилотния елемент, вече навсякъде), {% block extra_js %} зарежда  
  xlsx.full.min.js → tabulator.min.js → {% static_v 'js/data-table.js' %}  
    
  (виж по-долу защо static_v, не static), после initExcelStyleTable(...).  
-3. Отделен бутон извиква table.download('xlsx', 'name.xlsx', {...}).  
+3. **"Export to Excel" не е самостоятелен бутон в темплейта** —  
+ attachTableExportToToolbar(table, '#X-table-card', 'name.xlsx', 'Sheet Name') (в static/js/data-table.js, викан веднъж след  
+   
+ initExcelStyleTable) вкарва кръгъл зелен `.icon-btn--export` бутон  
+   
+ директно в "Columns ▾" лентата (created от addColumnChooser, срещу  
+   
+ Columns, в другия край) — ако таблицата е построена с columnChooser: false, helper-ът сам създава лентата вместо тихо да пропусне  
+   
+ бутона. Ако екранът има и "Enable Edit" toggle (виж products_list.html)  
+   
+ — построй го като DOM елемент (icon-btn icon-btn--outline, .is-active при включен режим — outline, не плътен цвят, защото е ПОСТОЯНЕН  
+   
+ toggle, не еднократно действие) ПРЕДИ извикването и подай го като 5-и  
+   
+ аргумент (extraButtons масив), не като отделен бутон в темплейта.  
 4. Всяка колона взима width: <px> изрично в дефиницията ѝ (виж  
  products_list.html/product_history.html) — без това layout: 'fitColumns' ги разпределя равномерно, което рядко изглежда добре  
    
@@ -1439,6 +1475,17 @@ npx -y skills add anthropics/skills --skill frontend-design --agent claude-code
 ```  
 Инсталира се в `.claude/skills/` на самия проект — версиран локално, зарежда  
 се автоматично от Claude Code при UI задачи.  
+  
+**Винаги прочитай и STYLES.md преди UI работа** — отделен файл (не  
+CLAUDE.md), пази конкретните визуални решения на потребителя (цветова  
+палитра с hex стойности, форма/radius/spacing насоки, референции към  
+Material 3 Expressive / Apple HIG, и изрично какво е "извън обхват" —  
+напр. checkout модала на POS не се пипа без изрична молба). Ползва се  
+паралелно с `frontend-design` скила, не го замества — скилът дава  
+процеса (план → преглед → код), STYLES.md дава конкретните стойности за  
+тоя проект, за да не се измислят нови цветове ad-hoc всяка сесия.  
+Обновявай STYLES.md (не CLAUDE.md), когато потребителят потвърди ново  
+визуално решение, което важи занапред за други екрани.  
    
 **Тестове**  
 Всеки app си има tests.py. Преди да декларираш бъг за оправен:  

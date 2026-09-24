@@ -142,7 +142,98 @@ Tabulator patтern-ът (sort по клик, Excel-style checkbox филтър �
    
  Остава да се приложи и за:  
 - Suppliers списък (products/templates/products/suppliers_list.html)  
-- Categories списък (products/templates/products/category_list.html)  
+- Categories списък — **направено.** Tabulator (сорт, Excel-филтър,
+ export, клик на ред отваря Edit), мека заоблена card-обвивка на грида
+ (STYLES.md, Material 3 Expressive посока) — първият екран с новите UI
+ насоки. Споделеният `.pos-toggle-btn` (Show on POS) остана непроменен
+ нарочно — същия компонент, ползван и в Products грида. **Финална
+ итерация (консистентност с Products грида):** Edit/Delete текст
+ линковете в реда паднаха изцяло (Edit е излишен — клик на ред вече
+ отваря Edit); Delete мина през чекбокс-селекция на ред (макс. 1
+ наведнъж) + споделения `#bulk-actions-bar` (появява се над таблицата
+ при селекция, точно като Products грида), с кръгло червено delete
+ бутонче (`.icon-btn--delete`, `static/delete.png` маскирана в бяло) —
+ reuse на съществуващия single-object `CategoryDeleteView`/confirm
+ екран, без нов bulk endpoint. "+ Add category" се качи горе до
+ заглавието (`.icon-btn--add`, зелено кръгче, hover/focus разтяга се в
+ pill с надпис) — първи опит беше долу под таблицата, махнато по молба
+ на потребителя, за да не се чупи консистентността с останалите
+ таблици. Export to Excel се премести в лентата над грида, срещу
+ "Columns ▾" (`.data-table-card`/`.data-table-card__toolbar` — споделен
+ клас с Products списъка, виж по-долу). Реален Tabulator бъг открит и
+ оправен по пътя (checkbox колоната не спазваше лимит от 1 избран ред)
+ — виж CLAUDE.md "Технически капани".
+- **Products списък — bulk-bar redesign, консистентно с Categories
+  (направено).** `#bulk-actions-bar` (появява се при чекбокс селекция)
+  вече е pill-shaped (`.bulk-actions-bar`), не Bootstrap `.alert`.
+  Category `<select>` замени се с pill search box (лупичка 🔍 вътре,
+  `.pill-search-wrapper`) + "Browse" бутон, същия tree picker patтern
+  като Product формата — пости категорията по ИМЕ, колкото `<select>`-а
+  преди (`ProductBulkActionView.set_category` очаква име, не се пипа).
+  Apply Category/Apply Price бутоните станаха кръгли `.icon-btn--apply`
+  (синьо, чек-марк ✓, hover/focus разтяга в pill с надпис) — Apply
+  Category стои disabled докато не избереш категория (search резултат
+  или Browse), Apply Price остава винаги clickable с alert validation
+  както преди. Delete Selected стана `.icon-btn--delete` (същото кръгло
+  кошче като Categories). "+ New Product" стана `.icon-btn--add`
+  (зелено кръгче), Export to Excel слезе в лентата над грида срещу
+  "Columns ▾" (`.data-table-card`). Мъртвият `category_choices` context
+  (само захранваше старото `<select>`, `json_script`-а му дори не се
+  четеше от JS) — премахнат от `ProductListView`.
+  **Полиране по обратна връзка от потребителя (направено):** 🔍/"+"/"✓"
+  емоджита/текстови глифове замениха се с чисти flat SVG икони (Google
+  Material Design paths, mask-image техника като кошчето) — `.icon-btn__glyph`
+  споделена база + `--add`/`--check`/`--bin`/`--search` модификатори,
+  вместо текст/емоджи, които изглеждаха "старомодно" до останалите икони.
+  Открит и оправен реален CSS бъг: `.pill-input` губеше срещу глобалното
+  `input[type="text"]` правило (по-висока specificity), затова полетата не
+  ставаха pill-shaped въпреки `border-radius: 999px` в кода — фикс с
+  `input.pill-input` + `!important`. Нов `.icon-btn--sm` вариант за
+  бутоните вътре в bulk лентата (по-малки от самостоятелните header "+"
+  бутони, които останаха 3rem — bulk лентата е нагъсто с pill полета,
+  header бутонът е самостоятелно главно действие).
+  **Categories List — свободна мулти-селекция + реален bulk delete
+  (направено).** По обратна връзка ("не мога да селектна повече от
+  едно") — старото ограничение до 1 избран ред (заради reuse на
+  single-object `CategoryDeleteView`) паднало, чекбокс колоната вече е
+  свободна както в Products. Нов `CategoryBulkDeleteView`
+  (`/products/categories/bulk-delete/`) — trие по един обект в цикъл
+  (огледално на `ProductBulkActionView`-ото `delete` действие), с
+  `confirm()` диалог преди POST-а (изрично поискано от потребителя).
+  Старият single-object `CategoryDeleteView`/confirm екран остава жив
+  (валиден URL), само вече не се линква от списъка. 3 нови теста
+  (`CategoryBulkDeleteViewTests`), 121/121 общо в products.
+  **По-дълго поле за категория + Browse вътре в pill-а (направено).**
+  Products bulk bar-ът category search полето стана по-широко (200px →
+  340px), "Browse" бутонът се премести ВЪТРЕ в pill-а, закотвен в десния
+  край (`.pill-search-wrapper--with-browse`/`__browse-btn`), вместо
+  отделен бутон до полето. Навигационната търсачка в хедъра (base.html)
+  също мина на pill shape + масикрана SVG лупичка, вместо plain Bootstrap
+  `.form-control`.
+- **Export to Excel / Enable Edit — иконки навсякъде, споделен JS helper
+  (направено).** По молба на потребителя (референтни икони: Excel файл
+  със стрелка, молив в капсула) — "Export to Excel" стана кръгла зелена
+  икона (`.icon-btn--export`, download-стрелка), "Enable Edit" стана
+  кръгла **outline** икона (`.icon-btn--outline`, молив,
+  `.is-active` при включен режим — outline вместо плътен цвят, защото е
+  ПОСТОЯНЕН toggle, не еднократно действие като останалите). Нов
+  `attachTableExportToToolbar(table, cardSelector, filename, sheetName, extraButtons)` в `static/js/data-table.js` — вместо да се копира
+  същия relocate-в-toolbar код във всеки темплейт, една споделена
+  функция; автоматично СЪЗДАВА "Columns ▾" лентата, ако таблицата е
+  построена с `columnChooser: false` (напр. sale_details.html), вместо
+  тихо да пропусне Export бутона. Приложено във **всичките 17 темплейта**
+  с "Export to Excel" в проекта: products_list/category_list/
+  product_history (products), sales_report/deliveries_report/
+  stock_as_of_report/expiring_report/sales_quantity_report/
+  ai_report_detail (reports), revision_list/revision_detail/
+  revision_details (revisions), sale_details (sales), delivery_details/
+  _delivery_items_table (deliveries), price_list_detail/price_list_list
+  (pricelists). Всяка таблица, обвита в `.data-table-card`, ако още не
+  беше. Тествано: пълния test suite (products/reports/revisions/sales/
+  deliveries/pricelists) + на живо в браузъра на представителна извадка
+  (Product History с 2 таблици на една страница, Sale Details с
+  `columnChooser: false`, Deliveries add формата с Delete Line/Discount
+  до Export-а).
 - Employees списък (accounts/templates/accounts/employee_list.html)  
 - Sales списък — **направено**, но по различен път от Deliveries:
  самостоятелният sales_list.html е **изтрит изцяло** (не остана като
