@@ -607,6 +607,44 @@ class CategoryTogglePosViewTests(TestCase):
         self.assertFalse(self.category.show_on_pos)
 
 
+class CategoryBulkDeleteViewTests(TestCase):
+    """Backs the Categories List's own checkbox column + bulk bar Delete
+    button -- free multi-select (see category_list.html), one POST deleting
+    every checked category by id, mirroring ProductBulkActionView's own
+    `delete` action (loop + individual .delete(), not queryset.delete())."""
+
+    def setUp(self):
+        self.manager = Employee.objects.create_user(
+            username='manager24', password='pass12345', role=Employee.MANAGER
+        )
+        self.cashier = Employee.objects.create_user(
+            username='cashier23', password='pass12345', role=Employee.CASHIER
+        )
+        self.category_a = Category.objects.create(name='Bulk Delete A')
+        self.category_b = Category.objects.create(name='Bulk Delete B')
+
+    def _post(self, ids):
+        return self.client.post(reverse('category_bulk_delete'), {'ids': ids})
+
+    def test_cashier_cannot_bulk_delete(self):
+        self.client.force_login(self.cashier)
+        response = self._post([self.category_a.pk])
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(Category.objects.filter(pk=self.category_a.pk).exists())
+
+    def test_manager_can_bulk_delete(self):
+        self.client.force_login(self.manager)
+        response = self._post([self.category_a.pk, self.category_b.pk])
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['deleted'], 2)
+        self.assertFalse(Category.objects.filter(pk__in=[self.category_a.pk, self.category_b.pk]).exists())
+
+    def test_no_ids_returns_error(self):
+        self.client.force_login(self.manager)
+        response = self._post([])
+        self.assertEqual(response.status_code, 400)
+
+
 class ProductBulkActionViewTests(TestCase):
     def setUp(self):
         self.manager = Employee.objects.create_user(

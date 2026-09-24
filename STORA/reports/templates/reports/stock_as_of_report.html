@@ -43,13 +43,14 @@
 
     <section class="report-section card shadow-sm border-0 rounded-4 mb-4">
         <div class="card-body">
-            <header class="section-header d-flex justify-content-between align-items-center mb-3">
+            <header class="section-header mb-3">
                 <h2 class="h4 mb-0">Stock as of {{ as_of_date|date:"Y-m-d" }}</h2>
-                <button type="button" id="stock-as-of-export-btn" class="btn btn-outline-secondary btn-sm">Export to Excel</button>
             </header>
 
             {{ stock_data|json_script:"stock-as-of-table-data" }}
-            <div id="stock-as-of-table" class="table-sm"></div>
+            <div id="stock-as-of-table-card" class="data-table-card">
+                <div id="stock-as-of-table" class="table-sm"></div>
+            </div>
         </div>
     </section>
 </section>
@@ -68,8 +69,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
     var table = initExcelStyleTable('#stock-as-of-table', 'stock-as-of-table-data', [
         {
-            title: '#', formatter: 'rownum', width: 50, hozAlign: 'center',
-            headerSort: false, headerFilter: false, hideable: false,
+            title: '#', field: 'code', formatter: 'rownum', width: 50, hozAlign: 'center',
+            headerFilter: false, hideable: false,
         },
         {title: 'Code', field: 'code', width: 100},
         {title: 'Name', field: 'name', width: 250},
@@ -85,9 +86,7 @@ document.addEventListener('DOMContentLoaded', function () {
         },
     ], {placeholder: 'No products found.'});
 
-    document.getElementById('stock-as-of-export-btn').addEventListener('click', function () {
-        table.download('xlsx', 'stock_as_of_report.xlsx', {sheetName: 'Stock'});
-    });
+    attachTableExportToToolbar(table, '#stock-as-of-table-card', 'stock_as_of_report.xlsx', 'Stock');
 });
 </script>
 {% endblock %}

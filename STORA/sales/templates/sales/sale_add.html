@@ -809,8 +809,11 @@
                 // field:'seq' (assigned once, at add time -- see above),
                 // not formatter:'rownum' -- rownum reflects the row's
                 // current SORTED position, which isn't what "#" is meant
-                // to mean here.
-                {field: 'seq', title: '#', width: 34, minWidth: 30, hozAlign: 'center', headerSort: false},
+                // to mean here. headerSort is left ON (not false) on
+                // purpose -- since seq itself never changes, sorting by it
+                // is exactly "back to scan order", a clean way to undo
+                // having sorted by Name/Price/etc a moment ago.
+                {field: 'seq', title: '#', width: 34, minWidth: 30, hozAlign: 'center'},
                 // Slightly narrower by default than before (widthGrow 3 -> 2.2)
                 // -- gives the numeric columns more of the row to work with,
                 // per live feedback that Name was hogging space it didn't need.

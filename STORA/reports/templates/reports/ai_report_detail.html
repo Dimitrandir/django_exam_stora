@@ -42,14 +42,15 @@
 
     <section class="report-section card shadow-sm border-0 rounded-4 mb-4">
         <div class="card-body">
-            <header class="section-header d-flex justify-content-between align-items-center mb-3">
+            <header class="section-header mb-3">
                 <h2 class="h5 mb-0">Data (live, re-run just now)</h2>
-                <button type="button" id="ai-report-export-btn" class="btn btn-outline-secondary btn-sm">Export to Excel</button>
             </header>
 
             {{ columns|json_script:"ai-report-columns" }}
             {{ table_data|json_script:"ai-report-table-data" }}
-            <div id="ai-report-table" class="table-sm"></div>
+            <div id="ai-report-table-card" class="data-table-card">
+                <div id="ai-report-table" class="table-sm"></div>
+            </div>
         </div>
     </section>
 
@@ -87,9 +88,7 @@ document.addEventListener('DOMContentLoaded', function () {
         placeholder: 'No rows returned.',
     });
 
-    document.getElementById('ai-report-export-btn').addEventListener('click', function () {
-        table.download('xlsx', 'ai_report.xlsx', {sheetName: 'AI Report'});
-    });
+    attachTableExportToToolbar(table, '#ai-report-table-card', 'ai_report.xlsx', 'AI Report');
 
     var regenerateForm = document.getElementById('regenerate-form');
     var regenerateBtn = document.getElementById('regenerate-btn');

@@ -34,9 +34,9 @@
         </div>
     </div>
 
-    <button type="button" id="revision-export-btn" class="btn btn-outline-secondary btn-sm">Export to Excel</button>
-
-    <div id="revision-items-table" class="table-sm"></div>
+    <div id="revision-items-table-card" class="data-table-card">
+        <div id="revision-items-table" class="table-sm"></div>
+    </div>
 
     {% if can_complete %}
     <footer class="page-actions">
@@ -121,7 +121,7 @@
     // even though it's also a live, polled, incrementally-updated grid
     // (upsertRow/setData below) rather than a static one-shot listing.
     const table = initExcelStyleTable('#revision-items-table', 'revision-items-data', [
-        {title: '#', formatter: 'rownum', width: 50, hozAlign: 'center', headerSort: false, headerFilter: false, hideable: false},
+        {title: '#', field: 'internal_code', formatter: 'rownum', width: 50, hozAlign: 'center', headerFilter: false, hideable: false},
         {title: 'Code', field: 'internal_code', width: 110},
         {title: 'Name', field: 'name', widthGrow: 3},
         {title: 'Found Qty', field: 'found_quantity', width: 110, hozAlign: 'right', bottomCalc: 'sum'},
@@ -156,9 +156,7 @@
         },
     ], {placeholder: 'Search or scan a product above to start counting.'});
 
-    document.getElementById('revision-export-btn').addEventListener('click', function () {
-        table.download('xlsx', 'revision_{{ revision.pk }}_items.xlsx', {sheetName: 'Revision Items'});
-    });
+    attachTableExportToToolbar(table, '#revision-items-table-card', 'revision_{{ revision.pk }}_items.xlsx', 'Revision Items');
 
     function upsertRow(item) {
         if (table.getRow(item.id)) {

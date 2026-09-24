@@ -21,19 +21,16 @@
     {{ form.non_field_errors }}
 </form>
 
-<div class="d-flex justify-content-end mb-2">
-    <button type="button" id="history-export-btn" class="btn btn-outline-secondary btn-sm">Export to Excel</button>
-</div>
-
 {{ events_data|json_script:"history-table-data" }}
-<div id="history-table" class="table-sm"></div>
+<div id="history-table-card" class="data-table-card">
+    <div id="history-table" class="table-sm"></div>
+</div>
 
 <h3 class="mt-4">Product edits (name, price, category, ...)</h3>
-<div class="d-flex justify-content-end mb-2">
-    <button type="button" id="changes-export-btn" class="btn btn-outline-secondary btn-sm">Export to Excel</button>
-</div>
 {{ changes_data|json_script:"changes-table-data" }}
-<div id="changes-table" class="table-sm"></div>
+<div id="changes-table-card" class="data-table-card">
+    <div id="changes-table" class="table-sm"></div>
+</div>
 
 <hr>
 <a href="{% url 'product_details' product.pk %}">Cancel and back to product</a>
@@ -77,9 +74,7 @@ document.addEventListener('DOMContentLoaded', function () {
         {title: 'Cashier', field: 'cashier', width: 200},
     ], {placeholder: 'No sales or deliveries for {{ product.name|escapejs }} in this period.'});
 
-    document.getElementById('history-export-btn').addEventListener('click', function () {
-        table.download('xlsx', 'product-history.xlsx', {sheetName: 'History'});
-    });
+    attachTableExportToToolbar(table, '#history-table-card', 'product-history.xlsx', 'History');
 
     var changesTable = initExcelStyleTable('#changes-table', 'changes-table-data', [
         {title: 'Date', field: 'date', width: 160},
@@ -89,9 +84,7 @@ document.addEventListener('DOMContentLoaded', function () {
         {title: 'Changed By', field: 'changed_by', width: 160},
     ], {placeholder: 'No tracked edits for {{ product.name|escapejs }} in this period.'});
 
-    document.getElementById('changes-export-btn').addEventListener('click', function () {
-        changesTable.download('xlsx', 'product-changes.xlsx', {sheetName: 'Changes'});
-    });
+    attachTableExportToToolbar(changesTable, '#changes-table-card', 'product-changes.xlsx', 'Changes');
 });
 </script>
 {% endblock %}

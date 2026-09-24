@@ -1,86 +1,178 @@
 {% extends 'base.html' %}
+{% load static cache_bust %}
 
 {% block title %}STORA - Categories List{% endblock %}
 
+{% block main_class %}main-wide{% endblock %}
+{% block container_class %}container-fluid{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
+{% endblock %}
+
 {% block content %}
 
-<h1>Categories List</h1>
+<div class="category-list-page">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h2 mb-1">Categories List</h1>
+            <p class="text-muted mb-0">The category tree used across Products and the POS shortcuts panel. Click a row to edit it, a column header to sort, use the ▾ to filter.</p>
+        </div>
+        {% if perms.products.add_category %}
+        <a href="{% url 'category_create' %}" class="icon-btn icon-btn--add">
+            <span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--add"></span></span>
+            <span class="icon-btn__label">Add category</span>
+        </a>
+        {% endif %}
+    </div>
 
-<table>
-    <thead>
-        <tr>
-            <th>Name</th>
-            <th>Parent</th>
-            <th>Description</th>
-            <th>Show on POS</th>
-            <th>{% if perms.products.add_category %}<a href="{% url 'category_create' %}" class="add-btn-table" title="Add a new category">+</a>{% endif %}</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for category in categories %}
-        <tr>
-            <td>{{ category.name }}</td>
-            <td>{{ category.parent.name|default:"—" }}</td>
-            <td>{{ category.description }}</td>
-            <td>
-                <button
-                    type="button" class="pos-toggle-btn{% if category.show_on_pos %} pos-toggle-btn--on{% endif %}"
-                    data-pk="{{ category.pk }}"
-                    {% if not perms.products.change_category %}disabled{% endif %}
-                >{% if category.show_on_pos %}On{% else %}Off{% endif %}</button>
-            </td>
-            <td>
-                {% if perms.products.change_category %}<a href="{% url 'category_edit' category.pk %}">Edit</a>{% endif %}
-                {% if perms.products.change_category and perms.products.delete_category %}|{% endif %}
-                {% if perms.products.delete_category %}<a href="{% url 'category_delete' category.pk %}">Delete</a>{% endif %}
-            </td>
-        </tr>
-        {% empty %}
-        <tr>
-            <td colspan="5">No categories found.</td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
+    {% if can_delete_category %}
+    <div id="category-bulk-bar" class="bulk-actions-bar d-none align-items-center gap-2 flex-wrap mb-2">
+        <strong><span id="category-bulk-count">0</span> selected</strong>
+        <button type="button" id="category-delete-btn" class="icon-btn icon-btn--delete icon-btn--sm ms-auto">
+            <span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--bin"></span></span>
+            <span class="icon-btn__label">Delete selected</span>
+        </button>
+    </div>
+    {% endif %}
 
+    {{ categories_data|json_script:"categories-table-data" }}
+    <div class="data-table-card">
+        <div id="categories-table" class="table-sm"></div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'vendor/sheetjs/xlsx.full.min.js' %}"></script>
+<script src="{% static 'vendor/tabulator/tabulator.min.js' %}"></script>
+<script src="{% static_v 'js/data-table.js' %}"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+    var canEdit = {{ can_edit_category|yesno:"true,false" }};
+    var canDelete = {{ can_delete_category|yesno:"true,false" }};
+
     function getCookie(name) {
         var match = document.cookie.match('(?:^|; )' + name + '=([^;]*)');
         return match ? decodeURIComponent(match[1]) : '';
     }
 
-    document.querySelectorAll('.pos-toggle-btn').forEach(function (btn) {
-        if (btn.disabled) return;
-        btn.addEventListener('click', function () {
-            var turningOn = !btn.classList.contains('pos-toggle-btn--on');
+    // Same shared toggle button/endpoint as before -- just now living
+    // inside a Tabulator formatter/cellClick instead of a plain <td>, same
+    // pattern as the Products grid's own show_on_pos column.
+    function posToggleFormatter(cell) {
+        return cell.getValue()
+            ? '<button type="button" class="pos-toggle-btn pos-toggle-btn--on">On</button>'
+            : '<button type="button" class="pos-toggle-btn">Off</button>';
+    }
+
+    function posToggleCellClick(e, cell) {
+        if (!canEdit) return;
+        var newValue = !cell.getValue();
+        cell.setValue(newValue);
+        var body = new URLSearchParams();
+        body.set('value', newValue ? 'true' : 'false');
+        fetch('/products/categories/' + cell.getRow().getData().id + '/toggle-pos/', {
+            method: 'POST',
+            headers: {'X-CSRFToken': getCookie('csrftoken')},
+            body: body,
+        })
+            .then(function (response) {
+                if (!response.ok) {
+                    cell.setValue(!newValue);
+                    alert('Could not save the change.');
+                }
+            })
+            .catch(function () {
+                cell.setValue(!newValue);
+                alert('Network error -- change was not saved.');
+            });
+    }
+
+    var columns = [];
+    // Selection checkbox column, same convention (and same shared
+    // formatter/cellClick-free setup) as the Products grid -- free
+    // multi-select, no cap. An earlier version capped this at one row so
+    // the bulk bar's Delete button could reuse the old single-object
+    // CategoryDeleteView/confirm page directly; that felt broken/
+    // restrictive next to the Products grid's own free multi-select
+    // (flagged live), so Delete now posts to CategoryBulkDeleteView with
+    // however many ids are checked, same as Products' own bulk delete.
+    if (canDelete) {
+        columns.push({
+            formatter: 'rowSelection', titleFormatter: 'rowSelection', hozAlign: 'center',
+            width: 40, headerSort: false, headerFilter: false, hideable: false,
+            cellClick: function (e, cell) { cell.getRow().toggleSelect(); },
+        });
+    }
+    columns.push(
+        {title: 'Name', field: 'name', width: 220, bottomCalc: 'count'},
+        {title: 'Parent', field: 'parent', width: 180},
+        {title: 'Description', field: 'description', widthGrow: 2, minWidth: 200},
+        {
+            title: 'Show on POS', field: 'show_on_pos', width: 130, hozAlign: 'center',
+            formatter: posToggleFormatter, cellClick: posToggleCellClick,
+        }
+    );
+
+    var table = initExcelStyleTable('#categories-table', 'categories-table-data', columns, {
+        placeholder: 'No categories found.',
+        selectableRows: canDelete ? true : false,
+    });
+
+    // Click a row to edit it -- guarded off for the selection checkbox
+    // column (no field, own click handling above), same convention as
+    // Products List.
+    table.on('rowClick', function (e, row) {
+        if (!canEdit) return;
+        var cellEl = e.target.closest('.tabulator-cell');
+        var field = cellEl ? cellEl.getAttribute('tabulator-field') : null;
+        if (field === null || field === 'show_on_pos') return;
+        var url = row.getData().edit_url;
+        if (url) window.location = url;
+    });
+
+    // Bulk bar: same show/hide-on-selection convention as Products List
+    // (appears once >=1 row is checked, hides again at 0), and Delete now
+    // works the same way too -- confirm(), then one POST deleting every
+    // selected id via CategoryBulkDeleteView, then reload.
+    var bulkBar = document.getElementById('category-bulk-bar');
+    var deleteBtn = document.getElementById('category-delete-btn');
+    if (bulkBar && deleteBtn) {
+        var bulkCount = document.getElementById('category-bulk-count');
+        table.on('rowSelectionChanged', function (data) {
+            bulkCount.textContent = data.length;
+            bulkBar.classList.toggle('d-none', data.length === 0);
+            bulkBar.classList.toggle('d-flex', data.length > 0);
+        });
+        deleteBtn.addEventListener('click', function () {
+            var selected = table.getSelectedData();
+            if (!selected.length) return;
+            if (!confirm('Delete ' + selected.length + ' selected categor' + (selected.length === 1 ? 'y' : 'ies') + '? This cannot be undone.')) return;
+
             var body = new URLSearchParams();
-            body.set('value', turningOn ? 'true' : 'false');
-
-            function applyState(on) {
-                btn.classList.toggle('pos-toggle-btn--on', on);
-                btn.textContent = on ? 'On' : 'Off';
-            }
-            applyState(turningOn);
-
-            fetch('/products/categories/' + btn.dataset.pk + '/toggle-pos/', {
+            selected.forEach(function (row) { body.append('ids', row.id); });
+            fetch('{% url "category_bulk_delete" %}', {
                 method: 'POST',
                 headers: {'X-CSRFToken': getCookie('csrftoken')},
                 body: body,
             })
-                .then(function (response) {
-                    if (!response.ok) {
-                        applyState(!turningOn);
-                        alert('Could not save the change.');
-                    }
+                .then(function (response) { return response.json().then(function (data) { return {ok: response.ok, data: data}; }); })
+                .then(function (result) {
+                    if (!result.ok) alert(result.data.error || 'Could not delete the selected categories.');
+                    location.reload();
                 })
                 .catch(function () {
-                    applyState(!turningOn);
                     alert('Network error -- change was not saved.');
                 });
         });
-    });
+    }
+
+    // Export to Excel moves into the table card's own toolbar (the bar
+    // data-table.js's addColumnChooser() inserts just above the grid for
+    // "Columns ▾"), as a round icon-btn instead of a plain outline button.
+    attachTableExportToToolbar(table, '.data-table-card', 'categories.xlsx', 'Categories');
 });
 </script>
-
 {% endblock %}

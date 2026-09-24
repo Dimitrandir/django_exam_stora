@@ -5,6 +5,17 @@
     --danger-color: #e74c3c;
     --success-color: #27ae60;
     --light-bg: #f4f7f6;
+
+    /* STYLES.md palette -- registered here (additive only, nothing above
+       is touched) so new/redesigned screens can reuse these tokens
+       instead of re-declaring the same hex values locally. First real
+       consumer: the Categories List pilot (category-list-page section
+       below). See STYLES.md for the full rationale/usage guide. */
+    --brand-cyan-light: #4DD9F5;
+    --brand-cyan-mid: #3BB8E8;
+    --brand-blue-deep: #2B6FD1;
+    --brand-green-light: #2FAE6B;
+    --brand-green-deep: #1E7A4C;
 }
 
 body {
@@ -342,12 +353,111 @@ input[type="text"], input[type="number"], input[type="email"], select, textarea 
     font-weight: 600;
 }
 
-.sale-form,
-.delivery-form {
+.sale-form {
     background: white;
     padding: 1.5rem;
     border-radius: 1rem;
     box-shadow: 0 0.5rem 1rem rgba(0,0,0,.05);
+}
+
+/* Delivery form -- two separate "blocks" stacked on the page background
+   (General Information, then Products) instead of one big card, so each
+   reads as its own distinct unit (flagged live). .delivery-form itself is
+   now just a layout wrapper (no background of its own) -- the card look
+   moves onto each section below. */
+.delivery-form {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+}
+
+.delivery-form--writeoff {
+    padding-left: 1rem;
+}
+
+.delivery-form__general,
+.delivery-form__items {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 1.25rem;
+    box-shadow: 0 4px 18px rgba(43, 111, 209, 0.08);
+}
+
+/* Grouped fields (Receiver/Delivery Date; Supplier/Document Type/Document
+   Date/Document Number) sit side by side in a row on a wide screen -- each
+   field has a 240px minimum (280px for Supplier, since it also holds the
+   search pill + "+ New supplier" bubble), so flex-wrap naturally drops
+   fields onto their own line one at a time as the screen narrows, down to
+   fully stacked on a phone. Comment always stays full-width on its own
+   line -- it's a textarea, pairing it with anything else would look odd. */
+.delivery-form__fields {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.delivery-form__row {
+    display: flex;
+    gap: 1.25rem;
+    flex-wrap: wrap;
+}
+
+.delivery-form__row > .delivery-form__field {
+    flex: 1 1 240px;
+}
+
+.delivery-form__row > .delivery-form__field--supplier {
+    flex-basis: 280px;
+}
+
+.delivery-form__field label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 0.35rem;
+}
+
+/* Supplier's search pill + "+ New supplier" bubble sit on one line, the
+   pill taking up the remaining space. */
+.delivery-form__supplier-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+/* Document Number's live digit counter -- invoice numbers are always 10
+   digits, so a clerk typing from a physical invoice can glance at "N/10"
+   instead of recounting the paper against the screen to catch a missed
+   digit. Counts digits only (regex \d), not the field's raw length -- a
+   write-off/scrap document number can include letters (auto-generated
+   "WO-20260910-001" style), which shouldn't count toward the 10. Purely a
+   visual aid (see the JS below) -- doesn't block submission, per the
+   project's "no validation for things that aren't actually required" rule,
+   since only invoices specifically need exactly 10. */
+.delivery-form__counted-input {
+    position: relative;
+}
+
+.delivery-form__counted-input input {
+    padding-right: 3rem !important;
+}
+
+.delivery-form__field-counter {
+    position: absolute;
+    right: 0.7rem;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #8a94a0;
+    pointer-events: none;
+}
+
+.delivery-form__field-counter.is-complete {
+    color: var(--brand-green-deep);
+}
+
+.delivery-form__field-counter.is-over {
+    color: var(--danger-color);
 }
 
 /* Trims .sale-form's own left/right padding too, on top of main.main-wide's
@@ -1297,8 +1407,12 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
 
 .excel-filter-toggle {
     display: inline-block;
-    padding: 0 2px;
-    font-size: 11px;
+    padding: 0 3px;
+    /* Only the per-column filter "▾" arrows use this class now -- the
+       Columns ▾ chooser (data-table.js's addColumnChooser) was moved onto
+       its own icon-btn styling and no longer shares it, so bumping the
+       size here doesn't touch that button too. */
+    font-size: 16px;
     font-weight: normal;
     line-height: 1;
     cursor: pointer;
@@ -1846,4 +1960,397 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
     align-items: center;
     gap: 0.75rem;
     flex-wrap: wrap;
+}
+
+/* Data table card -- pilot started on Categories List for the STYLES.md
+   palette (Material 3 Expressive soft/rounded surfaces, blue-tinted
+   shadow), now shared with Products List too. A soft rounded surface
+   around the grid, in place of the flat edge-to-edge table it replaces.
+   Padding keeps Tabulator's own header/filter row and the "Columns ▾"
+   chooser (inserted just above the grid by data-table.js) inside the same
+   card. Not applied to :root/every table automatically -- opt in per page
+   by wrapping the grid div in this class, same staged-rollout idea as the
+   rest of STYLES.md. */
+.data-table-card {
+    background: #ffffff;
+    border-radius: 1.25rem;
+    padding: 0.75rem;
+    box-shadow: 0 4px 18px rgba(43, 111, 209, 0.08);
+}
+
+/* "Columns ▾" toolbar bar (built by data-table.js's addColumnChooser,
+   which only ever adds the one widget) -- a page's own JS tags it with
+   this class and drops "Export to Excel" into the same row, opposite end.
+   Scoped to opt-in pages' markup, not a change to the shared helper --
+   every other table's "Columns ▾" bar is untouched. */
+.data-table-card__toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+/* Wraps Enable Edit + Export to Excel (see attachTableExportToToolbar in
+   data-table.js) as ONE flex child of the bar above, so they stay adjacent
+   to each other regardless of how many buttons end up in the group --
+   space-between only ever sees two children (Columns ▾, this group). */
+.data-table-card__toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+/* Expand-on-hover circular action button ("FAB") -- collapses to a plain
+   colored circle (icon only) at rest, and grows into a pill revealing what
+   it does on hover/focus. Built as a shared, reusable component (not
+   category-specific naming) so it's ready to reuse on the app's other
+   "+"/"Delete" controls later, once this pilot on the Categories screen is
+   approved -- see CLAUDE.md for that staged-rollout idea. */
+.icon-btn {
+    display: inline-flex;
+    align-items: center;
+    height: 3rem;
+    border: none;
+    border-radius: 999px;
+    padding: 0;
+    overflow: hidden;
+    cursor: pointer;
+    text-decoration: none;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.18);
+    transition: box-shadow 0.2s ease;
+}
+
+.icon-btn:hover,
+.icon-btn:focus-visible {
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.26);
+}
+
+.icon-btn__icon {
+    flex: 0 0 3rem;
+    width: 3rem;
+    height: 3rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    color: #ffffff;
+}
+
+/* Every icon-btn glyph (+, check, bin) is a SEPARATE inner span sized/
+   colored by .icon-btn__glyph, not a modifier on .icon-btn__icon itself --
+   that was tried first for the bin and broke the button's shape (confirmed
+   live from a screenshot: the circle stretched into a tall oval). Cause:
+   a combined .icon-btn__icon--bin's own width/height and .icon-btn__icon's
+   have EQUAL selector specificity, so which one wins per property came
+   down to source order + how flex-basis vs height interact in a row flex
+   container -- width stayed pinned to the flex-basis while height shrank,
+   stretching the whole button. Nesting keeps the circle container
+   completely unmodified and sizes the glyph independently inside it.
+   All three are flat single-color SVGs applied as a CSS mask (a plain
+   white shape, not a colored image) -- same technique for all of them, so
+   swapping to a solid icon set instead of "+"/text characters or emoji was
+   a CSS-only change, no new markup. static/delete.png (a solid red bin on
+   transparent) is masked the same way; +/check are inline SVG data URIs
+   (Google Material Design icon paths, Apache-licensed) since there's no
+   static asset for them. */
+.icon-btn__glyph {
+    display: block;
+    width: 1.35rem;
+    height: 1.35rem;
+    background-color: #ffffff;
+}
+
+.icon-btn__glyph--bin {
+    -webkit-mask: url("delete.png") center / contain no-repeat;
+    mask: url("delete.png") center / contain no-repeat;
+}
+
+.icon-btn__glyph--add {
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M19 13H13V19H11V13H5V11H11V5H13V11H19V13Z'/%3E%3C/svg%3E") center / contain no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M19 13H13V19H11V13H5V11H11V5H13V11H19V13Z'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+.icon-btn__glyph--check {
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z'/%3E%3C/svg%3E") center / contain no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+/* Pencil -- "Enable/Disable Edit" (see .icon-btn--outline above). */
+.icon-btn__glyph--edit {
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34a.9959.9959 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z'/%3E%3C/svg%3E") center / contain no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34a.9959.9959 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+/* Eye -- "Columns ▾" chooser (see addColumnChooser in data-table.js),
+   masked from the existing static/visibility.png asset (same technique as
+   the bin icon's static/delete.png) rather than a redrawn inline SVG. */
+.icon-btn__glyph--visibility {
+    -webkit-mask: url("visibility.png") center / contain no-repeat;
+    mask: url("visibility.png") center / contain no-repeat;
+}
+
+/* Same search icon as .pill-search-wrapper__icon below, reused via mask so
+   both places (a white glyph in a colored circle here; a gray glyph on a
+   plain field there) share one drawn shape. */
+.icon-btn__glyph--search,
+.pill-search-wrapper__icon {
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z'/%3E%3C/svg%3E") center / contain no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+.icon-btn__label {
+    max-width: 0;
+    opacity: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: #ffffff;
+    transition: max-width 0.25s ease, opacity 0.2s ease, padding-right 0.25s ease;
+}
+
+.icon-btn:hover .icon-btn__label,
+.icon-btn:focus-visible .icon-btn__label {
+    max-width: 220px;
+    opacity: 1;
+    padding-right: 1.15rem;
+}
+
+.icon-btn--add {
+    background: var(--brand-green-light);
+}
+
+.icon-btn--add:hover {
+    background: var(--brand-green-deep);
+}
+
+/* Export to Excel -- the icon itself is a real (small, flat) multi-color
+   Excel file glyph now, not a white silhouette on a colored circle like
+   every other icon-btn (see attachTableExportToToolbar in data-table.js)
+   -- a solid green circle behind Excel's OWN green+white icon would fight
+   it, so this one gets a light/white circle instead, closer to how the
+   reference icon actually looks (a flat icon on a plain background). */
+.icon-btn--export {
+    background: #ffffff;
+    border: 1px solid #d7dee3;
+}
+
+.icon-btn--export .icon-btn__label {
+    color: var(--primary-color);
+}
+
+.icon-btn--export:hover {
+    background: var(--light-bg);
+}
+
+.icon-btn--delete {
+    background: var(--danger-color);
+}
+
+.icon-btn--delete:hover {
+    background: #c0392b;
+}
+
+/* Enable Edit -- a persistent MODE toggle (stays "pressed" while editing
+   is on), not a one-shot action like the solid-color buttons above, so it
+   gets its own visual language: a quiet outline at rest, filled only while
+   active. Mirrors the reference screenshot (a plain pencil-in-pill glyph,
+   not a bold colored circle). */
+.icon-btn--outline {
+    background: #ffffff;
+    border: 1px solid #ccc;
+}
+
+.icon-btn--outline .icon-btn__glyph {
+    background-color: var(--primary-color);
+}
+
+.icon-btn--outline .icon-btn__label {
+    color: var(--primary-color);
+}
+
+.icon-btn--outline:hover {
+    background: var(--light-bg);
+}
+
+.icon-btn--outline.is-active {
+    background: var(--brand-blue-deep);
+    border-color: var(--brand-blue-deep);
+}
+
+.icon-btn--outline.is-active .icon-btn__glyph {
+    background-color: #ffffff;
+}
+
+.icon-btn--outline.is-active .icon-btn__label {
+    color: #ffffff;
+}
+
+/* Confirm/apply actions (bulk-bar "Apply category"/"Apply price") -- same
+   shape, checkmark glyph instead of "+"/bin, blue rather than green/red so
+   the three read as a small consistent color system: green = create,
+   blue = confirm/apply, red = destructive. */
+.icon-btn--apply {
+    background: var(--brand-cyan-mid);
+}
+
+.icon-btn--apply:hover {
+    background: var(--brand-blue-deep);
+}
+
+.icon-btn:disabled {
+    background: #ccc !important;
+    box-shadow: none;
+    cursor: not-allowed;
+}
+
+/* Disabled still expands on hover/focus (same .icon-btn:hover rule above --
+   nothing here excludes :disabled) so a manager who hasn't picked a row/
+   value yet still gets told WHY the button won't do anything, not just a
+   dead gray circle. The pages using this swap the label text itself
+   between the "not ready yet" and "ready" wording via JS. */
+
+/* Pill-shaped text/number/search input -- the rounded-input half of the
+   .icon-btn "circle button, pill on interaction" language, used in the
+   Products/Categories bulk-actions bars (category search, sell price).
+   `input.pill-input` (element + class, not just `.pill-input`) + !important
+   on the two properties the global `input[type="text"]`/`input[type=
+   "number"]` rule near the top of this file also sets (border-radius: 4px,
+   width: 100%) -- that rule's selector (type + attribute) is MORE specific
+   than a bare class alone, so a plain `.pill-input { border-radius: 999px }`
+   silently lost every time (confirmed live: the field rendered with sharp
+   4px corners despite this rule being present). */
+.pill-input {
+    border: 1px solid #ccc !important;
+    border-radius: 999px !important;
+    padding: 0.4rem 0.9rem !important;
+    font-size: 0.875rem;
+    background: #ffffff !important;
+    color: #333 !important;
+}
+
+/* Search variant: a magnifying-glass icon anchored inside the pill's left
+   edge (same "icon anchored inside the field" idea as the POS search box's
+   keyboard glyph, see sale_add.html) -- extra left padding on the input
+   itself clears it. Masked SVG (see .icon-btn__glyph below), not the 🔍
+   emoji this started as -- flagged live as looking out of place/dated next
+   to the rest of the flat icon set. */
+.pill-search-wrapper {
+    position: relative;
+}
+
+.pill-search-wrapper .pill-input {
+    padding-left: 2.1rem !important;
+    width: 100%;
+}
+
+.pill-search-wrapper__icon {
+    position: absolute;
+    left: 0.7rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 1rem;
+    height: 1rem;
+    background-color: #8a94a0;
+    pointer-events: none;
+}
+
+/* "Browse" tucked inside the pill's own right edge, as a small pill-on-a-
+   pill, instead of a separate button sitting next to the field -- the
+   input's own right padding is widened to clear it. */
+.pill-search-wrapper--with-browse .pill-input {
+    padding-right: 4.4rem !important;
+}
+
+.pill-search-wrapper__browse-btn {
+    position: absolute;
+    right: 0.3rem;
+    top: 50%;
+    transform: translateY(-50%);
+    border: none;
+    background: var(--light-bg);
+    border-radius: 999px;
+    padding: 0.25rem 0.7rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--brand-blue-deep);
+    cursor: pointer;
+}
+
+.pill-search-wrapper__browse-btn:hover {
+    background: #e4ebf2;
+    color: var(--brand-blue-deep);
+}
+
+/* Plain pill-shaped button for a handful of textual (non icon-btn) actions
+   -- e.g. the Delivery items grid's Delete Line/Discount buttons, moved
+   below the table (flagged live) -- same stadium shape as .pill-input/
+   .pos-toggle-btn, just for buttons that carry a full label instead of an
+   icon. Bootstrap's own .btn sets border-radius at the same specificity
+   (one class), so this only needs to come later in the file to win, no
+   !important needed. */
+.pill-btn {
+    border-radius: 999px;
+    padding: 0.45rem 1.1rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.pill-btn--outline {
+    background: #ffffff;
+    border: 1px solid var(--brand-blue-deep);
+    color: var(--brand-blue-deep);
+}
+
+.pill-btn--outline:hover {
+    background: var(--light-bg);
+    color: var(--brand-blue-deep);
+}
+
+/* Bulk-actions bar (Products/Categories grids) -- appears once a row is
+   selected via the checkbox column. Pill-shaped rather than Bootstrap's
+   square-cornered .alert, matching the rest of the icon-btn/pill-input
+   language on this pass. */
+.bulk-actions-bar {
+    background: var(--light-bg);
+    border: 1px solid #dce3e8;
+    border-radius: 999px;
+    padding: 0.6rem 1.1rem;
+}
+
+/* Bulk-bar action buttons read as too large sitting inline with a compact
+   pill search box and small text (flagged live from a screenshot) -- a
+   smaller .icon-btn variant for that context specifically. The standalone
+   header "+ New Product"/"+ Add category" buttons keep the full 3rem size
+   deliberately -- those are each page's one primary action, not one of
+   several controls crowded into a thin bar. */
+.icon-btn--sm {
+    height: 2.25rem;
+}
+
+.icon-btn--sm .icon-btn__icon {
+    flex-basis: 2.25rem;
+    width: 2.25rem;
+    height: 2.25rem;
+}
+
+.icon-btn--sm .icon-btn__glyph {
+    width: 1.05rem;
+    height: 1.05rem;
+}
+
+/* A touch bigger than the other .icon-btn--sm glyphs (flagged live) --
+   same 2.25rem circle, just a larger icon inside it. Same specificity as
+   the rule above (two classes each), so each has to come AFTER it in the
+   file to actually win the cascade tie -- placed earlier once already and
+   silently lost to source order despite matching the element, confirmed
+   live via getComputedStyle before moving it here. */
+.icon-btn--sm .icon-btn__glyph--visibility,
+.icon-btn--sm .icon-btn__glyph--edit {
+    width: 1.5rem;
+    height: 1.5rem;
+}
+
+.icon-btn--sm .icon-btn__label {
+    font-size: 0.8rem;
 }

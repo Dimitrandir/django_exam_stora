@@ -106,7 +106,7 @@
         layout: 'fitColumns',
         placeholder: 'Add a product, category, or supplier above to start building this price list.',
         columns: [
-            {title: '#', formatter: 'rownum', width: 50, hozAlign: 'center', headerSort: false},
+            {title: '#', field: 'target_name', formatter: 'rownum', width: 50, hozAlign: 'center'},
             {title: 'Applies To', field: 'scope_type', width: 110, formatter: function (cell) { return scopeLabel(cell.getValue()); }},
             {title: 'Target', field: 'target_name', widthGrow: 2},
             {

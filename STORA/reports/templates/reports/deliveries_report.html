@@ -72,13 +72,14 @@
 
     <section class="report-section card shadow-sm border-0 rounded-4 mb-4">
         <div class="card-body">
-            <header class="section-header d-flex justify-content-between align-items-center mb-3">
+            <header class="section-header mb-3">
                 <h2 class="h4 mb-0">Movements in Period</h2>
-                <button type="button" id="deliveries-export-btn" class="btn btn-outline-secondary btn-sm">Export to Excel</button>
             </header>
 
             {{ deliveries_data|json_script:"deliveries-table-data" }}
-            <div id="deliveries-table" class="table-sm"></div>
+            <div id="deliveries-table-card" class="data-table-card">
+                <div id="deliveries-table" class="table-sm"></div>
+            </div>
             <p class="text-muted small mt-2 mb-0">Click a row to open that record (edit/delete from there).</p>
         </div>
     </section>
@@ -98,8 +99,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
     var table = initExcelStyleTable('#deliveries-table', 'deliveries-table-data', [
         {
-            title: '#', formatter: 'rownum', width: 50, hozAlign: 'center',
-            headerSort: false, headerFilter: false, hideable: false,
+            title: '#', field: 'time_of_delivery', formatter: 'rownum', width: 50, hozAlign: 'center',
+            headerFilter: false, hideable: false,
         },
         {title: 'Date', field: 'time_of_delivery', width: 160},
         {title: 'Document Type', field: 'document_type', width: 150},
@@ -124,9 +125,7 @@ document.addEventListener('DOMContentLoaded', function () {
         window.location = row.getData().view_url;
     });
 
-    document.getElementById('deliveries-export-btn').addEventListener('click', function () {
-        table.download('xlsx', 'deliveries_report.xlsx', {sheetName: 'Deliveries'});
-    });
+    attachTableExportToToolbar(table, '#deliveries-table-card', 'deliveries_report.xlsx', 'Deliveries');
 
     // -- Supplier filter: searchable picker instead of a plain <select>,
     // same debounced-trigram-search pattern as the delivery form's own

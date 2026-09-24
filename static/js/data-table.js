@@ -219,6 +219,18 @@
         var bar = document.createElement('div');
         bar.className = 'mb-2';
         var widget = createFloatingToggle('Columns ▾', 'Choose visible columns');
+        // Restyled as a round icon-btn (eye glyph, static/visibility.png)
+        // instead of the plain text "Columns ▾" link -- className is
+        // REPLACED outright (not appended alongside excel-filter-toggle),
+        // since click/keydown/positioning on this widget are all wired to
+        // the element itself in createFloatingToggle, not to that class --
+        // mixing it with icon-btn's own sizing rules would risk the exact
+        // same cross-class specificity fight the bin icon hit earlier
+        // (see .icon-btn__glyph--bin's comment in style.css).
+        widget.toggle.className = 'icon-btn icon-btn--outline icon-btn--sm';
+        widget.toggle.innerHTML =
+            '<span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--visibility"></span></span>' +
+            '<span class="icon-btn__label">Columns</span>';
         bar.appendChild(widget.wrapper);
         containerElement.parentNode.insertBefore(bar, containerElement);
 
@@ -356,5 +368,100 @@
         }
 
         return table;
+    };
+
+    /**
+     * Moves "Export to Excel" (round green icon-btn, see style.css) into
+     * the "Columns ▾" toolbar bar this file's own addColumnChooser()
+     * inserts just above the grid, instead of leaving it as a separate
+     * button up in the page header -- one shared implementation instead of
+     * copy-pasting the same relocation snippet into every table's own
+     * inline <script> (originally written per-page for Products/Categories
+     * List, then asked to roll out to every Tabulator table in the app).
+     *
+     * Call AFTER initExcelStyleTable() returns (so this file's own
+     * tableBuilt listener for the Columns chooser -- registered inside
+     * initExcelStyleTable, before it returns -- runs first and the bar
+     * already exists by the time this one fires).
+     *
+     * @param table          the Tabulator instance from initExcelStyleTable
+     * @param cardSelector   CSS selector for the .data-table-card wrapping
+     *                       this table (the toolbar bar is inserted as
+     *                       that element's direct child)
+     * @param filename       xlsx filename to download as
+     * @param sheetName      sheet name inside the workbook
+     * @param extraButtons   optional array of extra DOM elements (e.g. an
+     *                       "Enable Edit" icon-btn) to insert into the same
+     *                       bar, before the Export button
+     */
+    global.attachTableExportToToolbar = function (table, cardSelector, filename, sheetName, extraButtons) {
+        table.on('tableBuilt', function () {
+            var card = document.querySelector(cardSelector);
+            if (!card) return;
+            var bar = card.querySelector(':scope > .mb-2');
+            if (!bar) {
+                // No "Columns ▾" bar to dock into -- happens on tables built
+                // with `columnChooser: false` (e.g. sale_details.html, a
+                // short fixed-column list with nothing worth hiding). Build
+                // the same bar addColumnChooser() would have, so Export
+                // still gets a home instead of silently never appearing.
+                bar = document.createElement('div');
+                bar.className = 'mb-2';
+                card.insertBefore(bar, card.firstElementChild);
+            }
+            bar.classList.add('data-table-card__toolbar');
+
+            // Grouped into ONE wrapper (not appended to the bar individually)
+            // -- the bar is `justify-content: space-between`, which spreads
+            // however many direct children it has evenly across its width.
+            // With Columns ▾ as one child and Edit/Export appended as two
+            // MORE separate children, Edit landed floating in the middle
+            // instead of sitting next to Export (flagged live). A single
+            // wrapper holding both keeps the bar down to two children --
+            // Columns ▾ on the left, this whole group on the right -- with
+            // Edit and Export adjacent to each other inside it.
+            var actionsGroup = document.createElement('div');
+            actionsGroup.className = 'data-table-card__toolbar-actions';
+
+            (extraButtons || []).forEach(function (btn) { actionsGroup.appendChild(btn); });
+
+            var exportBtn = document.createElement('button');
+            exportBtn.type = 'button';
+            exportBtn.className = 'icon-btn icon-btn--export icon-btn--sm';
+            // A real (small, flat) Excel file icon, not the white-on-color
+            // mask every other icon-btn glyph uses -- Excel's own green/
+            // white is the whole point here (flagged live, twice: first
+            // wanted the real Excel look instead of a generic download
+            // arrow, then specifically the "open book" style -- green
+            // cover with a bold white X on the left face, a spreadsheet
+            // grid on the right face -- so it's redrawn to match that
+            // shape, not just any green document). Inline multi-color SVG,
+            // not a mask; the circle behind it stays light/white (see
+            // .icon-btn--export in style.css) so these colors don't fight
+            // a colored background the way they would on the solid green
+            // "+" circle. The reference also had a separate arrow next to
+            // the book -- left out here, there's no room for it at icon-
+            // btn size and the hover label already says "Export to Excel".
+            exportBtn.innerHTML =
+                '<span class="icon-btn__icon">' +
+                '<svg viewBox="0 0 30 24" width="27" height="21.6" xmlns="http://www.w3.org/2000/svg">' +
+                '<polygon points="1,6 15,1 15,23 1,18" fill="#7DBB42"/>' +
+                '<path d="M5,7 L11,17 M11,7 L5,17" stroke="#ffffff" stroke-width="2.3" stroke-linecap="round"/>' +
+                '<rect x="14.5" y="3" width="14.5" height="18" rx="1.5" fill="#ffffff" stroke="#7DBB42" stroke-width="1.2"/>' +
+                '<rect x="14.9" y="3.8" width="13.7" height="3.2" fill="#7DBB42"/>' +
+                '<line x1="21.7" y1="7.5" x2="21.7" y2="20.2" stroke="#7DBB42" stroke-width="1"/>' +
+                '<line x1="14.9" y1="11.2" x2="29" y2="11.2" stroke="#7DBB42" stroke-width="1"/>' +
+                '<line x1="14.9" y1="14.6" x2="29" y2="14.6" stroke="#7DBB42" stroke-width="1"/>' +
+                '<line x1="14.9" y1="18" x2="29" y2="18" stroke="#7DBB42" stroke-width="1"/>' +
+                '</svg>' +
+                '</span>' +
+                '<span class="icon-btn__label">Export to Excel</span>';
+            exportBtn.addEventListener('click', function () {
+                table.download('xlsx', filename, {sheetName: sheetName});
+            });
+            actionsGroup.appendChild(exportBtn);
+
+            bar.appendChild(actionsGroup);
+        });
     };
 })(window);

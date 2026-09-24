@@ -109,7 +109,6 @@ class ProductListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListView
             products_data.append(row)
 
         context['products_data'] = products_data
-        context['category_choices'] = list(Category.objects.order_by('name').values_list('name', flat=True))
         return context
 
 
@@ -695,12 +694,63 @@ class CategoryListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListVie
     def get_queryset(self):
         return super().get_queryset().select_related('parent')
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        # Serialized the same way ProductListView feeds its own Tabulator
+        # grid (plain dicts, urls precomputed) -- Edit is gated by a single
+        # permission check for the whole list (not per-row, there's no
+        # per-object rule here), so it's simplest to compute it once and
+        # let an empty edit_url just hide/disable the link client-side,
+        # mirroring how the old template's {% if perms... %} worked around
+        # each link. Delete has no per-row url anymore -- the bulk bar
+        # deletes by id (see CategoryBulkDeleteView), same as the Products
+        # grid's own bulk delete.
+        can_edit = self.request.user.has_perm('products.change_category')
+        can_delete = self.request.user.has_perm('products.delete_category')
+        categories_data = [
+            {
+                'id': category.pk,
+                'name': category.name,
+                'parent': category.parent.name if category.parent else '',
+                'description': category.description,
+                'show_on_pos': category.show_on_pos,
+                'edit_url': reverse('category_edit', kwargs={'pk': category.pk}) if can_edit else '',
+            }
+            for category in context['categories']
+        ]
+        context['categories_data'] = categories_data
+        context['can_edit_category'] = can_edit
+        context['can_delete_category'] = can_delete
+        return context
+
+
+class CategoryBulkDeleteView(LoginRequiredMixin, StaffPermissionRequiredMixin, View):
+    """Deletes every category selected via the Categories List's checkbox
+    column + bulk bar. Mirrors ProductBulkActionView's own `delete` action:
+    one-by-one in a loop, not queryset.delete() -- a ProtectedError on one
+    category can't cancel deletion of the rest of the same batch. The old
+    single-object CategoryDeleteView/confirm page stays as-is (still a
+    valid direct URL), this is just what the list's own bulk bar posts to
+    now instead of navigating there one category at a time."""
+
+    permission_required = 'products.delete_category'
+
+    def post(self, request):
+        ids = request.POST.getlist('ids')
+        if not ids:
+            return JsonResponse({'error': 'No categories selected.'}, status=400)
+
+        deleted = 0
+        for category in Category.objects.filter(pk__in=ids):
+            category.delete()
+            deleted += 1
+        return JsonResponse({'deleted': deleted})
+
 
 class CategoryTogglePosView(LoginRequiredMixin, StaffPermissionRequiredMixin, View):
-    """Backs the single checkbox column on the Categories list -- the list
-    itself is still a plain HTML table (see CLAUDE.md, Tabulator-ifying it
-    is a separate Фаза 1.5 item), so this is a lightweight one-field toggle
-    rather than the full Products-grid inline-edit machinery."""
+    """Backs the "Show on POS" toggle column on the Categories Tabulator
+    grid -- a quick, low-stakes one-field flip (same idea as the Products
+    grid's own show_on_pos toggle), not the full inline-edit machinery."""
 
     permission_required = 'products.change_category'
 

@@ -75,8 +75,9 @@
             </ul>
 
             {% if user.is_authenticated %}
-            <div class="position-relative mx-lg-3 my-2 my-lg-0" style="min-width: 260px;">
-                <input type="search" id="global-search-input" class="form-control form-control-sm"
+            <div class="pill-search-wrapper position-relative mx-lg-3 my-2 my-lg-0" style="min-width: 280px;">
+                <span class="pill-search-wrapper__icon"></span>
+                <input type="search" id="global-search-input" class="pill-input"
                        placeholder="Search products, suppliers, categories, employees..." autocomplete="off">
                 <div id="global-search-results" class="global-search-results"></div>
             </div>

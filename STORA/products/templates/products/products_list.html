@@ -18,34 +18,47 @@
         <p class="text-muted mb-0">Overview of all products in stock. Click a row to open it, a column header to sort, use the ▾ to filter.</p>
     </div>
     <div class="page-actions">
-        <button type="button" id="products-export-btn" class="btn btn-outline-secondary btn-sm">Export to Excel</button>
-        {% if perms.products.change_product %}
-        <button type="button" id="products-edit-toggle-btn" class="btn btn-outline-primary btn-sm">Enable Edit</button>
+        {% if perms.products.add_product %}
+        <a href="{% url 'product_create' %}" class="icon-btn icon-btn--add">
+            <span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--add"></span></span>
+            <span class="icon-btn__label">New Product</span>
+        </a>
         {% endif %}
-        {% if perms.products.add_product %}<a href="{% url 'product_create' %}" class="btn btn-primary btn-sm">+ New Product</a>{% endif %}
     </div>
 </div>
 
-<div id="bulk-actions-bar" class="alert alert-secondary d-none align-items-center gap-2 flex-wrap mb-2">
+<div id="bulk-actions-bar" class="bulk-actions-bar d-none align-items-center gap-2 flex-wrap mb-2">
     <strong><span id="bulk-selected-count">0</span> selected</strong>
     {% if perms.products.change_product %}
-    <select id="bulk-category-select" class="form-select form-select-sm" style="width: auto;">
-        <option value="">-- Category --</option>
-        {% for name in category_choices %}<option value="{{ name }}">{{ name }}</option>{% endfor %}
-    </select>
-    <button type="button" id="bulk-category-apply-btn" class="btn btn-sm btn-outline-primary">Apply Category</button>
+    <div class="pill-search-wrapper pill-search-wrapper--with-browse" style="max-width: 340px; flex: 1 1 260px;">
+        <span class="pill-search-wrapper__icon"></span>
+        <input type="text" id="bulk-category-search-input" class="pill-input" placeholder="Category..." autocomplete="off">
+        <button type="button" id="bulk-category-tree-btn" class="pill-search-wrapper__browse-btn" title="Browse categories as a tree">Browse</button>
+        <div id="bulk-category-search-results" class="global-search-results"></div>
+    </div>
+    <button type="button" id="bulk-category-apply-btn" class="icon-btn icon-btn--apply icon-btn--sm" disabled>
+        <span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--check"></span></span>
+        <span class="icon-btn__label">Pick a category</span>
+    </button>
 
-    <input type="number" id="bulk-price-input" class="form-control form-control-sm" style="width: 110px;" step="0.01" min="0.01" placeholder="Sell price">
-    <button type="button" id="bulk-price-apply-btn" class="btn btn-sm btn-outline-primary">Apply Price</button>
+    <input type="number" id="bulk-price-input" class="pill-input" style="width: 110px;" step="0.01" min="0.01" placeholder="Sell price">
+    <button type="button" id="bulk-price-apply-btn" class="icon-btn icon-btn--apply icon-btn--sm">
+        <span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--check"></span></span>
+        <span class="icon-btn__label">Apply price</span>
+    </button>
     {% endif %}
     {% if perms.products.delete_product %}
-    <button type="button" id="bulk-delete-btn" class="btn btn-sm btn-outline-danger ms-auto">Delete Selected</button>
+    <button type="button" id="bulk-delete-btn" class="icon-btn icon-btn--delete icon-btn--sm ms-auto">
+        <span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--bin"></span></span>
+        <span class="icon-btn__label">Delete selected</span>
+    </button>
     {% endif %}
 </div>
 
 {{ products_data|json_script:"products-table-data" }}
-{{ category_choices|json_script:"category-choices-data" }}
-<div id="products-table" class="table-sm"></div>
+<div class="data-table-card">
+    <div id="products-table" class="table-sm"></div>
+</div>
 
 {% endblock %}
 
@@ -252,17 +265,33 @@ document.addEventListener('DOMContentLoaded', function () {
         window.location = row.getData().view_url;
     });
 
-    document.getElementById('products-export-btn').addEventListener('click', function () {
-        table.download('xlsx', 'products.xlsx', {sheetName: 'Products'});
-    });
+    // Enable Edit moves into the table card's own toolbar too (built here
+    // as a plain DOM element, not template markup, so it can be handed to
+    // attachTableExportToToolbar's extraButtons and land in the bar next
+    // to Export to Excel) -- a round icon-btn like the rest, but the
+    // --outline variant (quiet at rest, filled while active) since this is
+    // a persistent MODE toggle, not a one-shot action.
+    var editToggleBtn = null;
+    if ({{ perms.products.change_product|yesno:"true,false" }}) {
+        editToggleBtn = document.createElement('button');
+        editToggleBtn.type = 'button';
+        editToggleBtn.className = 'icon-btn icon-btn--outline icon-btn--sm';
+        editToggleBtn.innerHTML =
+            '<span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--edit"></span></span>' +
+            '<span class="icon-btn__label">Enable Edit</span>';
+    }
 
-    var editToggleBtn = document.getElementById('products-edit-toggle-btn');
+    // Export to Excel moves into the table card's own toolbar (the bar
+    // data-table.js's addColumnChooser() inserts just above the grid for
+    // "Columns ▾"), as a round icon-btn instead of a plain outline button.
+    attachTableExportToToolbar(table, '.data-table-card', 'products.xlsx', 'Products', editToggleBtn ? [editToggleBtn] : []);
+
     if (editToggleBtn) {
+        var editToggleLabel = editToggleBtn.querySelector('.icon-btn__label');
         editToggleBtn.addEventListener('click', function () {
             editMode = !editMode;
-            editToggleBtn.textContent = editMode ? 'Disable Edit' : 'Enable Edit';
-            editToggleBtn.classList.toggle('btn-outline-primary', !editMode);
-            editToggleBtn.classList.toggle('btn-primary', editMode);
+            editToggleLabel.textContent = editMode ? 'Disable Edit' : 'Enable Edit';
+            editToggleBtn.classList.toggle('is-active', editMode);
             document.getElementById('products-table').classList.toggle('edit-mode-active', editMode);
 
             Object.keys(editorConfig).forEach(function (field) {
@@ -417,14 +446,102 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    var categoryApplyBtn = document.getElementById('bulk-category-apply-btn');
-    if (categoryApplyBtn) {
+    // Category picker for the bulk bar -- same search-box + "Browse" tree
+    // modal pattern as the Product form's own Category field (see
+    // product_create.html), instead of a flat <select> (Category.parent
+    // can nest arbitrarily deep). Tracks the picked NAME in a plain JS var
+    // rather than a hidden input -- ProductBulkActionView's set_category
+    // action already resolves by name (Category.objects.filter(name=...)),
+    // matching what the old <select><option value="{{ name }}"> posted.
+    var categorySearchInput = document.getElementById('bulk-category-search-input');
+    if (categorySearchInput) {
+        var categoryResultsBox = document.getElementById('bulk-category-search-results');
+        var categoryApplyBtn = document.getElementById('bulk-category-apply-btn');
+        var categoryApplyLabel = categoryApplyBtn.querySelector('.icon-btn__label');
+        var selectedCategoryName = '';
+        var categoryDebounceTimer = null;
+        var categorySearchController = null;
+
+        function setSelectedCategory(name) {
+            selectedCategoryName = name || '';
+            categoryApplyBtn.disabled = !selectedCategoryName;
+            categoryApplyLabel.textContent = selectedCategoryName ? 'Apply category' : 'Pick a category';
+        }
+
+        function renderCategoryResults(data) {
+            categoryResultsBox.innerHTML = '';
+            if (!data.results.length) {
+                var empty = document.createElement('div');
+                empty.className = 'global-search-empty';
+                empty.textContent = 'No matches';
+                categoryResultsBox.appendChild(empty);
+                categoryResultsBox.classList.add('is-open');
+                return;
+            }
+            data.results.forEach(function (category) {
+                var row = document.createElement('div');
+                row.className = 'global-search-result';
+                row.textContent = category.name;
+                row.addEventListener('click', function () {
+                    categorySearchInput.value = category.name;
+                    setSelectedCategory(category.name);
+                    categoryResultsBox.classList.remove('is-open');
+                });
+                categoryResultsBox.appendChild(row);
+            });
+            categoryResultsBox.classList.add('is-open');
+        }
+
+        function runCategorySearch() {
+            clearTimeout(categoryDebounceTimer);
+            categoryDebounceTimer = setTimeout(function () {
+                if (categorySearchController) categorySearchController.abort();
+                categorySearchController = new AbortController();
+                var params = new URLSearchParams();
+                var q = categorySearchInput.value.trim();
+                if (q) params.set('q', q);
+                fetch('{% url "category_search" %}?' + params.toString(), {signal: categorySearchController.signal})
+                    .then(function (r) { return r.json(); })
+                    .then(renderCategoryResults)
+                    .catch(function (e) { if (e.name !== 'AbortError') { /* transient network error -- ignore */ } });
+            }, 200);
+        }
+
+        categorySearchInput.addEventListener('input', function () {
+            setSelectedCategory('');
+            runCategorySearch();
+        });
+        categorySearchInput.addEventListener('focus', runCategorySearch);
+        document.addEventListener('click', function (e) {
+            if (!e.target.closest('#bulk-category-search-input') && !e.target.closest('#bulk-category-search-results')) {
+                categoryResultsBox.classList.remove('is-open');
+            }
+        });
+
+        document.getElementById('bulk-category-tree-btn').addEventListener('click', function () {
+            openCategoryTreePicker(function (category) {
+                categorySearchInput.value = category.name;
+                setSelectedCategory(category.name);
+            });
+        });
+
         categoryApplyBtn.addEventListener('click', function () {
-            var value = document.getElementById('bulk-category-select').value;
-            bulkPost('set_category', value).then(function (result) {
+            if (!selectedCategoryName) return;
+            bulkPost('set_category', selectedCategoryName).then(function (result) {
                 if (!result.ok) { alert(result.data.error || 'Could not apply category.'); return; }
                 location.reload();
             });
+        });
+
+        // Selection changing (a different set of products checked) doesn't
+        // itself invalidate a category already picked in the search box --
+        // only clear it when the whole bar hides (nothing selected at all),
+        // so re-opening the bar always starts from a clean slate.
+        table.on('rowSelectionChanged', function (data) {
+            if (!data.length) {
+                categorySearchInput.value = '';
+                setSelectedCategory('');
+            }
         });
     }
 
