@@ -181,6 +181,63 @@ class ProductDeleteProtectedTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(Product.objects.filter(pk=product.pk).exists())
         self.assertContains(response, 'Cannot delete')
+        self.assertContains(response, 'Archive instead')
+
+    def test_archiving_a_product_with_history_hides_it_from_the_list(self):
+        manager = Employee.objects.create_user(
+            username='manager24', password='pass12345', role=Employee.MANAGER
+        )
+        product = Product.objects.create(
+            internal_code='P1000012', name='Discontinued Thing', sell_price=5, quantity=10
+        )
+        sale = SaleAttributes.objects.create(cashier=manager)
+        SaleItems.objects.create(sale=sale, sale_item=product, sale_quantity=1)
+
+        self.client.force_login(manager)
+        response = self.client.post(reverse('product_archive', kwargs={'pk': product.pk}))
+        self.assertRedirects(response, reverse('product_list'))
+
+        product.refresh_from_db()
+        self.assertTrue(product.is_archived)
+        # Still fully intact -- archiving never touches history, unlike delete.
+        self.assertTrue(Product.objects.filter(pk=product.pk).exists())
+        self.assertEqual(SaleItems.objects.filter(sale_item=product).count(), 1)
+
+        list_response = self.client.get(reverse('product_list'))
+        self.assertNotIn(
+            product.pk, [row['id'] for row in list_response.context['products_data']],
+        )
+
+        shown_response = self.client.get(reverse('product_list'), {'show_archived': '1'})
+        self.assertIn(
+            product.pk, [row['id'] for row in shown_response.context['products_data']],
+        )
+
+    def test_archived_toggle_via_inline_update_endpoint(self):
+        manager = Employee.objects.create_user(
+            username='manager25', password='pass12345', role=Employee.MANAGER
+        )
+        product = Product.objects.create(
+            internal_code='P1000013', name='Toggle Me', sell_price=5, quantity=0,
+        )
+        self.client.force_login(manager)
+
+        response = self.client.post(
+            reverse('product_inline_update', kwargs={'pk': product.pk}),
+            {'field': 'is_archived', 'value': 'true'},
+        )
+        self.assertEqual(response.status_code, 200)
+        product.refresh_from_db()
+        self.assertTrue(product.is_archived)
+
+        # Reversible -- same endpoint flips it back.
+        response = self.client.post(
+            reverse('product_inline_update', kwargs={'pk': product.pk}),
+            {'field': 'is_archived', 'value': 'false'},
+        )
+        self.assertEqual(response.status_code, 200)
+        product.refresh_from_db()
+        self.assertFalse(product.is_archived)
 
 
 class ProductBarcodeFormsetTests(TestCase):
@@ -473,6 +530,10 @@ class ProductInlineUpdateViewTests(TestCase):
             quantity=7, category=self.category,
         )
         self.product.supplier.add(self.supplier)
+        # Creating self.product above now also logs its initial field
+        # values (see ProductChangeLogTests) -- cleared here so this
+        # class's edit-focused tests start from a clean slate.
+        ProductChangeLog.objects.filter(product=self.product).delete()
 
     def _post(self, field, value):
         return self.client.post(
@@ -1605,6 +1666,12 @@ class ProductChangeLogTests(TestCase):
             internal_code='CL000001', name='Original Name', sell_price=Decimal('2.00'), quantity=5,
             category=self.category,
         )
+        # Creating self.product above now also logs its initial field
+        # values (see test_creating_a_product_directly_via_the_orm_logs_
+        # initial_values for that behavior specifically, tested on its own
+        # product) -- cleared here so every other test in this class (all
+        # about EDITS) starts from a clean slate.
+        ProductChangeLog.objects.filter(product=self.product).delete()
 
     def _edit_post_data(self, **overrides):
         data = {
@@ -1623,8 +1690,45 @@ class ProductChangeLogTests(TestCase):
         data.update(overrides)
         return data
 
-    def test_creating_a_product_logs_nothing(self):
-        self.assertEqual(ProductChangeLog.objects.filter(product=self.product).count(), 0)
+    def test_creating_a_product_directly_via_the_orm_logs_initial_values(self):
+        # No _changed_by set (same as any direct ORM creation outside a
+        # view) -- logs each tracked field with a blank old_value,
+        # changed_by left None.
+        product = Product.objects.create(
+            internal_code='CL000099', name='Freshly Made', sell_price=Decimal('3.00'), quantity=0,
+        )
+        entries = {e.field_name: e for e in product.change_log.all()}
+        self.assertEqual(entries['name'].old_value, '')
+        self.assertEqual(entries['name'].new_value, 'Freshly Made')
+        self.assertIsNone(entries['name'].changed_by)
+        self.assertNotIn('quantity', entries)  # never tracked, creation or not
+
+    def test_creating_a_product_via_the_view_attributes_it_to_the_creator(self):
+        manager = Employee.objects.create_user(
+            username='manager23', password='pass12345', role=Employee.MANAGER
+        )
+        self.client.force_login(manager)
+        response = self.client.post(reverse('product_create'), {
+            'internal_code': 'CL0002',
+            'name': 'Freshly Created Product',
+            'unit_type': 'piece',
+            'sell_price': '4.50',
+            'quantity': '0',
+            'category': self.category.pk,
+            'barcode-TOTAL_FORMS': '0', 'barcode-INITIAL_FORMS': '0',
+            'barcode-MIN_NUM_FORMS': '0', 'barcode-MAX_NUM_FORMS': '1000',
+            'supplier-TOTAL_FORMS': '0', 'supplier-INITIAL_FORMS': '0',
+            'supplier-MIN_NUM_FORMS': '0', 'supplier-MAX_NUM_FORMS': '1000',
+            'recipe-TOTAL_FORMS': '0', 'recipe-INITIAL_FORMS': '0',
+            'recipe-MIN_NUM_FORMS': '0', 'recipe-MAX_NUM_FORMS': '1000',
+        })
+        self.assertEqual(response.status_code, 302)
+
+        created = Product.objects.get(internal_code='CL0002')
+        entry = created.change_log.get(field_name='name')
+        self.assertEqual(entry.old_value, '')
+        self.assertEqual(entry.new_value, 'Freshly Created Product')
+        self.assertEqual(entry.changed_by, manager)
 
     def test_editing_name_logs_old_and_new_value_with_attribution(self):
         self.client.force_login(self.manager)

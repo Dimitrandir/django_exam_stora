@@ -286,6 +286,13 @@ def delivery_edit(request, pk):
         formset = DeliveryItemFormSet(request.POST, instance=delivery, prefix=formset_prefix)
 
         if form.is_valid() and formset.is_valid():
+            # Read by DeliveryItemRemoval's post_delete signal (models.py)
+            # so a removed line's audit record knows who removed it -- the
+            # signal itself has no access to request.user. Set on each
+            # about-to-be-deleted form's instance, not the whole formset,
+            # since only some rows (if any) are actually being removed.
+            for item_form in formset.deleted_forms:
+                item_form.instance._removed_by = request.user
             form.save()
             formset.save()
             return redirect('delivery_details', pk=delivery.pk)

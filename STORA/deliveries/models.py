@@ -225,9 +225,46 @@ class DeliveryItems(models.Model):
                         next_position = 1
                     ProductSupplier.objects.create(
                         product=product, supplier_id=self.delivery.supplier_id, position=next_position,
+                        linked_from_delivery=True,
                     )
 
             super().save(*args, **kwargs)
+
+
+class DeliveryItemRemoval(models.Model):
+    """Snapshot of a DeliveryItems row at the moment it's deleted (e.g. a
+    product swapped out of an existing delivery during an edit) -- once the
+    row itself is gone, nothing else records that it ever existed, so
+    ProductHistoryView had no way to show "this product WAS delivered here,
+    then the line got removed". Written by _restore_stock_on_delete below,
+    only for a real delivery (not write-off/scrap) and only when the row
+    was removed on its own -- not when the WHOLE parent delivery gets
+    deleted too (CASCADE), which is a bigger, deliberate "undo this entire
+    delivery" action, not a correction to one line."""
+
+    product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name='delivery_removals')
+    # Nullable/SET_NULL, not PROTECT like DeliveryAttributes.supplier --
+    # this is just a label on a historical record, shouldn't be the thing
+    # blocking a supplier from ever being deleted.
+    supplier = models.ForeignKey(Suppliers, on_delete=models.SET_NULL, null=True, blank=True)
+    delivery_quantity = models.DecimalField(max_digits=10, decimal_places=3)
+    price_at_delivery = models.DecimalField(max_digits=9, decimal_places=2, null=True, blank=True)
+    # When the delivery this row belonged to actually happened -- ProductHistoryView
+    # filters/sorts by this (matching how it treats every other event type),
+    # not by removed_at, so this shows up in the period it actually affected
+    # stock, not the period someone happened to notice and fix it.
+    original_delivery_time = models.DateTimeField()
+    removed_at = models.DateTimeField(auto_now_add=True)
+    removed_by = models.ForeignKey(Employee, on_delete=models.SET_NULL, null=True, blank=True,
+                                   related_name='delivery_item_removals')
+
+    class Meta:
+        verbose_name = 'Delivery Item Removal'
+        verbose_name_plural = 'Delivery Item Removals'
+        ordering = ['-removed_at']
+
+    def __str__(self):
+        return f'{self.product} -- {self.delivery_quantity} removed at {self.removed_at}'
 
 
 @receiver(post_save, sender=DeliveryItems)
@@ -243,8 +280,10 @@ def _restore_stock_on_delete(sender, instance, **kwargs):
     # total. Falls back to the DELIVERY (add) sign if the parent is already
     # gone -- matches the pre-write-off behavior for that edge case.
     try:
-        movement_type = instance.delivery.movement_type
+        delivery = instance.delivery
+        movement_type = delivery.movement_type
     except DeliveryAttributes.DoesNotExist:
+        delivery = None
         movement_type = DeliveryAttributes.MOVEMENT_DELIVERY
     sign = -1 if movement_type in DeliveryAttributes.OUTGOING_MOVEMENT_TYPES else 1
 
@@ -252,6 +291,50 @@ def _restore_stock_on_delete(sender, instance, **kwargs):
         product = Product.objects.select_for_update().get(pk=instance.delivery_item_id)
         product.quantity -= sign * instance.delivery_quantity
         product.save(update_fields=['quantity'])
+
+        # Retract the auto-link DeliveryItems.save() may have created for
+        # this product+supplier -- but only if it really WAS auto-created
+        # (linked_from_delivery=True; a person adding a supplier by hand on
+        # the product form is never touched here) and no OTHER delivery of
+        # this product from the same supplier still exists (this deleted
+        # item might not have been the only one). `delivery` is None when
+        # the whole delivery got deleted too (CASCADE) -- there's no
+        # supplier left to look up at that point, so this is skipped
+        # entirely in that edge case, same as the movement_type fallback
+        # above already approximates.
+        if delivery is not None and movement_type == DeliveryAttributes.MOVEMENT_DELIVERY and delivery.supplier_id:
+            other_deliveries_remain = DeliveryItems.objects.filter(
+                delivery_item_id=instance.delivery_item_id,
+                delivery__movement_type=DeliveryAttributes.MOVEMENT_DELIVERY,
+                delivery__supplier_id=delivery.supplier_id,
+            ).exclude(pk=instance.pk).exists()
+            if not other_deliveries_remain:
+                ProductSupplier.objects.filter(
+                    product_id=instance.delivery_item_id,
+                    supplier_id=delivery.supplier_id,
+                    linked_from_delivery=True,
+                ).delete()
+
+        # Leaves a trace that this product WAS delivered here and the line
+        # was later removed -- DeliveryItems itself is gone from the DB at
+        # this point, so without this ProductHistoryView would show nothing
+        # at all for it. `removed_by` comes from `_removed_by`, set by the
+        # view right before formset.save() calls .delete() on this instance
+        # (see delivery_edit) -- the signal itself has no access to
+        # request.user. Skipped for write-off/scrap (see the class
+        # docstring) and for a whole-delivery CASCADE delete (delivery is
+        # None then -- that's a bigger, deliberate action, not a line
+        # correction).
+        if delivery is not None and movement_type == DeliveryAttributes.MOVEMENT_DELIVERY:
+            DeliveryItemRemoval.objects.create(
+                product_id=instance.delivery_item_id,
+                supplier_id=delivery.supplier_id,
+                delivery_quantity=instance.delivery_quantity,
+                price_at_delivery=instance.price_at_delivery,
+                original_delivery_time=delivery.time_of_delivery,
+                removed_by=getattr(instance, '_removed_by', None),
+            )
+
     try:
         instance.delivery.recalculate_total()
     except DeliveryAttributes.DoesNotExist:

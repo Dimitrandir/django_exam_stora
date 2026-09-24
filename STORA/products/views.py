@@ -1,23 +1,24 @@
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 
-from django.contrib.auth.decorators import login_required
+from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.postgres.search import TrigramSimilarity
 from django.db.models import F, ProtectedError, Sum
 from django.forms.models import model_to_dict
 from django.http import HttpResponseRedirect, JsonResponse
-from django.shortcuts import get_object_or_404, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.utils.http import urlencode
 from django.views import View
+from django.views.decorators.http import require_POST
 from django.views.generic import CreateView, ListView, DetailView, UpdateView, DeleteView
 
 from STORA.core.mixins import StaffPermissionRequiredMixin
 from STORA.core.session_service import get_cashier_operation_state
 from STORA.core.utils import dispatch_task, multi_token_icontains_q
-from STORA.deliveries.models import DeliveryAttributes, DeliveryItems
+from STORA.deliveries.models import DeliveryAttributes, DeliveryItems, DeliveryItemRemoval
 from STORA.revisions.models import RevisionAttributes, RevisionItems
 from STORA.products.forms import (
     ProductForms, ProductInlineEditForm, CategoryForm, SuppliersForm, BarcodeFormSet, ProductSupplierFormSet,
@@ -58,12 +59,19 @@ class ProductListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListView
     GRID_SLOT_COUNT = 3
 
     def get_queryset(self):
-        return Product.objects.select_related('category', 'tax_group').prefetch_related(
+        queryset = Product.objects.select_related('category', 'tax_group').prefetch_related(
             'barcode', 'product_suppliers__supplier'
         )
+        # Archived products (see Product.is_archived) don't clutter the
+        # everyday list by default -- same "?show_deleted=1" idea as
+        # PriceListListView, just reversible instead of one-way.
+        if self.request.GET.get('show_archived') != '1':
+            queryset = queryset.filter(is_archived=False)
+        return queryset
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        context['show_archived'] = self.request.GET.get('show_archived') == '1'
         products_data = []
         products_list = list(context['products'])
         price_list_matches = resolve_prices(products_list)
@@ -91,6 +99,7 @@ class ProductListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListView
                 'unit_type': product.unit_type,
                 'is_recipe': product.is_recipe,
                 'show_on_pos': product.show_on_pos,
+                'is_archived': product.is_archived,
                 'quantity': float(product.quantity),
                 'sell_price': float(product.sell_price) if product.sell_price is not None else None,
                 'delivery_price': float(product.delivery_price) if product.delivery_price is not None else None,
@@ -316,6 +325,17 @@ class ProductHistoryView(LoginRequiredMixin, StaffPermissionRequiredMixin, Detai
             'revision', 'revision__completed_by'
         )
 
+        # A product removed from a delivery (product swapped, or the line
+        # deleted outright) leaves no DeliveryItems row behind at all --
+        # this is the only record it ever happened. Filtered/dated by when
+        # the delivery itself occurred (original_delivery_time), matching
+        # every other event type here, not by when someone noticed and
+        # removed it.
+        removals = DeliveryItemRemoval.objects.filter(
+            product=product,
+            original_delivery_time__date__range=(start_date, end_date),
+        ).select_related('supplier', 'removed_by')
+
         events = [
             {
                 'date': item.sale.time_of_sale,
@@ -359,6 +379,19 @@ class ProductHistoryView(LoginRequiredMixin, StaffPermissionRequiredMixin, Detai
                 'cashier': item.revision.completed_by,
             }
             for item in revisions
+        ] + [
+            {
+                'date': item.original_delivery_time,
+                'event_type': 'Delivery (removed)',
+                # Shows the amount that WAS delivered, not its current
+                # (zero) net effect -- the point of this row is "this
+                # happened, then got undone", not "nothing happened".
+                'quantity_change': item.delivery_quantity,
+                'unit_price': item.price_at_delivery,
+                'supplier': item.supplier,
+                'cashier': item.removed_by,
+            }
+            for item in removals
         ]
         events.sort(key=lambda event: event['date'], reverse=True)
 
@@ -575,6 +608,10 @@ class ProductCreateView(LoginRequiredMixin, StaffPermissionRequiredMixin, Create
         if not barcode_formset.is_valid() or not supplier_formset.is_valid() or not recipe_formset.is_valid():
             return self.render_to_response(context)
 
+        # Read by ProductChangeLog's post_save signal (models.py) so the
+        # creation log entries it writes know who created the product --
+        # same pattern as ProductUpdateView above.
+        form.instance._changed_by = self.request.user
         self.object = form.save()
         barcode_formset.instance = self.object
         barcode_formset.save()
@@ -678,11 +715,28 @@ class ProductDeleteView(LoginRequiredMixin, StaffPermissionRequiredMixin, Delete
             context = self.get_context_data(
                 protected_error=(
                     "Cannot delete this product -- it has delivery or sale "
-                    "history linked to it."
+                    "history linked to it. Archive it instead to hide it "
+                    "from the Products list without losing that history."
                 )
             )
             return self.render_to_response(context)
         return HttpResponseRedirect(self.get_success_url())
+
+
+@login_required
+@permission_required('products.change_product', raise_exception=True)
+@require_POST
+def product_archive(request, pk):
+    """Hides a product from the everyday Products list (Product.is_archived)
+    without touching anything it's linked to -- offered as the alternative
+    on ProductDeleteView's own page when a hard delete is blocked by
+    ProtectedError (delivery/sale/recipe history). Reversible via the same
+    grid toggle used for show_on_pos, with ?show_archived=1 to find it
+    again -- not a one-way action like PriceList's is_deleted."""
+    product = get_object_or_404(Product, pk=pk)
+    product.is_archived = True
+    product.save(update_fields=['is_archived'])
+    return redirect('product_list')
 
 
 class CategoryListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListView):

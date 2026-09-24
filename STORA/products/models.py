@@ -155,6 +155,18 @@ class Product(models.Model):
     quantity = models.DecimalField(default=0, blank=True, max_digits=10, decimal_places=3,
                                    verbose_name='stock quantity',
                                    help_text='Can be negative if items are sold before delivery is recorded')
+    # A product that has ever appeared on a delivery or sale can't be
+    # hard-deleted (see ProductDeleteView -- DeliveryItems/SaleItems/
+    # RecipeIngredient all PROTECT it, on purpose, to keep that history
+    # intact). Archiving is the way to get a discontinued product out of
+    # the everyday Products list without losing anything it's linked to --
+    # same soft-hide idea as PriceList.is_deleted, just reversible via the
+    # same "Show archived" + inline toggle the grid already uses for
+    # show_on_pos, not a one-way action.
+    is_archived = models.BooleanField(
+        default=False, verbose_name='Archived',
+        help_text='Hides this product from the everyday Products list without deleting its history.',
+    )
     supplier = models.ManyToManyField(Suppliers, through='ProductSupplier', blank=True, related_name='products')
     is_recipe = models.BooleanField(
         default=False, blank=True, verbose_name='Made from other products (recipe)',
@@ -270,6 +282,13 @@ class ProductSupplier(models.Model):
     supplier = models.ForeignKey(Suppliers, on_delete=models.CASCADE, related_name='product_suppliers')
     position = models.PositiveSmallIntegerField(default=1, verbose_name='Position',
                                 help_text='1 = primary supplier, 2+ = alternates')
+    # True when THIS link was created automatically by DeliveryItems.save()
+    # (see deliveries/models.py) rather than typed in by hand on the
+    # product form -- lets a delivery's own cleanup (item removed, no other
+    # delivery of this product from the same supplier left) safely retract
+    # ONLY the links it put there itself, never one a person added on
+    # purpose.
+    linked_from_delivery = models.BooleanField(default=False, editable=False)
 
     class Meta:
         verbose_name = 'Product Supplier'
@@ -299,20 +318,34 @@ def _snapshot_product_before_save(sender, instance, **kwargs):
 
 @receiver(post_save, sender=Product)
 def _log_product_field_changes(sender, instance, created, **kwargs):
-    previous = getattr(instance, '_previous_state', None)
-    if created or previous is None:
-        return
     changed_by = getattr(instance, '_changed_by', None)
     entries = []
-    for field_name in PRODUCT_TRACKED_FIELDS:
-        old_value = getattr(previous, field_name)
-        new_value = getattr(instance, field_name)
-        if old_value == new_value:
-            continue
-        entries.append(ProductChangeLog(
-            product=instance, changed_by=changed_by, field_name=field_name,
-            old_value='' if old_value is None else str(old_value),
-            new_value='' if new_value is None else str(new_value),
-        ))
+
+    if created:
+        # One row per tracked field, old_value blank -- same table/columns
+        # the "Product edits" history already renders for later edits, so
+        # a product's creation just reads as a cluster of rows sharing one
+        # timestamp instead of needing a separate "what got created" view.
+        for field_name in PRODUCT_TRACKED_FIELDS:
+            new_value = getattr(instance, field_name)
+            entries.append(ProductChangeLog(
+                product=instance, changed_by=changed_by, field_name=field_name,
+                old_value='', new_value='' if new_value is None else str(new_value),
+            ))
+    else:
+        previous = getattr(instance, '_previous_state', None)
+        if previous is None:
+            return
+        for field_name in PRODUCT_TRACKED_FIELDS:
+            old_value = getattr(previous, field_name)
+            new_value = getattr(instance, field_name)
+            if old_value == new_value:
+                continue
+            entries.append(ProductChangeLog(
+                product=instance, changed_by=changed_by, field_name=field_name,
+                old_value='' if old_value is None else str(old_value),
+                new_value='' if new_value is None else str(new_value),
+            ))
+
     if entries:
         ProductChangeLog.objects.bulk_create(entries)

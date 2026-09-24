@@ -9,14 +9,25 @@
 
 {% if protected_error %}
 <div style="color: red;">{{ protected_error }}</div>
+
+{% if perms.products.change_product %}
+<form method="POST" action="{% url 'product_archive' product.pk %}">
+    {% csrf_token %}
+    <button type="submit" class="button-save">Archive instead</button>
+    <a href="{% url 'product_list' %}" class="button_cancel">Cancel</a>
+</form>
+{% else %}
+<a href="{% url 'product_list' %}" class="button_cancel">Back to Products</a>
 {% endif %}
 
+{% else %}
 <form method="POST">
     {% csrf_token %}
     <button type="submit" class="delete_button">YES</button>
     <a href="{% url 'product_list' %}" class="button_cancel">NO</a>
 
 </form>
+{% endif %}
 
 
 {% endblock %}

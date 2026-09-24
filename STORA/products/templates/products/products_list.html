@@ -16,6 +16,9 @@
     <div>
         <h1 class="h2 mb-1">Products List</h1>
         <p class="text-muted mb-0">Overview of all products in stock. Click a row to open it, a column header to sort, use the ▾ to filter.</p>
+        <label class="form-check-label" style="cursor:pointer;">
+            <input type="checkbox" id="show-archived-toggle" {% if show_archived %}checked{% endif %}> Show archived
+        </label>
     </div>
     <div class="page-actions">
         {% if perms.products.add_product %}
@@ -190,6 +193,35 @@ document.addEventListener('DOMContentLoaded', function () {
             });
     }
 
+    // Same quick-toggle idea as show_on_pos above, just for is_archived --
+    // reversible on purpose (unlike a hard delete), so a product archived
+    // by mistake is one click away from being visible again (with "Show
+    // archived" checked). A product that's currently visible in THIS grid
+    // is, by construction, not archived UNLESS "Show archived" is checked
+    // (see ProductListView.get_queryset) -- so after archiving one here,
+    // the row itself doesn't disappear until the next reload/filter change.
+    function archiveToggleFormatter(cell) {
+        return cell.getValue()
+            ? '<button type="button" class="pos-toggle-btn pos-toggle-btn--on">Archived</button>'
+            : '<button type="button" class="pos-toggle-btn">Active</button>';
+    }
+
+    function archiveToggleCellClick(e, cell) {
+        var newValue = !cell.getValue();
+        cell.setValue(newValue);
+        postInlineUpdate(cell.getRow().getData().id, 'is_archived', newValue)
+            .then(function (result) {
+                if (!result.ok) {
+                    alert(result.data.error || 'Could not save the change.');
+                    cell.setValue(!newValue);
+                }
+            })
+            .catch(function () {
+                alert('Network error -- change was not saved.');
+                cell.setValue(!newValue);
+            });
+    }
+
     var table = initExcelStyleTable('#products-table', 'products-table-data', [
         {
             formatter: 'rowSelection', titleFormatter: 'rowSelection', hozAlign: 'center',
@@ -209,6 +241,10 @@ document.addEventListener('DOMContentLoaded', function () {
         {
             title: 'Show on POS', field: 'show_on_pos', width: 120, hozAlign: 'center',
             formatter: posToggleFormatter, cellClick: posToggleCellClick,
+        },
+        {
+            title: 'Archived', field: 'is_archived', width: 100, hozAlign: 'center',
+            formatter: archiveToggleFormatter, cellClick: archiveToggleCellClick,
         },
         {
             title: 'Sell Price', field: 'sell_price', width: 90, hozAlign: 'right', sorter: 'number',
@@ -255,13 +291,14 @@ document.addEventListener('DOMContentLoaded', function () {
     // Row click opens the product -- disabled while Edit mode is on, since
     // every editable cell removes its own editor in that state (see below),
     // a stray click on the selection checkbox column (no field) should just
-    // select, not navigate, and the show_on_pos toggle button handles its
-    // own click (see posToggleCellClick) regardless of Edit mode.
+    // select, not navigate, and the show_on_pos/is_archived toggle buttons
+    // handle their own click (see posToggleCellClick/archiveToggleCellClick)
+    // regardless of Edit mode.
     table.on('rowClick', function (e, row) {
         if (editMode) return;
         var cellEl = e.target.closest('.tabulator-cell');
         var field = cellEl ? cellEl.getAttribute('tabulator-field') : null;
-        if (field === null || field === 'show_on_pos' || field === 'price_list_name') return;
+        if (field === null || field === 'show_on_pos' || field === 'is_archived' || field === 'price_list_name') return;
         window.location = row.getData().view_url;
     });
 
@@ -285,6 +322,12 @@ document.addEventListener('DOMContentLoaded', function () {
     // data-table.js's addColumnChooser() inserts just above the grid for
     // "Columns ▾"), as a round icon-btn instead of a plain outline button.
     attachTableExportToToolbar(table, '.data-table-card', 'products.xlsx', 'Products', editToggleBtn ? [editToggleBtn] : []);
+
+    document.getElementById('show-archived-toggle').addEventListener('change', function (e) {
+        var params = new URLSearchParams(window.location.search);
+        if (e.target.checked) { params.set('show_archived', '1'); } else { params.delete('show_archived'); }
+        window.location.search = params.toString();
+    });
 
     if (editToggleBtn) {
         var editToggleLabel = editToggleBtn.querySelector('.icon-btn__label');

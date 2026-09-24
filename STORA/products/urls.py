@@ -3,7 +3,7 @@ from django.urls import path
 from .api_views import ProductListAPI
 from .views import (
     ProductListView, ProductCreateView, ProductDeleteView, ProductUpdateView, ProductDetailView,
-    ProductHistoryView, ProductInlineUpdateView, ProductBulkActionView, IngredientSearchView,
+    ProductHistoryView, ProductInlineUpdateView, ProductBulkActionView, product_archive, IngredientSearchView,
     SupplierSearchView, CategorySearchView, CategoryTreeView,
     CategoryListView, CategoryCreateView, CategoryDeleteView, CategoryUpdateView, CategoryTogglePosView,
     CategoryBulkDeleteView,
@@ -24,6 +24,7 @@ urlpatterns = [
     path('<int:pk>/inline-update/', ProductInlineUpdateView.as_view(), name='product_inline_update'),
     path('edit/<int:pk>/', ProductUpdateView.as_view(), name='product_edit'),
     path('delete/<int:pk>/', ProductDeleteView.as_view(), name='product_delete'),
+    path('<int:pk>/archive/', product_archive, name='product_archive'),
     path('categories/', CategoryListView.as_view(), name='category_list'),
     path('categories/add/', CategoryCreateView.as_view(), name='category_create'),
     path('categories/edit/<int:pk>/', CategoryUpdateView.as_view(), name='category_edit'),

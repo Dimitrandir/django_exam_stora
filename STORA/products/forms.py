@@ -105,7 +105,7 @@ class ProductInlineEditForm(forms.ModelForm):
 
     class Meta:
         model = Product
-        fields = ['name', 'unit_type', 'category', 'sell_price', 'delivery_price', 'show_on_pos']
+        fields = ['name', 'unit_type', 'category', 'sell_price', 'delivery_price', 'show_on_pos', 'is_archived']
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

@@ -4,7 +4,9 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
 
-from STORA.deliveries.models import DeliveryAttributes, DeliveryItems, DocumentType, ScrapReason, Suppliers
+from STORA.deliveries.models import (
+    DeliveryAttributes, DeliveryItems, DeliveryItemRemoval, DocumentType, ScrapReason, Suppliers,
+)
 from STORA.products.models import Product, ProductSupplier, TaxGroup
 
 
@@ -307,6 +309,54 @@ class DeliverySupplierLinkTests(TestCase):
         )
         self.assertFalse(ProductSupplier.objects.filter(product=self.product).exists())
 
+    def test_deleting_the_only_delivery_item_retracts_the_auto_link(self):
+        item = DeliveryItems.objects.create(
+            delivery=self.delivery, delivery_item=self.product,
+            delivery_quantity=Decimal('5.000'), price_at_delivery=Decimal('3.00'),
+        )
+        self.assertTrue(ProductSupplier.objects.filter(product=self.product, supplier=self.supplier).exists())
+
+        item.delete()
+        self.assertFalse(ProductSupplier.objects.filter(product=self.product, supplier=self.supplier).exists())
+
+    def test_deleting_one_of_two_deliveries_from_the_same_supplier_keeps_the_link(self):
+        item1 = DeliveryItems.objects.create(
+            delivery=self.delivery, delivery_item=self.product,
+            delivery_quantity=Decimal('5.000'), price_at_delivery=Decimal('3.00'),
+        )
+        second_delivery = DeliveryAttributes.objects.create(
+            receiver=self.user, supplier=self.supplier,
+            document_number='INV-006', document_date='2026-04-22',
+        )
+        DeliveryItems.objects.create(
+            delivery=second_delivery, delivery_item=self.product,
+            delivery_quantity=Decimal('2.000'), price_at_delivery=Decimal('3.00'),
+        )
+
+        item1.delete()
+        # The other delivery from the same supplier is still there -- the
+        # link is still justified, shouldn't be retracted.
+        self.assertTrue(ProductSupplier.objects.filter(product=self.product, supplier=self.supplier).exists())
+
+    def test_manually_added_supplier_link_is_never_retracted(self):
+        ProductSupplier.objects.create(
+            product=self.product, supplier=self.other_supplier, position=1, linked_from_delivery=False,
+        )
+        # A delivery from the SAME (manually-linked) supplier -- since it
+        # already existed, DeliveryItems.save() doesn't touch/flag it.
+        delivery_from_other = DeliveryAttributes.objects.create(
+            receiver=self.user, supplier=self.other_supplier,
+            document_number='INV-007', document_date='2026-04-23',
+        )
+        item = DeliveryItems.objects.create(
+            delivery=delivery_from_other, delivery_item=self.product,
+            delivery_quantity=Decimal('1.000'), price_at_delivery=Decimal('3.00'),
+        )
+        item.delete()
+        # Manually-added link (linked_from_delivery=False) survives even
+        # though this was the only delivery from that supplier.
+        self.assertTrue(ProductSupplier.objects.filter(product=self.product, supplier=self.other_supplier).exists())
+
 
 class DeliveryPermissionTests(TestCase):
     """Deliveries views used to only check @login_required -- any logged-in
@@ -548,6 +598,68 @@ class DeliveryFormSubmissionTests(TestCase):
         self.assertEqual(self.product.quantity, Decimal('0.000'))  # 5 added, then restored
         other_product.refresh_from_db()
         self.assertEqual(other_product.quantity, Decimal('2.000'))  # untouched
+
+        # The removed row leaves an audit trail (see DeliveryItemRemoval) --
+        # attributed to whoever submitted the edit, since self.warehouse is
+        # logged in for this whole test class.
+        removal = DeliveryItemRemoval.objects.get(product=self.product)
+        self.assertEqual(removal.delivery_quantity, Decimal('5.000'))
+        self.assertEqual(removal.supplier, self.supplier)
+        self.assertEqual(removal.removed_by, self.warehouse)
+        # The untouched row wasn't removed -- no audit record for it.
+        self.assertFalse(DeliveryItemRemoval.objects.filter(product=other_product).exists())
+
+    def test_replacing_an_item_shows_up_in_product_history_after_removal(self):
+        # The exact scenario reported live: edit an existing delivery,
+        # swap one product for a different one on the same row. Once
+        # DeliveryItems.delete() runs, that row is gone from the DB
+        # entirely -- ProductHistoryView has nothing left to read UNLESS
+        # DeliveryItemRemoval captured it first.
+        delivery = DeliveryAttributes.objects.create(
+            receiver=self.warehouse, supplier=self.supplier, document_type=self.invoice_type,
+            document_number='INV-104', document_date='2026-04-20', time_of_delivery='2026-04-20 09:00:00',
+        )
+        replaced_product = self.product
+        new_product = Product.objects.create(
+            internal_code='P0000011', name='Replacement Product', delivery_price=Decimal('1.00'),
+            sell_price=Decimal('2.00'), quantity=Decimal('0.000'),
+        )
+        item = DeliveryItems.objects.create(
+            delivery=delivery, delivery_item=replaced_product,
+            delivery_quantity=Decimal('3.000'), price_at_delivery=Decimal('1.50'),
+        )
+
+        data = self._general_info(document_number='INV-104')
+        data.update({
+            'receiver': self.warehouse.pk,
+            'items-TOTAL_FORMS': '2',
+            'items-INITIAL_FORMS': '1',
+            'items-MIN_NUM_FORMS': '0',
+            'items-MAX_NUM_FORMS': '1000',
+            'items-0-id': item.pk,
+            'items-0-delivery_item': replaced_product.pk,
+            'items-0-delivery_quantity': '3.000',
+            'items-0-price_at_delivery': '1.50',
+            'items-0-total_price_row': '4.50',
+            'items-0-DELETE': 'on',
+            'items-1-id': '',
+            'items-1-delivery_item': new_product.pk,
+            'items-1-delivery_quantity': '1.000',
+            'items-1-price_at_delivery': '1.00',
+            'items-1-total_price_row': '1.00',
+            'items-1-DELETE': '',
+        })
+        response = self.client.post(reverse('delivery_edit', args=[delivery.pk]), data)
+        self.assertRedirects(response, reverse('delivery_details', args=[delivery.pk]))
+
+        history_response = self.client.get(
+            reverse('product_history', kwargs={'pk': replaced_product.pk}),
+            {'start_date': '2026-04-01', 'end_date': '2026-04-30'},
+        )
+        removal_events = [e for e in history_response.context['events'] if e['event_type'] == 'Delivery (removed)']
+        self.assertEqual(len(removal_events), 1)
+        self.assertEqual(removal_events[0]['quantity_change'], Decimal('3.000'))
+        self.assertEqual(removal_events[0]['cashier'], self.warehouse)
 
     def test_invalid_submission_with_blank_supplier_does_not_500(self):
         # Suppliers.objects.filter(pk='') raises ValueError (not a clean
