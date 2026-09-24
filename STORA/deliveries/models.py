@@ -8,7 +8,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date
 
 from STORA.accounts.models import Employee
-from STORA.products.models import Product, Suppliers
+from STORA.products.models import Product, Suppliers, ProductSupplier
 
 
 class DocumentType(models.Model):
@@ -198,6 +198,34 @@ class DeliveryItems(models.Model):
             sign = -1 if self.delivery.movement_type in DeliveryAttributes.OUTGOING_MOVEMENT_TYPES else 1
             product.quantity += sign * delta
             product.save(update_fields=['quantity'])
+
+            # A real delivery (not write-off/scrap -- those aren't "this
+            # supplier brought this product", see OUTGOING_MOVEMENT_TYPES)
+            # auto-links its supplier to the product if that link doesn't
+            # exist yet: becomes the primary (position=1) if the product has
+            # none, otherwise gets appended as the next alternate. Runs on
+            # every save (not just creation) so it also catches a product
+            # swapped into an existing row during an edit. The Product row
+            # is already select_for_update()-locked above, which serializes
+            # this the same way it already serializes the quantity update --
+            # two concurrent deliveries of the same product can't both slip
+            # past the "already linked?" check for the same supplier.
+            if self.delivery.movement_type == DeliveryAttributes.MOVEMENT_DELIVERY and self.delivery.supplier_id:
+                already_linked = ProductSupplier.objects.filter(
+                    product=product, supplier_id=self.delivery.supplier_id,
+                ).exists()
+                if not already_linked:
+                    has_primary = ProductSupplier.objects.filter(product=product, position=1).exists()
+                    if has_primary:
+                        max_position = ProductSupplier.objects.filter(product=product).aggregate(
+                            models.Max('position')
+                        )['position__max'] or 1
+                        next_position = max_position + 1
+                    else:
+                        next_position = 1
+                    ProductSupplier.objects.create(
+                        product=product, supplier_id=self.delivery.supplier_id, position=next_position,
+                    )
 
             super().save(*args, **kwargs)
 

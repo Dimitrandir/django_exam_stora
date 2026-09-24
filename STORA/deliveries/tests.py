@@ -5,7 +5,7 @@ from django.test import TestCase
 from django.urls import reverse
 
 from STORA.deliveries.models import DeliveryAttributes, DeliveryItems, DocumentType, ScrapReason, Suppliers
-from STORA.products.models import Product, TaxGroup
+from STORA.products.models import Product, ProductSupplier, TaxGroup
 
 
 User = get_user_model()
@@ -224,6 +224,88 @@ class DeliveryStockAdjustmentTests(TestCase):
         item2.delete()
         self.delivery.refresh_from_db()
         self.assertEqual(self.delivery.total_amount, Decimal('5.00'))
+
+
+class DeliverySupplierLinkTests(TestCase):
+    """A real delivery used to never touch Product.supplier at all -- a
+    product could be delivered from a supplier over and over and never show
+    up linked to them anywhere (Product edit form, bulk pickers, ...).
+    DeliveryItems.save() now auto-links the delivery's supplier: primary if
+    the product had none, otherwise appended as the next alternate."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username='receiver4', password='pass12345')
+        self.supplier = Suppliers.objects.create(name='First Supplier Ltd', bulstat='121212121')
+        self.other_supplier = Suppliers.objects.create(name='Second Supplier Ltd', bulstat='343434343')
+        self.product = Product.objects.create(
+            internal_code='P0000009', name='Olive Oil', delivery_price=Decimal('3.00'),
+            sell_price=Decimal('5.00'), quantity=Decimal('0.000'),
+        )
+        self.delivery = DeliveryAttributes.objects.create(
+            receiver=self.user, supplier=self.supplier,
+            document_number='INV-004', document_date='2026-04-20',
+        )
+
+    def test_first_delivery_links_supplier_as_primary(self):
+        DeliveryItems.objects.create(
+            delivery=self.delivery, delivery_item=self.product,
+            delivery_quantity=Decimal('5.000'), price_at_delivery=Decimal('3.00'),
+        )
+        links = list(ProductSupplier.objects.filter(product=self.product).values_list('supplier_id', 'position'))
+        self.assertEqual(links, [(self.supplier.pk, 1)])
+
+    def test_second_delivery_from_a_different_supplier_becomes_an_alternate(self):
+        DeliveryItems.objects.create(
+            delivery=self.delivery, delivery_item=self.product,
+            delivery_quantity=Decimal('5.000'), price_at_delivery=Decimal('3.00'),
+        )
+        other_delivery = DeliveryAttributes.objects.create(
+            receiver=self.user, supplier=self.other_supplier,
+            document_number='INV-005', document_date='2026-04-21',
+        )
+        DeliveryItems.objects.create(
+            delivery=other_delivery, delivery_item=self.product,
+            delivery_quantity=Decimal('2.000'), price_at_delivery=Decimal('3.00'),
+        )
+        links = list(ProductSupplier.objects.filter(product=self.product).order_by('position')
+                     .values_list('supplier_id', 'position'))
+        self.assertEqual(links, [(self.supplier.pk, 1), (self.other_supplier.pk, 2)])
+
+    def test_repeat_delivery_from_the_same_supplier_does_not_duplicate(self):
+        DeliveryItems.objects.create(
+            delivery=self.delivery, delivery_item=self.product,
+            delivery_quantity=Decimal('5.000'), price_at_delivery=Decimal('3.00'),
+        )
+        DeliveryItems.objects.create(
+            delivery=self.delivery, delivery_item=self.product,
+            delivery_quantity=Decimal('1.000'), price_at_delivery=Decimal('3.00'),
+        )
+        self.assertEqual(ProductSupplier.objects.filter(product=self.product).count(), 1)
+
+    def test_product_that_already_has_a_primary_supplier_keeps_it(self):
+        existing_supplier = Suppliers.objects.create(name='Existing Primary Ltd', bulstat='565656565')
+        ProductSupplier.objects.create(product=self.product, supplier=existing_supplier, position=1)
+
+        DeliveryItems.objects.create(
+            delivery=self.delivery, delivery_item=self.product,
+            delivery_quantity=Decimal('5.000'), price_at_delivery=Decimal('3.00'),
+        )
+        links = list(ProductSupplier.objects.filter(product=self.product).order_by('position')
+                     .values_list('supplier_id', 'position'))
+        self.assertEqual(links, [(existing_supplier.pk, 1), (self.supplier.pk, 2)])
+
+    def test_write_off_does_not_link_a_supplier(self):
+        write_off = DeliveryAttributes.objects.create(
+            receiver=self.user, supplier=self.supplier, movement_type=DeliveryAttributes.MOVEMENT_WRITE_OFF,
+            document_number='WO-TEST', document_date='2026-04-20',
+        )
+        self.product.quantity = Decimal('5.000')
+        self.product.save(update_fields=['quantity'])
+        DeliveryItems.objects.create(
+            delivery=write_off, delivery_item=self.product,
+            delivery_quantity=Decimal('1.000'), price_at_delivery=Decimal('3.00'),
+        )
+        self.assertFalse(ProductSupplier.objects.filter(product=self.product).exists())
 
 
 class DeliveryPermissionTests(TestCase):
