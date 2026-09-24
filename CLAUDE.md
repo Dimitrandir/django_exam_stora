@@ -970,6 +970,60 @@ Apps: accounts, core, products, deliveries, sales, reports.
   цените без "eur" суфикс; Sold By показва само pcs/kg; Stock е чисто
   число (теглови продукти до 2 знака); Code колоната сумира брой продукти
   отдолу (`bottomCalc: 'count'`).
+- **Реална доставка (не изписване/брак) автоматично закача доставчика си
+  към продукта (`ProductSupplier`).** При `DeliveryItems.save()` — ако
+  продуктът още няма основен доставчик (`position=1`), новият става
+  основен; ако вече има, се добавя като алтернативен (следваща свободна
+  позиция); ако връзката вече съществува — нищо (без дублиране,
+  `unique_together` на product+supplier и без друго го пази). Само за
+  `movement_type=DELIVERY` — изписване/брак не са "този доставчик донесе
+  този продукт". `ProductSupplier.linked_from_delivery` (bool) пази дали
+  връзката е дошла оттук или е въведена ръчно през продуктовата форма —
+  ръчно въведена връзка НИКОГА не се маха автоматично. Когато ред от
+  доставка бъде изтрит (напр. подмяна на артикул при редакция),
+  `_restore_stock_on_delete` маха обратно auto-линка, но само ако (а) е
+  бил `linked_from_delivery=True` и (б) няма ДРУГА съществуваща доставка
+  на този продукт от същия доставчик (изтритият ред може да не е бил
+  единствен). Не се пипа при CASCADE триене на цялата доставка (няма от
+  кой доставчик да търси в тоя edge case).
+- **Триене на ред от доставка (продукт подменен, или ред изтрит изцяло)**
+  **оставя следа в историята на продукта (`DeliveryItemRemoval` модел,**
+  **deliveries/models.py).** Преди това триенето на `DeliveryItems` не
+  оставяше никаква следа — `ProductHistoryView` четеше директно текущите
+  редове, изтрит ред просто изчезваше без обяснение. `_restore_stock_on_delete`
+  сега пази снимка (продукт, доставчик, количество, цена, оригинална дата
+  на доставка) при истинско триене на ред (не при CASCADE на цялата
+  доставка), само за `movement_type=DELIVERY`. `removed_by` идва от
+  `_removed_by`, слаган на всеки form.instance в `formset.deleted_forms`
+  точно преди `formset.save()` в `delivery_edit` view-а (сигналът няма
+  директен достъп до `request.user`). `ProductHistoryView` показва тези
+  записи като `event_type='Delivery (removed)'`, филтрирани по
+  `original_delivery_time` (кога РЕАЛНО се е случила доставката), не по
+  `removed_at`. `product` е `on_delete=PROTECT` — записът за триене сам
+  пази продукта от истинско изтриване, дори ако друга история вече не му
+  пречи.
+- **Създаването на продукт вече също се логва в `ProductChangeLog`**
+  **(преди — само редакции).** `_log_product_field_changes` пише по един
+  ред на всяко проследявано поле с `old_value=''`, `new_value=<началната
+  стойност>` — вижда се в History страницата като клъстер редове с еднакъв
+  timestamp. `ProductCreateView` слага `form.instance._changed_by = request.user` преди `form.save()` (същия патърн като `ProductUpdateView`), за
+  да знае кой е създал продукта. Директно `Product.objects.create()` (без
+  `_changed_by`) пак логва, просто с `changed_by=None` — важно за тестове/
+  скриптове, не гърми.
+- **Продукт с история (доставка/продажба/рецепта) не може да се трие**
+  **hard (** **PROTECT** **), но вече може да се архивира вместо това**
+  **(** **Product.is_archived** **).** `ProductDeleteView` при `ProtectedError`
+  вече предлага "Archive instead" бутон (POST към `product_archive`
+  view/URL) вместо само съобщение за грешка. Архивиран продукт изчезва от
+  Products списъка по подразбиране (`ProductListView.get_queryset()`
+  филтрира `is_archived=False`), виждаш го пак през чекбокс "Show
+  archived" (`?show_archived=1`, същия patтern като Price Lists "Show
+  deleted"). Обратимо — pill toggle бутон в грида ("Archived"/"Active",
+  същия механизъм като `show_on_pos` toggle-а, през `product_inline_update`
+  endpoint-а, `is_archived` добавено в `ProductInlineEditForm.Meta.fields`).
+  НЕ маха продукта от нищо друго (баркод/доставчик търсачки в Sales/
+  Deliveries все още го намират) — архивирането е само "махни от Products
+  списъка", не пълно деактивиране навсякъде; не е поискано засега.
 
 **Технически капани (открити наскоро, лесно се повтарят)**  
 - **Product create/edit темплейтите рендират полетата на ProductForms**
