@@ -24,19 +24,20 @@ uses, independent of whether this delivery gets submitted at all.
 {{ formset.management_form }}
 <div id="delivery-items-hidden-inputs"></div>
 
-<div class="d-flex justify-content-between align-items-center mb-2">
-    <div class="position-relative flex-grow-1" style="max-width: 420px;">
-        <input type="search" id="delivery-item-search-input" class="form-control form-control-sm"
+<div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+    <div class="pill-search-wrapper flex-grow-1" style="max-width: 420px;">
+        <span class="pill-search-wrapper__icon"></span>
+        <input type="search" id="delivery-item-search-input" class="pill-input"
                placeholder="Search product by name or code, or scan a barcode..." autocomplete="off">
         <div id="delivery-item-search-results" class="global-search-results"></div>
     </div>
-    <div>
-        <button type="button" id="delivery-delete-line-btn" class="button-delete-line btn btn-sm ms-2">Delete Line</button>
-        <button type="button" id="delivery-discount-btn" class="btn btn-outline-primary btn-sm ms-2">Discount</button>
-        <button type="button" id="delivery-items-export-btn" class="btn btn-outline-secondary btn-sm ms-2">Export to Excel</button>
-    </div>
+    {% if movement_type == 'DELIVERY' %}
+    <a href="{% url 'product_create' %}?popup=1" target="_blank" class="icon-btn icon-btn--add icon-btn--sm">
+        <span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--add"></span></span>
+        <span class="icon-btn__label">New product</span>
+    </a>
+    {% endif %}
 </div>
-<p class="text-muted small mb-2">Tap a row to select it, then Delete Line to remove it, or Discount to discount just that line.</p>
 
 <!-- Discount tool -- pure price-adjustment convenience (rewrites Unit
      Price/Line Total on the affected rows, same as typing new values by
@@ -107,7 +108,15 @@ uses, independent of whether this delivery gets submitted at all.
 <!-- No separate "Transaction Total" -- the Line Total column's own
      bottomCalc sum (with and without VAT) already shows it, right under
      the numbers it's adding up. -->
-<div id="delivery-items-table" class="table-sm"></div>
+<div id="delivery-items-table-card" class="data-table-card">
+    <div id="delivery-items-table" class="table-sm"></div>
+</div>
+
+<div class="d-flex align-items-center gap-2 mt-2 flex-wrap">
+    <button type="button" id="delivery-delete-line-btn" class="pill-btn button-delete-line">Delete Line</button>
+    <button type="button" id="delivery-discount-btn" class="pill-btn pill-btn--outline">Discount</button>
+</div>
+<p class="text-muted small mt-1 mb-0">Tap a row to select it, then Delete Line to remove it, or Discount to discount just that line.</p>
 
 <script src="{% static 'vendor/sheetjs/xlsx.full.min.js' %}"></script>
 <script src="{% static 'vendor/tabulator/tabulator.min.js' %}"></script>
@@ -466,9 +475,12 @@ document.addEventListener('DOMContentLoaded', function () {
             // field:'seq' (assigned once, at add time -- see buildRow
             // above), not formatter:'rownum' -- rownum reflects the row's
             // current SORTED position, which isn't what "#" is meant to
-            // mean here.
+            // mean here. headerSort is left ON (not false) on purpose --
+            // since seq itself never changes, sorting by it is exactly
+            // "back to add order", a clean way to undo having sorted by
+            // Name/Price/etc a moment ago (same fix as the New Sale cart).
             title: '#', field: 'seq', width: 40, hozAlign: 'center',
-            headerSort: false, headerFilter: false, hideable: false,
+            headerFilter: false, hideable: false,
         },
         {title: 'Code', field: 'internal_code', width: 110},
         {title: 'Name', field: 'name', width: 220},
@@ -980,9 +992,7 @@ document.addEventListener('DOMContentLoaded', function () {
     })();
     {% endif %}
 
-    document.getElementById('delivery-items-export-btn').addEventListener('click', function () {
-        table.download('xlsx', 'delivery_items.xlsx', {sheetName: 'Delivery Items'});
-    });
+    attachTableExportToToolbar(table, '#delivery-items-table-card', 'delivery_items.xlsx', 'Delivery Items');
 
     // -- Sync Tabulator's current data into plain formset hidden inputs
     // right before the real form submit, since Tabulator manages its own

@@ -37,56 +37,66 @@
             </header>
 
             <div class="delivery-form__fields">
-                <p>
-                    {{ form.receiver.label_tag }}
-                    {{ form.receiver }}
-                </p>
-                <p>
-                    {{ form.time_of_delivery.label_tag }}
-                    {{ form.time_of_delivery }}
-                </p>
-                {% if not is_scrap %}
-                <div class="mb-3">
-                    {{ form.supplier.label_tag }}
-                    <div class="position-relative" style="max-width: 320px;">
-                        <input type="text" id="supplier-search-input" class="form-control form-control-sm"
-                               placeholder="Search supplier by name..." autocomplete="off"
-                               value="{{ selected_supplier_name }}">
-                        <div id="supplier-search-results" class="global-search-results"></div>
+                <div class="delivery-form__row">
+                    <div class="delivery-form__field">
+                        {{ form.receiver.label_tag }}
+                        {{ form.receiver }}
                     </div>
-                    {{ form.supplier }}
-                    {% if not is_write_off %}
-                    <a href="{% url 'suppliers_create' %}?popup=1" target="_blank">+ New supplier</a>
-                    {% endif %}
+                    <div class="delivery-form__field">
+                        {{ form.time_of_delivery.label_tag }}
+                        {{ form.time_of_delivery }}
+                    </div>
                 </div>
-                {% endif %}
-                {% if form.document_type %}
-                <p>
-                    {{ form.document_type.label_tag }}
-                    {{ form.document_type }}
-                </p>
-                {% endif %}
-                <p>
-                    {{ form.document_number.label_tag }}
-                    {{ form.document_number }}
-                </p>
-                <p>
-                    {{ form.document_date.label_tag }}
-                    {{ form.document_date }}
-                </p>
-                <p>
+                <div class="delivery-form__row">
+                    {% if not is_scrap %}
+                    <div class="delivery-form__field delivery-form__field--supplier">
+                        {{ form.supplier.label_tag }}
+                        <div class="delivery-form__supplier-row">
+                            <div class="pill-search-wrapper flex-grow-1">
+                                <span class="pill-search-wrapper__icon"></span>
+                                <input type="text" id="supplier-search-input" class="pill-input"
+                                       placeholder="Search supplier by name..." autocomplete="off"
+                                       value="{{ selected_supplier_name }}">
+                                <div id="supplier-search-results" class="global-search-results"></div>
+                            </div>
+                            {{ form.supplier }}
+                            {% if not is_write_off %}
+                            <a href="{% url 'suppliers_create' %}?popup=1" target="_blank" class="icon-btn icon-btn--add icon-btn--sm">
+                                <span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--add"></span></span>
+                                <span class="icon-btn__label">New supplier</span>
+                            </a>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% if form.document_type %}
+                    <div class="delivery-form__field">
+                        {{ form.document_type.label_tag }}
+                        {{ form.document_type }}
+                    </div>
+                    {% endif %}
+                    <div class="delivery-form__field">
+                        {{ form.document_number.label_tag }}
+                        <div class="delivery-form__counted-input">
+                            {{ form.document_number }}
+                            <span id="document-number-counter" class="delivery-form__field-counter">0/10</span>
+                        </div>
+                    </div>
+                    <div class="delivery-form__field">
+                        {{ form.document_date.label_tag }}
+                        {{ form.document_date }}
+                    </div>
+                </div>
+                <div class="delivery-form__field">
                     {{ form.comment.label_tag }}
                     {{ form.comment }}
-                </p>
+                </div>
             </div>
         </section>
 
         <section class="delivery-form__items">
             <header class="section-header">
                 <h2>Products</h2>
-                {% if movement_type == 'DELIVERY' %}
-                <a href="{% url 'product_create' %}?popup=1" target="_blank">+ New product</a>
-                {% endif %}
             </header>
 
             {% include 'deliveries/_delivery_items_table.html' %}
@@ -103,6 +113,22 @@
     <script>
         const deliveryDraftElement = document.getElementById('delivery-draft');
         const deliveryDraft = deliveryDraftElement ? JSON.parse(deliveryDraftElement.textContent || 'null') : null;
+
+        // -- Document Number: live digit counter (see .delivery-form__field-counter
+        // in style.css for why it counts digits only, not raw length). --
+        (function () {
+            var input = document.getElementById('id_document_number');
+            var counter = document.getElementById('document-number-counter');
+            if (!input || !counter) return;
+            function update() {
+                var digits = (input.value.match(/\d/g) || []).length;
+                counter.textContent = digits + '/10';
+                counter.classList.toggle('is-complete', digits === 10);
+                counter.classList.toggle('is-over', digits > 10);
+            }
+            input.addEventListener('input', update);
+            update();
+        })();
 
         // -- Supplier: searchable picker + "+ New supplier" popup, same
         // debounced-trigram-search pattern as the product/ingredient and
