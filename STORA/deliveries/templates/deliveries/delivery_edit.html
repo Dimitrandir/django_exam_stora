@@ -28,6 +28,16 @@
         </div>
     {% endif %}
 
+    {% if formset.errors %}
+        {% for item_form in formset %}
+            {% if item_form.errors %}
+                <div class="form-errors">
+                    Product row {{ forloop.counter }}: {{ item_form.errors }}
+                </div>
+            {% endif %}
+        {% endfor %}
+    {% endif %}
+
     <form method="post" class="delivery-form__form">
         {% csrf_token %}
 
