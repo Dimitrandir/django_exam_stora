@@ -2,6 +2,8 @@
 
 {% block title %}STORA - Refund Sale #{{ sale.id }}{% endblock %}
 {% load static cache_bust %}
+{% block main_class %}main-wide{% endblock %}
+{% block container_class %}container-fluid{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
@@ -84,13 +86,18 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     var table = initExcelStyleTable('#refund-items-table', 'refund-lines-data', [
-        {title: '#', field: 'name', formatter: 'rownum', width: 50, hozAlign: 'center', headerFilter: false, hideable: false},
+        // field:'seq' (assigned once server-side, add/original order), not
+        // formatter:'rownum' -- rownum reflects the row's current SORTED
+        // position, so clicking Product/Remaining/etc to sort would make
+        // "#" itself shuffle around too. Same fix as the Deliveries grid
+        // and the POS cart (see their own 'seq' comments).
+        {title: '#', field: 'seq', width: 40, hozAlign: 'center', headerFilter: false, hideable: false},
         {title: 'Product', field: 'name', widthGrow: 2},
-        {title: 'Sold Qty', field: 'sold_qty', width: 110, hozAlign: 'right', formatter: quantityFormatter},
-        {title: 'Already Refunded', field: 'already_refunded', width: 140, hozAlign: 'right', formatter: quantityFormatter},
-        {title: 'Remaining', field: 'remaining', width: 110, hozAlign: 'right', formatter: quantityFormatter},
+        {title: 'Sold Qty', field: 'sold_qty', width: 90, hozAlign: 'right', formatter: quantityFormatter},
+        {title: 'Already Refunded', field: 'already_refunded', width: 110, hozAlign: 'right', formatter: quantityFormatter},
+        {title: 'Remaining', field: 'remaining', width: 90, hozAlign: 'right', formatter: quantityFormatter},
         {
-            title: 'Refund Qty Now', field: 'refund_qty', width: 140, hozAlign: 'right',
+            title: 'Refund Qty Now', field: 'refund_qty', width: 120, hozAlign: 'right',
             formatter: quantityFormatter,
             editor: numberEditor,
             editorParams: function (cell) { return {min: 0, max: cell.getData().remaining, step: 0.001}; },
@@ -98,15 +105,17 @@ document.addEventListener('DOMContentLoaded', function () {
         },
     ], {placeholder: 'Nothing left to refund on this sale.', columnChooser: false});
 
-    // "Refund Entire Receipt" -- fills every still-refundable line's qty to
-    // its own remaining amount in one click, so the common "customer
-    // returns everything" case doesn't need typing each line by hand. Still
+    // "Select All" -- fills every still-refundable line's qty to its own
+    // remaining amount in one tap, so the common "customer returns
+    // everything" case doesn't need typing each line by hand. Still
     // requires picking a Reason and clicking Confirm afterwards -- doesn't
     // submit on its own.
     var refundAllBtn = document.createElement('button');
     refundAllBtn.type = 'button';
     refundAllBtn.className = 'icon-btn icon-btn--outline icon-btn--sm';
-    refundAllBtn.innerHTML = '<span class="icon-btn__label">Refund Entire Receipt</span>';
+    refundAllBtn.innerHTML =
+        '<span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--checklist"></span></span>' +
+        '<span class="icon-btn__label">Select All</span>';
     refundAllBtn.addEventListener('click', function () {
         table.getRows().forEach(function (row) {
             var data = row.getData();

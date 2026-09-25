@@ -476,8 +476,25 @@ def refund_find(request):
         qs = qs.filter(total_amount=amount)
 
     results = qs.order_by('-time_of_sale')[:RECENT_RECEIPTS_COUNT if not any_filter else 50]
+
+    # Plain-dict serialization for the Tabulator grid (see CLAUDE.md table
+    # convention) -- date/time split into separate strftime'd strings, same
+    # pattern as reports/views.py's sales_data, so the grid can show them as
+    # two columns without a client-side date parser.
+    results_data = [
+        {
+            'id': sale.id,
+            'date': timezone.localtime(sale.time_of_sale).strftime('%d.%m.%Y'),
+            'time': timezone.localtime(sale.time_of_sale).strftime('%H:%M'),
+            'cashier': str(sale.cashier),
+            'amount': float(sale.total_amount),
+            'refund_url': reverse('refund_new', args=[sale.id]),
+        }
+        for sale in results
+    ]
     return render(request, 'sales/refund_find.html', {
-        'query': query, 'date': date_str, 'amount': amount_str, 'any_filter': any_filter, 'results': results,
+        'query': query, 'date': date_str, 'amount': amount_str, 'any_filter': any_filter,
+        'results': results, 'results_data': results_data,
     })
 
 
@@ -499,17 +516,23 @@ def refund_new(request, pk):
 
     # Plain-dict serialization for the Tabulator grid (see CLAUDE.md table
     # convention) -- `lines` above stays as-is since the POST-handling
-    # below still needs the real model instances/Decimals.
+    # below still needs the real model instances/Decimals. `seq` (add-order
+    # position, assigned once here) backs the "#" column instead of
+    # formatter:'rownum' -- rownum reflects the row's current SORTED
+    # position, so clicking any other column header to sort would make the
+    # "#" values shuffle too, same trap already fixed for the Deliveries
+    # grid and the POS cart (see their own 'seq' comments).
     lines_data = [
         {
             'item_id': row['item'].pk,
+            'seq': i,
             'name': row['item'].sale_item.name,
             'sold_qty': float(row['item'].sale_quantity),
             'already_refunded': float(row['already_refunded']),
             'remaining': float(row['remaining']),
             'refund_qty': 0,
         }
-        for row in lines
+        for i, row in enumerate(lines, start=1)
     ]
 
     error = None

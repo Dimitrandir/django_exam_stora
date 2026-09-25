@@ -408,6 +408,17 @@
                 bar = document.createElement('div');
                 bar.className = 'mb-2';
                 card.insertBefore(bar, card.firstElementChild);
+                // .data-table-card__toolbar is `justify-content:
+                // space-between`, which spreads however many direct
+                // children it has evenly -- fine with two (Columns ▾ +
+                // this actions group), but this freshly-built bar only
+                // ever gets the one actions group, and space-between pins
+                // a lone child to the START (left) instead of the end.
+                // Confirmed live on refund_new.html (Select All/Export
+                // landed top-left instead of top-right). Explicit
+                // flex-end only for this lone-child case -- the two-child
+                // bar built by addColumnChooser() is untouched.
+                bar.style.justifyContent = 'flex-end';
             }
             bar.classList.add('data-table-card__toolbar');
 

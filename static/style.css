@@ -2080,6 +2080,16 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
     mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34a.9959.9959 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 
+/* Checklist (3 rows of checkmark+line) -- "Select All" on the Refund Sale
+   # grid (see refund_new.html), filling every refundable line's qty to its
+   remaining amount in one tap. Hand-drawn (no static asset/existing glyph
+   matched), same "flat single-color mask" technique as the rest of this
+   set. */
+.icon-btn__glyph--checklist {
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M1 5.4 2.4 4l1.8 1.8L7.6 2.4 9 3.8 4.2 8.6z'/%3E%3Crect x='11' y='4.5' width='12' height='1.8'/%3E%3Cpath d='M1 11.4 2.4 10l1.8 1.8 3.4-3.4L9 9.8l-4.8 4.8z'/%3E%3Crect x='11' y='10.5' width='12' height='1.8'/%3E%3Cpath d='M1 17.4 2.4 16l1.8 1.8 3.4-3.4L9 15.8l-4.8 4.8z'/%3E%3Crect x='11' y='16.5' width='12' height='1.8'/%3E%3C/svg%3E") center / contain no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M1 5.4 2.4 4l1.8 1.8L7.6 2.4 9 3.8 4.2 8.6z'/%3E%3Crect x='11' y='4.5' width='12' height='1.8'/%3E%3Cpath d='M1 11.4 2.4 10l1.8 1.8 3.4-3.4L9 9.8l-4.8 4.8z'/%3E%3Crect x='11' y='10.5' width='12' height='1.8'/%3E%3Cpath d='M1 17.4 2.4 16l1.8 1.8 3.4-3.4L9 15.8l-4.8 4.8z'/%3E%3Crect x='11' y='16.5' width='12' height='1.8'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
 /* Eye -- "Columns ▾" chooser (see addColumnChooser in data-table.js),
    masked from the existing static/visibility.png asset (same technique as
    the bin icon's static/delete.png) rather than a redrawn inline SVG. */
@@ -2305,6 +2315,38 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
 .pill-btn--outline:hover {
     background: var(--light-bg);
     color: var(--brand-blue-deep);
+}
+
+/* Refund a Sale search form -- three plain <input>s used to each get their
+   own full-width row (the global `input[type="text"]`/`input[type=
+   "number"]` rule near the top of this file sets width:100%, and a bare
+   <form> is block-level with nothing to keep siblings on one line), which
+   is why the Amount field visually stretched across almost the whole page
+   (flagged live). A flex row with an explicit max-width per field keeps
+   all three + the button on one compact line, wrapping only on a narrow
+   viewport. */
+.refund-search-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 1rem;
+}
+
+.refund-search-form input.pill-input {
+    width: auto !important;
+}
+
+.refund-search-form input[name="q"] {
+    max-width: 220px;
+}
+
+.refund-search-form input[name="date"] {
+    max-width: 160px;
+}
+
+.refund-search-form input[name="amount"] {
+    max-width: 130px;
 }
 
 /* Bulk-actions bar (Products/Categories grids) -- appears once a row is

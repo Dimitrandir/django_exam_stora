@@ -1,6 +1,13 @@
 {% extends 'base.html' %}
 
 {% block title %}STORA - Refund{% endblock %}
+{% load static cache_bust %}
+{% block main_class %}main-wide{% endblock %}
+{% block container_class %}container-fluid{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
+{% endblock %}
 
 {% block content %}
 
@@ -10,43 +17,50 @@
 </div>
 <p>Pick from the recent receipts below, or narrow the search by sale ID/cashier, date, or amount -- scanning a sale's own receipt barcode also works here (it just types the sale ID into the search box).</p>
 
-<form method="get">
-    <input type="text" name="q" value="{{ query }}" placeholder="Sale ID or cashier name" autofocus>
-    <input type="date" name="date" value="{{ date }}">
-    <input type="number" name="amount" value="{{ amount }}" step="0.01" placeholder="Amount">
+<form method="get" class="refund-search-form">
+    <input type="text" name="q" value="{{ query }}" placeholder="Sale ID or cashier name" class="pill-input" autofocus>
+    <input type="date" name="date" value="{{ date }}" class="pill-input">
+    <input type="number" name="amount" value="{{ amount }}" step="0.01" placeholder="Amount" class="pill-input">
     <button type="submit">Search</button>
-    {% if any_filter %}<a href="{% url 'refund_find' %}">Clear</a>{% endif %}
+    {% if any_filter %}<a href="{% url 'refund_find' %}" class="pill-btn pill-btn--outline">Clear</a>{% endif %}
 </form>
 
 <p>{% if any_filter %}Search results{% else %}Recent receipts{% endif %}</p>
 
-<table border="2">
-    <thead>
-        <tr>
-            <th>ID</th>
-            <th>Date</th>
-            <th>Time</th>
-            <th>Cashier</th>
-            <th>Amount</th>
-            <th></th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for sale in results %}
-        <tr>
-            <td>{{ sale.id }}</td>
-            <td>{{ sale.time_of_sale|date:"d.m.Y" }}</td>
-            <td>{{ sale.time_of_sale|date:"H:i" }}</td>
-            <td>{{ sale.cashier }}</td>
-            <td>{{ sale.total_amount }}</td>
-            <td><a href="{% url 'refund_new' sale.pk %}">Refund</a></td>
-        </tr>
-        {% empty %}
-        <tr>
-            <td colspan="6">No sales found.</td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
+{{ results_data|json_script:"refund-results-data" }}
+<div id="refund-results-table-card" class="data-table-card">
+    <div id="refund-results-table" class="table-sm"></div>
+</div>
 
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'vendor/sheetjs/xlsx.full.min.js' %}"></script>
+<script src="{% static 'vendor/tabulator/tabulator.min.js' %}"></script>
+<script src="{% static_v 'js/data-table.js' %}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    function moneyFormatter(cell) {
+        var v = Number(cell.getValue());
+        return isNaN(v) ? '' : v.toFixed(2);
+    }
+
+    var table = initExcelStyleTable('#refund-results-table', 'refund-results-data', [
+        {title: 'ID', field: 'id', width: 80, hozAlign: 'center'},
+        {title: 'Date', field: 'date', width: 120},
+        {title: 'Time', field: 'time', width: 90},
+        {title: 'Cashier', field: 'cashier', widthGrow: 2},
+        {title: 'Amount', field: 'amount', width: 120, hozAlign: 'right', formatter: moneyFormatter},
+    ], {placeholder: 'No sales found.'});
+
+    attachTableExportToToolbar(table, '#refund-results-table-card', 'refund_search_results.xlsx', 'Sales');
+
+    // Row click opens the refund picker for that sale -- same "click a row
+    // to open the record" convention as every other list table in the app
+    // (see CLAUDE.md), instead of a separate per-row "Refund" link/column.
+    table.on('rowClick', function (e, row) {
+        window.location = row.getData().refund_url;
+    });
+});
+</script>
 {% endblock %}
