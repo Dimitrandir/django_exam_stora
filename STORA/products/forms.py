@@ -147,7 +147,11 @@ class TaxGroupForm(forms.ModelForm):
     class Meta:
         model = TaxGroup
         fields = '__all__'
-        labels = {'name': 'Tax Group Name', 'rate': 'VAT Rate (%)'}
+        labels = {'name': 'Tax Group Name', 'rate': 'VAT Rate (%)', 'fiscal_letter': 'Fiscal device letter'}
+        help_texts = {
+            'fiscal_letter': 'The single Cyrillic letter (e.g. Б, Г) this rate is programmed as on the fiscal '
+                              'device -- leave blank if this group is never sold through the fiscal printer.',
+        }
 
 
 class SuppliersForm(forms.ModelForm):

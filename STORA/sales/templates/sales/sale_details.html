@@ -11,6 +11,14 @@
 
 <h1>Details for Sale ID: {{ sale.id }} of {{ sale.time_of_sale | date:"d.m.Y H:i"}} </h1>
 
+{% if sale.fiscal_status == 'FAILED' %}
+<div class="form-errors">
+    Fiscal receipt was NOT printed: {{ sale.fiscal_error }}
+</div>
+{% elif sale.fiscal_status == 'PRINTED' %}
+<p class="text-muted">Fiscal receipt printed at {{ sale.fiscal_printed_at|date:"d.m.Y H:i" }} (УНП {{ sale.fiscal_unic_sale_num }}).</p>
+{% endif %}
+
 {{ sold_items_data|json_script:"sold-items-data" }}
 <div id="sold-items-table-card" class="data-table-card">
     <div id="sold-items-table" class="table-sm"></div>
@@ -18,6 +26,12 @@
 
 <div>
     {% if perms.sales.add_saleattributes %}<a href="{% url 'refund_new' sale.pk %}" class="btn button-refund" role="button">Refund</a>{% endif %}
+    {% if sale.fiscal_status == 'FAILED' and perms.sales.change_saleattributes %}
+    <form method="post" action="{% url 'sale_fiscal_retry' sale.pk %}" style="display:inline;">
+        {% csrf_token %}
+        <button type="submit" class="btn button-save">Retry Fiscal Print</button>
+    </form>
+    {% endif %}
 </div>
 
 {% endblock content%}

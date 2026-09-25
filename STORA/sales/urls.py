@@ -14,5 +14,6 @@ urlpatterns = [
     path('refund/<int:pk>/new/', views.refund_new, name='refund_new'),
     path('refund/<int:pk>/', RefundDetailView.as_view(), name='refund_details'),
     path('<int:pk>/', SalesDetailView.as_view(), name='sale_details'),
+    path('<int:pk>/fiscal-retry/', views.sale_fiscal_retry, name='sale_fiscal_retry'),
     path('delete/<int:pk>/', SalesDeleteView.as_view(), name='sale_delete'),
 ]

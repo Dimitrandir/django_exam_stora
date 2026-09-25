@@ -201,6 +201,21 @@ SESSION_COOKIE_AGE = 60 * 60 * 24 * 7  # 7 days
 ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', '')
 AI_REPORTS_MODEL = os.environ.get('AI_REPORTS_MODEL', 'claude-sonnet-5')
 
+# Fiscal printer (Daisy Perfect S01, ECRCommApp JSON API) -- see
+# STORA.sales.fiscal for the actual integration. Off by default (FISCAL_ENABLED
+# unset/false) so a dev machine or any environment without the real device
+# attached never tries to spawn ECRCommApp -- CASH sales just stay
+# fiscal_status='NONE' instead of erroring. Confirmed live against the real
+# Perfect S01 unit at the pilot store on 2026-09-25 (see kasov_aparat.md /
+# kasov_aparat_ECRCommApp_Guide.pdf in the repo root).
+FISCAL_ENABLED = os.environ.get('FISCAL_ENABLED', 'False') == 'True'
+FISCAL_ECRCOMMAPP_PATH = os.environ.get('FISCAL_ECRCOMMAPP_PATH', '')
+FISCAL_COM_PORT = os.environ.get('FISCAL_COM_PORT', 'COM4')
+FISCAL_API_URL = os.environ.get('FISCAL_API_URL', 'http://127.0.0.1:7000/Api')
+FISCAL_DEVICE_SERIAL = os.environ.get('FISCAL_DEVICE_SERIAL', '')
+FISCAL_OPERATOR_NUM = os.environ.get('FISCAL_OPERATOR_NUM', '1')
+FISCAL_OPERATOR_PASSWORD = os.environ.get('FISCAL_OPERATOR_PASSWORD', '1')
+
 CELERY_BROKER_URL = 'redis://localhost:6379/0'
 CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
 CELERY_ACCEPT_CONTENT = ['json']

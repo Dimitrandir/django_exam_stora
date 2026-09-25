@@ -40,6 +40,27 @@ class SaleAttributes(models.Model):
     change_due = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True,
                                      verbose_name='Change Due')
 
+    # Fiscal printer (Daisy Perfect S01, see STORA.sales.fiscal) status --
+    # NONE covers both "not attempted yet" and "not eligible" (e.g. CARD/
+    # MIXED sales, which aren't fiscalized yet, see fiscal.py). A failed
+    # attempt never blocks the sale itself (it's already saved by the time
+    # fiscal printing runs) -- it just leaves the sale flagged here for a
+    # manual "Retry Fiscal Print" from sale_details.html.
+    FISCAL_NONE = 'NONE'
+    FISCAL_PRINTED = 'PRINTED'
+    FISCAL_FAILED = 'FAILED'
+    FISCAL_STATUS_CHOICES = [
+        (FISCAL_NONE, 'Not fiscalized'), (FISCAL_PRINTED, 'Printed'), (FISCAL_FAILED, 'Failed'),
+    ]
+    fiscal_status = models.CharField(max_length=7, choices=FISCAL_STATUS_CHOICES, default=FISCAL_NONE)
+    # The exact УНП (UnicSaleNum) sent on the last attempt -- kept for
+    # troubleshooting/audit, not reused on retry (a retry always draws a
+    # fresh number from FiscalCounter, since a failed attempt may still have
+    # reached the device before failing).
+    fiscal_unic_sale_num = models.CharField(max_length=40, blank=True)
+    fiscal_error = models.TextField(blank=True)
+    fiscal_printed_at = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         verbose_name = 'Sale'
         verbose_name_plural = 'Sales'
@@ -298,3 +319,20 @@ class RefundItems(models.Model):
 @receiver(post_save, sender=RefundItems)
 def _update_refund_total(sender, instance, **kwargs):
     instance.refund.recalculate_total()
+
+
+class FiscalCounter(models.Model):
+    """Single-row counter backing the sequential part of a fiscal УНП
+    (UnicSaleNum), e.g. DY497635-OP01-0000001 -- see STORA.sales.fiscal.
+    Always exactly one row (pk=1); `next()` locks it, so two simultaneous
+    checkouts can never draw the same number."""
+    next_number = models.PositiveIntegerField(default=1)
+
+    @classmethod
+    def next(cls):
+        with transaction.atomic():
+            counter, _ = cls.objects.select_for_update().get_or_create(pk=1)
+            n = counter.next_number
+            counter.next_number = n + 1
+            counter.save(update_fields=['next_number'])
+            return n

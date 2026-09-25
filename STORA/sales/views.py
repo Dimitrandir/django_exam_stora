@@ -1,6 +1,7 @@
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 
+from django.conf import settings
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db import transaction
@@ -22,6 +23,7 @@ from STORA.core.session_service import extract_formset_state
 from STORA.core.utils import build_restore_formset_data, dispatch_task, multi_token_icontains_q
 from STORA.products.models import Product, Barcode, Category
 from STORA.pricelists.services import resolve_prices
+from STORA.sales import fiscal
 from STORA.sales.forms import SaleForms, SaleItemFormSet
 from STORA.sales.models import SaleAttributes, SaleItems, PosPin, SaleItemVoidLog, RefundAttributes, RefundItems
 from STORA.sales.tab_state import (
@@ -117,6 +119,18 @@ def sales_add(request):
             formset.save()
 
             dispatch_task(log_sale_completed, sale.id)
+
+            # Synchronous, not dispatch_task/Celery -- the cashier is
+            # physically waiting for the paper receipt to hand to the
+            # customer, so this can't be a fire-and-forget background job
+            # the way log_sale_completed is. Never blocks/fails the sale
+            # itself though: the sale is already committed above, and
+            # attempt_print() catches everything, just recording the
+            # outcome on the sale (see STORA.sales.fiscal). CARD/MIXED are
+            # skipped entirely for now -- no fiscal Payment type mapped for
+            # them yet (see the memory notes from the hardware session).
+            if settings.FISCAL_ENABLED and sale.payment_method == SaleAttributes.CASH:
+                fiscal.attempt_print(sale)
 
             if sale.change_due is not None:
                 set_last_change(request, active_tab, sale.change_due)
@@ -237,6 +251,20 @@ class SalesDetailView(LoginRequiredMixin, StaffPermissionRequiredMixin, DetailVi
             for item in self.object.items.select_related('sale_item').all()
         ]
         return context
+
+
+@login_required
+@permission_required('sales.change_saleattributes', raise_exception=True)
+@require_POST
+def sale_fiscal_retry(request, pk):
+    """Re-attempts fiscal printing for a sale whose first attempt failed
+    (fiscal_status='FAILED') -- see STORA.sales.fiscal. Synchronous, same as
+    the original attempt at checkout: whoever clicks this is standing next
+    to the printer waiting to see if it works this time."""
+    sale = get_object_or_404(SaleAttributes, pk=pk)
+    if settings.FISCAL_ENABLED:
+        fiscal.attempt_print(sale)
+    return redirect('sale_details', pk=sale.pk)
 
 
 class SalesDeleteView(LoginRequiredMixin, StaffPermissionRequiredMixin, DeleteView):

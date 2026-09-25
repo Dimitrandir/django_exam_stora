@@ -83,6 +83,13 @@ class TaxGroup(models.Model):
         max_digits=5, decimal_places=2, validators=[MinValueValidator(0), MaxValueValidator(100)],
         verbose_name='VAT rate (%)',
     )
+    # Which single Cyrillic letter (А-З) this tax group is programmed as on
+    # the fiscal device (Daisy Perfect S01, confirmed live: Б=20%, Г=9%) --
+    # blank means "not mapped yet". STORA.sales.fiscal refuses to print a
+    # line whose product's tax group has no letter set here, rather than
+    # guessing one, since a wrong VAT letter on a real fiscal receipt is a
+    # legal/accounting problem, not just a display bug.
+    fiscal_letter = models.CharField(max_length=1, blank=True, verbose_name='Fiscal device letter')
 
     class Meta:
         verbose_name = 'Tax Group'

@@ -1,16 +1,18 @@
 import json
 from datetime import timedelta
 from decimal import Decimal
+from unittest.mock import MagicMock, patch
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from django.utils import timezone
 
-from STORA.products.models import Category, Product, RecipeIngredient
+from STORA.products.models import Category, Product, RecipeIngredient, TaxGroup
 from STORA.pricelists.models import PriceList, PriceListRule
-from STORA.sales.models import SaleAttributes, SaleItems, PosPin, SaleItemVoidLog, RefundAttributes, RefundItems
+from STORA.sales import fiscal
+from STORA.sales.models import SaleAttributes, SaleItems, PosPin, SaleItemVoidLog, RefundAttributes, RefundItems, FiscalCounter
 from STORA.sales.forms import SaleItemForm
 from STORA.sales.tasks import backfill_recipe_ingredient_stock
 
@@ -957,3 +959,232 @@ class RefundViewTests(TestCase):
         )
         response = self.client.get(reverse('refund_details', kwargs={'pk': refund.pk}))
         self.assertEqual(response.status_code, 200)
+
+
+FISCAL_SETTINGS = dict(
+    FISCAL_ENABLED=True,
+    FISCAL_ECRCOMMAPP_PATH='/fake/ecrcommapp.exe',
+    FISCAL_COM_PORT='COM4',
+    FISCAL_API_URL='http://127.0.0.1:7000/Api',
+    FISCAL_DEVICE_SERIAL='DY000001',
+    FISCAL_OPERATOR_NUM='1',
+    FISCAL_OPERATOR_PASSWORD='1',
+)
+
+
+class FiscalCounterTests(TestCase):
+    def test_next_increments_and_is_unique(self):
+        first = FiscalCounter.next()
+        second = FiscalCounter.next()
+        self.assertEqual(second, first + 1)
+
+
+class FiscalHelperTests(TestCase):
+    def setUp(self):
+        self.tax_group = TaxGroup.objects.create(name='Standard', rate=Decimal('20.00'), fiscal_letter='Б')
+        self.product = Product.objects.create(
+            internal_code='P0000020', name='Taxed Product', sell_price=Decimal('5.00'), quantity=Decimal('10.000'),
+            tax_group=self.tax_group,
+        )
+
+    def test_tax_letter_for_returns_configured_letter(self):
+        self.assertEqual(fiscal._tax_letter_for(self.product), 'Б')
+
+    def test_tax_letter_for_raises_when_no_tax_group(self):
+        product = Product.objects.create(
+            internal_code='P0000021', name='No Group', sell_price=Decimal('1.00'), quantity=Decimal('1.000'),
+        )
+        with self.assertRaises(fiscal.FiscalPrintError):
+            fiscal._tax_letter_for(product)
+
+    def test_tax_letter_for_raises_when_letter_blank(self):
+        blank_group = TaxGroup.objects.create(name='Unmapped', rate=Decimal('9.00'))
+        product = Product.objects.create(
+            internal_code='P0000022', name='Blank Letter', sell_price=Decimal('1.00'), quantity=Decimal('1.000'),
+            tax_group=blank_group,
+        )
+        with self.assertRaises(fiscal.FiscalPrintError):
+            fiscal._tax_letter_for(product)
+
+    @override_settings(**FISCAL_SETTINGS)
+    def test_next_unic_sale_num_format(self):
+        num = fiscal._next_unic_sale_num()
+        self.assertRegex(num, r'^DY000001-OP01-\d{7}$')
+
+
+class FiscalPrintReceiptTests(TestCase):
+    """print_fiscal_receipt orchestration -- _post_command/_start_ecrcommapp/
+    _stop_ecrcommapp are mocked out (no real subprocess/HTTP), so this only
+    verifies the command sequence/cleanup logic, not the real device
+    protocol (that was verified live, see kasov_aparat.md)."""
+
+    def setUp(self):
+        self.tax_group = TaxGroup.objects.create(name='Standard', rate=Decimal('20.00'), fiscal_letter='Б')
+        self.product = Product.objects.create(
+            internal_code='P0000030', name='Fiscal Product', sell_price=Decimal('5.00'), quantity=Decimal('10.000'),
+            tax_group=self.tax_group,
+        )
+        self.cashier = User.objects.create_user(username='fiscal-cashier', password='pass12345')
+        self.sale = SaleAttributes.objects.create(
+            cashier=self.cashier, payment_method=SaleAttributes.CASH, amount_paid=Decimal('5.00'),
+        )
+        SaleItems.objects.create(
+            sale=self.sale, sale_item=self.product, sale_quantity=Decimal('1.000'), price_at_sale=Decimal('5.00'),
+        )
+
+    def test_disabled_raises_without_touching_subprocess(self):
+        with patch('STORA.sales.fiscal._start_ecrcommapp') as mock_start:
+            with self.assertRaises(fiscal.FiscalPrintError):
+                fiscal.print_fiscal_receipt(self.sale)
+            mock_start.assert_not_called()
+
+    @override_settings(**FISCAL_SETTINGS)
+    @patch('STORA.sales.fiscal._post_command')
+    @patch('STORA.sales.fiscal._start_ecrcommapp')
+    @patch('STORA.sales.fiscal._stop_ecrcommapp')
+    def test_happy_path_sends_expected_command_sequence(self, mock_stop, mock_start, mock_post):
+        mock_start.return_value = MagicMock()
+        mock_post.return_value = {}
+
+        unic_sale_num = fiscal.print_fiscal_receipt(self.sale)
+
+        sent_commands = [call.args[0] for call in mock_post.call_args_list]
+        self.assertEqual(sent_commands, ['FDStartFiscRcp', 'FDSaleItem', 'FDTotalSum', 'FDEndFiscRcp'])
+        self.assertTrue(unic_sale_num.startswith('DY000001-OP01-'))
+        mock_stop.assert_called_once()
+
+    @override_settings(**FISCAL_SETTINGS)
+    @patch('STORA.sales.fiscal._post_command')
+    @patch('STORA.sales.fiscal._start_ecrcommapp')
+    @patch('STORA.sales.fiscal._stop_ecrcommapp')
+    def test_failure_after_open_attempts_cancel(self, mock_stop, mock_start, mock_post):
+        mock_start.return_value = MagicMock()
+
+        def side_effect(cmd, cmd_data, timeout=15):
+            if cmd == 'FDSaleItem':
+                raise fiscal.FiscalPrintError('boom')
+            return {}
+
+        mock_post.side_effect = side_effect
+
+        with self.assertRaises(fiscal.FiscalPrintError):
+            fiscal.print_fiscal_receipt(self.sale)
+
+        sent_commands = [call.args[0] for call in mock_post.call_args_list]
+        self.assertEqual(sent_commands, ['FDStartFiscRcp', 'FDSaleItem', 'FDCancelRcp'])
+        mock_stop.assert_called_once()
+
+    @override_settings(**FISCAL_SETTINGS)
+    def test_missing_tax_group_letter_raises_before_opening_receipt(self):
+        untaxed_product = Product.objects.create(
+            internal_code='P0000031', name='No Tax Letter', sell_price=Decimal('3.00'), quantity=Decimal('5.000'),
+        )
+        sale = SaleAttributes.objects.create(
+            cashier=self.cashier, payment_method=SaleAttributes.CASH, amount_paid=Decimal('3.00'),
+        )
+        SaleItems.objects.create(
+            sale=sale, sale_item=untaxed_product, sale_quantity=Decimal('1.000'), price_at_sale=Decimal('3.00'),
+        )
+
+        with patch('STORA.sales.fiscal._start_ecrcommapp') as mock_start:
+            with self.assertRaises(fiscal.FiscalPrintError):
+                fiscal.print_fiscal_receipt(sale)
+            mock_start.assert_not_called()
+
+
+class FiscalAttemptPrintTests(TestCase):
+    def setUp(self):
+        self.cashier = User.objects.create_user(username='attempt-cashier', password='pass12345')
+        self.sale = SaleAttributes.objects.create(
+            cashier=self.cashier, payment_method=SaleAttributes.CASH, amount_paid=Decimal('1.00'),
+        )
+
+    @patch('STORA.sales.fiscal.print_fiscal_receipt')
+    def test_success_marks_printed(self, mock_print):
+        mock_print.return_value = 'DY000001-OP01-0000001'
+        fiscal.attempt_print(self.sale)
+        self.sale.refresh_from_db()
+        self.assertEqual(self.sale.fiscal_status, SaleAttributes.FISCAL_PRINTED)
+        self.assertEqual(self.sale.fiscal_unic_sale_num, 'DY000001-OP01-0000001')
+        self.assertIsNotNone(self.sale.fiscal_printed_at)
+
+    @patch('STORA.sales.fiscal.print_fiscal_receipt')
+    def test_failure_marks_failed_and_does_not_raise(self, mock_print):
+        mock_print.side_effect = fiscal.FiscalPrintError('device unreachable')
+        fiscal.attempt_print(self.sale)  # must not raise
+        self.sale.refresh_from_db()
+        self.assertEqual(self.sale.fiscal_status, SaleAttributes.FISCAL_FAILED)
+        self.assertIn('device unreachable', self.sale.fiscal_error)
+
+
+class SalesAddFiscalIntegrationTests(TestCase):
+    """sales_add view's decision of WHETHER to call fiscal.attempt_print --
+    the call itself is mocked, so this doesn't touch real hardware."""
+
+    def setUp(self):
+        self.cashier = User.objects.create_user(username='fiscal-integ-cashier', password='pass12345', role=User.CASHIER)
+        self.client.force_login(self.cashier)
+        self.product = Product.objects.create(
+            internal_code='P0000040', name='Integration Product', sell_price=Decimal('2.00'), quantity=Decimal('10.000'),
+        )
+
+    def _post_data(self, payment_method, **overrides):
+        data = {
+            'cashier': self.cashier.pk,
+            'payment_method': payment_method,
+            'amount_paid': '2.00',
+            'change_due': '0.00',
+            'items-TOTAL_FORMS': '1',
+            'items-INITIAL_FORMS': '0',
+            'items-MIN_NUM_FORMS': '0',
+            'items-MAX_NUM_FORMS': '1000',
+            'items-0-sale_item': self.product.pk,
+            'items-0-sale_quantity': '1',
+            'items-0-price_at_sale': '2.00',
+            'items-0-total_price_row': '2.00',
+            'items-0-DELETE': '',
+        }
+        data.update(overrides)
+        return data
+
+    @override_settings(FISCAL_ENABLED=True)
+    @patch('STORA.sales.views.fiscal.attempt_print')
+    def test_cash_sale_triggers_attempt_print_when_enabled(self, mock_attempt):
+        self.client.post(reverse('sale_add'), self._post_data(SaleAttributes.CASH))
+        mock_attempt.assert_called_once()
+
+    @override_settings(FISCAL_ENABLED=True)
+    @patch('STORA.sales.views.fiscal.attempt_print')
+    def test_card_sale_never_triggers_attempt_print(self, mock_attempt):
+        data = self._post_data(SaleAttributes.CARD, amount_paid='', card_amount='2.00')
+        self.client.post(reverse('sale_add'), data)
+        mock_attempt.assert_not_called()
+
+    @override_settings(FISCAL_ENABLED=False)
+    @patch('STORA.sales.views.fiscal.attempt_print')
+    def test_disabled_never_triggers_attempt_print(self, mock_attempt):
+        self.client.post(reverse('sale_add'), self._post_data(SaleAttributes.CASH))
+        mock_attempt.assert_not_called()
+
+
+class SaleFiscalRetryViewTests(TestCase):
+    def setUp(self):
+        self.manager = User.objects.create_user(username='fiscal-retry-manager', password='pass12345', role=User.MANAGER)
+        self.client.force_login(self.manager)
+        self.sale = SaleAttributes.objects.create(
+            cashier=self.manager, payment_method=SaleAttributes.CASH, amount_paid=Decimal('1.00'),
+            fiscal_status=SaleAttributes.FISCAL_FAILED, fiscal_error='device unreachable',
+        )
+
+    @override_settings(FISCAL_ENABLED=True)
+    @patch('STORA.sales.views.fiscal.attempt_print')
+    def test_retry_calls_attempt_print_and_redirects(self, mock_attempt):
+        response = self.client.post(reverse('sale_fiscal_retry', kwargs={'pk': self.sale.pk}))
+        mock_attempt.assert_called_once()
+        self.assertRedirects(response, reverse('sale_details', kwargs={'pk': self.sale.pk}))
+
+    def test_anonymous_is_redirected_to_login(self):
+        self.client.logout()
+        response = self.client.post(reverse('sale_fiscal_retry', kwargs={'pk': self.sale.pk}))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn('/accounts/login/', response.url)
