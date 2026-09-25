@@ -497,6 +497,21 @@ def refund_new(request, pk):
         already = item.refunded_qty or Decimal('0')
         lines.append({'item': item, 'already_refunded': already, 'remaining': item.sale_quantity - already})
 
+    # Plain-dict serialization for the Tabulator grid (see CLAUDE.md table
+    # convention) -- `lines` above stays as-is since the POST-handling
+    # below still needs the real model instances/Decimals.
+    lines_data = [
+        {
+            'item_id': row['item'].pk,
+            'name': row['item'].sale_item.name,
+            'sold_qty': float(row['item'].sale_quantity),
+            'already_refunded': float(row['already_refunded']),
+            'remaining': float(row['remaining']),
+            'refund_qty': 0,
+        }
+        for row in lines
+    ]
+
     error = None
     if request.method == 'POST':
         reason = request.POST.get('reason')
@@ -543,7 +558,8 @@ def refund_new(request, pk):
             return redirect('refund_details', pk=refund.pk)
 
     return render(request, 'sales/refund_new.html', {
-        'sale': sale, 'lines': lines, 'reason_choices': RefundAttributes.REASON_CHOICES, 'error': error,
+        'sale': sale, 'lines': lines, 'lines_data': lines_data,
+        'reason_choices': RefundAttributes.REASON_CHOICES, 'error': error,
     })
 
 
@@ -555,7 +571,15 @@ class RefundDetailView(LoginRequiredMixin, StaffPermissionRequiredMixin, DetailV
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['refund_items'] = self.object.items.select_related('original_item__sale_item').all()
+        context['refund_items_data'] = [
+            {
+                'product_name': item.original_item.sale_item.name,
+                'refund_quantity': float(item.refund_quantity),
+                'price_at_refund': float(item.price_at_refund),
+                'total_price_row': float(item.total_price_row or 0),
+            }
+            for item in self.object.items.select_related('original_item__sale_item').all()
+        ]
         return context
 
 

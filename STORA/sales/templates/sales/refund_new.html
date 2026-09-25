@@ -1,48 +1,28 @@
 {% extends 'base.html' %}
 
 {% block title %}STORA - Refund Sale #{{ sale.id }}{% endblock %}
-{% load currency_filters %}
+{% load static cache_bust %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
+{% endblock %}
+
 {% block content %}
 
 <h1>Refund Sale #{{ sale.id }} ({{ sale.time_of_sale|date:"d.m.Y H:i" }})</h1>
 
 {% if error %}
-<div style="color: red;"><strong>{{ error }}</strong></div>
+<div class="form-errors"><strong>{{ error }}</strong></div>
 {% endif %}
 
-<form method="post">
+<form method="post" id="refund-form">
     {% csrf_token %}
+    <div id="refund-hidden-inputs"></div>
 
-    <table border="2">
-        <thead>
-            <tr>
-                <th>Product</th>
-                <th>Sold Qty</th>
-                <th>Already Refunded</th>
-                <th>Remaining</th>
-                <th>Refund Qty Now</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for line in lines %}
-            <tr>
-                <td>{{ line.item.sale_item.name }}</td>
-                <td>{{ line.item.sale_quantity }}</td>
-                <td>{{ line.already_refunded }}</td>
-                <td>{{ line.remaining }}</td>
-                <td>
-                    {% if line.remaining > 0 %}
-                    <input type="text" inputmode="decimal" readonly
-                           class="refund-qty-input" data-max="{{ line.remaining }}"
-                           name="refund_qty_{{ line.item.pk }}" value="0">
-                    {% else %}
-                    fully refunded
-                    {% endif %}
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    {{ lines_data|json_script:"refund-lines-data" }}
+    <div id="refund-items-table-card" class="data-table-card">
+        <div id="refund-items-table" class="table-sm"></div>
+    </div>
 
     <p>
         <label for="id_reason">Reason:</label>
@@ -53,91 +33,100 @@
         </select>
     </p>
 
-    <button type="submit">Confirm Refund</button>
+    <button type="submit" class="btn button-save">Confirm Refund</button>
     <a href="{% url 'refund_find' %}">Cancel</a>
 </form>
 
-{% comment %}
-Refund Qty inputs are readonly -- tapping one opens this keypad instead of
-relying on a native number field, whose tiny spinner arrows/OS keyboard
-are awkward on the shop's touchscreen (same reasoning as the Complete Sale
-checkout keypad). Reuses the .checkout-keypad/.keypad-btn styles from
-static/style.css rather than defining new ones.
-{% endcomment %}
-<div class="refund-keypad-overlay" id="refund-keypad-overlay" style="--pos-ink:#1c2b2d;">
-    <div class="refund-keypad-popup">
-        <p id="refund-keypad-label"></p>
-        <input type="text" id="refund-keypad-display" readonly>
-        <div class="checkout-keypad">
-            <button type="button" class="keypad-btn" data-key="7">7</button>
-            <button type="button" class="keypad-btn" data-key="8">8</button>
-            <button type="button" class="keypad-btn" data-key="9">9</button>
-            <button type="button" class="keypad-btn" data-key="4">4</button>
-            <button type="button" class="keypad-btn" data-key="5">5</button>
-            <button type="button" class="keypad-btn" data-key="6">6</button>
-            <button type="button" class="keypad-btn" data-key="1">1</button>
-            <button type="button" class="keypad-btn" data-key="2">2</button>
-            <button type="button" class="keypad-btn" data-key="3">3</button>
-            <button type="button" class="keypad-btn" data-key="0">0</button>
-            <button type="button" class="keypad-btn" data-key=".">.</button>
-            <button type="button" class="keypad-btn keypad-btn--del" data-key="del">&larr;</button>
-        </div>
-        <button type="button" id="refund-keypad-done" class="button-save">Done</button>
-        <button type="button" id="refund-keypad-cancel">Cancel</button>
-    </div>
-</div>
+{% endblock %}
 
+{% block extra_js %}
+<script src="{% static 'vendor/sheetjs/xlsx.full.min.js' %}"></script>
+<script src="{% static 'vendor/tabulator/tabulator.min.js' %}"></script>
+<script src="{% static_v 'js/data-table.js' %}"></script>
 <script>
-(function () {
-    var overlay = document.getElementById('refund-keypad-overlay');
-    var display = document.getElementById('refund-keypad-display');
-    var label = document.getElementById('refund-keypad-label');
-    var target = null;
-    var needsReset = true;
-
-    function openFor(input) {
-        target = input;
-        display.value = input.value;
-        label.textContent = 'Max: ' + input.dataset.max;
-        needsReset = true;
-        overlay.classList.add('is-open');
+document.addEventListener('DOMContentLoaded', function () {
+    function quantityFormatter(cell) {
+        var v = Number(cell.getValue());
+        return isNaN(v) ? '' : v;
     }
 
-    function close() {
-        overlay.classList.remove('is-open');
-        target = null;
+    // Same custom editor as Deliveries/Sales/Revisions (Tabulator's built-in
+    // editor:'number' has no Enter-key handling -- see CLAUDE.md) --
+    // clamps to [0, max] on commit rather than relying on HTML5 min/max
+    // (which doesn't reliably block an out-of-range value, only flags it).
+    function numberEditor(cell, onRendered, success, cancel, editorParams) {
+        var params = editorParams || {};
+        var input = document.createElement('input');
+        input.type = 'number';
+        if (params.min !== undefined) input.min = params.min;
+        if (params.max !== undefined) input.max = params.max;
+        input.step = params.step || 0.001;
+        input.style.padding = '4px';
+        input.style.width = '100%';
+        input.style.boxSizing = 'border-box';
+        input.style.height = '100%';
+        input.value = cell.getValue();
+        onRendered(function () { input.focus(); input.select(); });
+
+        function commit() {
+            var value = input.value === '' ? 0 : parseFloat(input.value);
+            if (params.min !== undefined && value < params.min) value = params.min;
+            if (params.max !== undefined && value > params.max) value = params.max;
+            success(value);
+        }
+
+        input.addEventListener('blur', commit);
+        input.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') { e.preventDefault(); commit(); }
+            else if (e.key === 'Escape') { cancel(); }
+        });
+        return input;
     }
 
-    document.querySelectorAll('.refund-qty-input').forEach(function (input) {
-        input.addEventListener('click', function () { openFor(input); });
-    });
+    var table = initExcelStyleTable('#refund-items-table', 'refund-lines-data', [
+        {title: '#', field: 'name', formatter: 'rownum', width: 50, hozAlign: 'center', headerFilter: false, hideable: false},
+        {title: 'Product', field: 'name', widthGrow: 2},
+        {title: 'Sold Qty', field: 'sold_qty', width: 110, hozAlign: 'right', formatter: quantityFormatter},
+        {title: 'Already Refunded', field: 'already_refunded', width: 140, hozAlign: 'right', formatter: quantityFormatter},
+        {title: 'Remaining', field: 'remaining', width: 110, hozAlign: 'right', formatter: quantityFormatter},
+        {
+            title: 'Refund Qty Now', field: 'refund_qty', width: 140, hozAlign: 'right',
+            formatter: quantityFormatter,
+            editor: numberEditor,
+            editorParams: function (cell) { return {min: 0, max: cell.getData().remaining, step: 0.001}; },
+            editable: function (cell) { return cell.getData().remaining > 0; },
+        },
+    ], {placeholder: 'Nothing left to refund on this sale.', columnChooser: false});
 
-    document.querySelectorAll('#refund-keypad-overlay .keypad-btn').forEach(function (btn) {
-        btn.addEventListener('click', function () {
-            var key = btn.dataset.key;
-            if (needsReset && key !== 'del') {
-                display.value = '';
-                needsReset = false;
-            }
-            if (key === 'del') {
-                display.value = display.value.slice(0, -1);
-            } else if (key === '.') {
-                if (!display.value.includes('.')) display.value += '.';
-            } else {
-                display.value += key;
-            }
+    // "Refund Entire Receipt" -- fills every still-refundable line's qty to
+    // its own remaining amount in one click, so the common "customer
+    // returns everything" case doesn't need typing each line by hand. Still
+    // requires picking a Reason and clicking Confirm afterwards -- doesn't
+    // submit on its own.
+    var refundAllBtn = document.createElement('button');
+    refundAllBtn.type = 'button';
+    refundAllBtn.className = 'icon-btn icon-btn--outline icon-btn--sm';
+    refundAllBtn.innerHTML = '<span class="icon-btn__label">Refund Entire Receipt</span>';
+    refundAllBtn.addEventListener('click', function () {
+        table.getRows().forEach(function (row) {
+            var data = row.getData();
+            if (data.remaining > 0) row.update({refund_qty: data.remaining});
         });
     });
 
-    document.getElementById('refund-keypad-done').addEventListener('click', function () {
-        if (target) target.value = display.value || '0';
-        close();
-    });
-    document.getElementById('refund-keypad-cancel').addEventListener('click', close);
-    overlay.addEventListener('click', function (e) {
-        if (e.target === overlay) close();
-    });
-})();
-</script>
+    attachTableExportToToolbar(table, '#refund-items-table-card', 'refund_sale_{{ sale.id }}_items.xlsx', 'Refund Items', [refundAllBtn]);
 
+    document.getElementById('refund-form').addEventListener('submit', function () {
+        var container = document.getElementById('refund-hidden-inputs');
+        container.innerHTML = '';
+        table.getData().forEach(function (row) {
+            var input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'refund_qty_' + row.item_id;
+            input.value = row.refund_qty;
+            container.appendChild(input);
+        });
+    });
+});
+</script>
 {% endblock %}

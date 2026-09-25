@@ -1049,10 +1049,26 @@ class FiscalPrintReceiptTests(TestCase):
         result = fiscal.print_fiscal_receipt(self.sale)
 
         sent_commands = [call.args[0] for call in mock_post.call_args_list]
-        self.assertEqual(sent_commands, ['FDStartFiscRcp', 'FDSaleItem', 'FDTotalSum', 'FDEndFiscRcp'])
+        self.assertEqual(
+            sent_commands, ['FDStartFiscRcp', 'FDSaleItem', 'FDPrintBarcode', 'FDTotalSum', 'FDEndFiscRcp'],
+        )
         self.assertTrue(result['unic_sale_num'].startswith('DY000001-OP01-'))
         self.assertEqual(result['receipt_number'], 3)
         mock_stop.assert_called_once()
+
+    @override_settings(**FISCAL_SETTINGS)
+    @patch('STORA.sales.fiscal._post_command')
+    @patch('STORA.sales.fiscal._start_ecrcommapp')
+    @patch('STORA.sales.fiscal._stop_ecrcommapp')
+    def test_barcode_encodes_the_sale_pk(self, mock_stop, mock_start, mock_post):
+        mock_start.return_value = MagicMock()
+        mock_post.return_value = {}
+
+        fiscal.print_fiscal_receipt(self.sale)
+
+        barcode_call = next(call for call in mock_post.call_args_list if call.args[0] == 'FDPrintBarcode')
+        self.assertEqual(barcode_call.args[1]['Data'], str(self.sale.pk))
+        self.assertEqual(barcode_call.args[1]['Type'], 'Code128')
 
     @override_settings(**FISCAL_SETTINGS)
     @patch('STORA.sales.fiscal._post_command')

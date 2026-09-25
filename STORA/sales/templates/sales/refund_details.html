@@ -1,7 +1,12 @@
 {% extends 'base.html' %}
 
 {% block title %}STORA - Refund #{{ refund.id }}{% endblock %}
-{% load currency_filters %}
+{% load static cache_bust currency_filters %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
+{% endblock %}
+
 {% block content %}
 
 <h1>Refund #{{ refund.id }} of Sale #{{ refund.original_sale_id }}</h1>
@@ -15,26 +20,11 @@
 <p class="text-muted">Fiscal storno receipt printed at {{ refund.fiscal_printed_at|date:"d.m.Y H:i" }} (УНП {{ refund.fiscal_unic_sale_num }}).</p>
 {% endif %}
 
-<table border="2">
-    <thead>
-        <tr>
-            <th>Product</th>
-            <th>Refunded Qty</th>
-            <th>Price per unit</th>
-            <th>Total price</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for line in refund_items %}
-        <tr>
-            <td>{{ line.original_item.sale_item.name }}</td>
-            <td>{{ line.refund_quantity }}</td>
-            <td>{{ line.price_at_refund }}</td>
-            <td>{{ line.total_price_row }}</td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
+{{ refund_items_data|json_script:"refund-items-data" }}
+<div id="refund-items-table-card" class="data-table-card">
+    <div id="refund-items-table" class="table-sm"></div>
+</div>
+
 <h2 align="center">Total Refunded: {{ refund.total_amount|currency }}</h2>
 
 <a href="{% url 'sale_details' refund.original_sale_id %}">View Original Sale</a>
@@ -46,4 +36,34 @@
 </form>
 {% endif %}
 
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'vendor/sheetjs/xlsx.full.min.js' %}"></script>
+<script src="{% static 'vendor/tabulator/tabulator.min.js' %}"></script>
+<script src="{% static_v 'js/data-table.js' %}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    function moneyFormatter(cell) {
+        var v = Number(cell.getValue());
+        return isNaN(v) ? '' : v.toFixed(2);
+    }
+
+    var table = initExcelStyleTable('#refund-items-table', 'refund-items-data', [
+        {
+            title: '#', field: 'product_name', formatter: 'rownum', width: 50, hozAlign: 'center',
+            headerFilter: false, hideable: false,
+        },
+        {title: 'Product', field: 'product_name', widthGrow: 2},
+        {title: 'Refunded Qty', field: 'refund_quantity', width: 130, hozAlign: 'right'},
+        {title: 'Price per unit', field: 'price_at_refund', width: 130, hozAlign: 'right', formatter: moneyFormatter},
+        {
+            title: 'Total price', field: 'total_price_row', width: 130, hozAlign: 'right',
+            formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
+        },
+    ], {placeholder: 'No items on this refund.', columnChooser: false});
+
+    attachTableExportToToolbar(table, '#refund-items-table-card', 'refund_{{ refund.id }}_items.xlsx', 'Refund Items');
+});
+</script>
 {% endblock %}

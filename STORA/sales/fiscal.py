@@ -134,13 +134,18 @@ def _validate_items(sale):
     return items
 
 
-def _run_receipt(start_cmd_data, items, sale_type, amount_in):
+def _run_receipt(start_cmd_data, items, sale_type, amount_in, barcode_data=None):
     """Shared open -> sell -> total -> close sequence for both a real sale
     and a storno -- only what differs between them (FDStartFiscRcp's extra
     fields, whether each line is a Sale or Refund, the paid/refunded amount)
     is passed in. `items` is a list of {'name', 'tax_letter', 'price', 'qty'}
-    dicts. Returns FDEndFiscRcp's response CmdData (has FiscReceipt/
-    AllReceipt)."""
+    dicts. `barcode_data`, if given, prints a Code128 barcode on the receipt
+    (FDPrintBarcode requires an open receipt, same as FDSaleItem -- can't be
+    printed standalone after the fact) -- used so a printed sale receipt can
+    later be scanned straight into the "Refund a Sale" search screen (its
+    numeric-query handling already treats a bare number as an exact sale ID,
+    see refund_find). Returns FDEndFiscRcp's response CmdData (has
+    FiscReceipt/AllReceipt)."""
     process = _start_ecrcommapp()
     receipt_open = False
     try:
@@ -157,6 +162,11 @@ def _run_receipt(start_cmd_data, items, sale_type, amount_in):
                 'Qty': str(item['qty']),
                 'Percent': '0',
                 'Netto': '0',
+            })
+
+        if barcode_data:
+            _post_command('FDPrintBarcode', {
+                'Type': 'Code128', 'Data': barcode_data, 'Pos': 'C', 'Scale': 0, 'High': 0, 'PrnText': '1',
             })
 
         _post_command('FDTotalSum', {
@@ -209,7 +219,7 @@ def print_fiscal_receipt(sale):
         'Invoice': '', 'Refund': '', 'Credit': '',
         'Reason': 0, 'DocLink': 0, 'DocLinkDT': '', 'FiskMem': '', 'InvLink': '',
     }
-    end_result = _run_receipt(start_data, items, 'Sale', sale.amount_paid)
+    end_result = _run_receipt(start_data, items, 'Sale', sale.amount_paid, barcode_data=str(sale.pk))
     return {'unic_sale_num': unic_sale_num, 'receipt_number': end_result.get('FiscReceipt')}
 
 

@@ -4,8 +4,11 @@
 
 {% block content %}
 
-<h1>Refund a Sale</h1>
-<p>Pick from the recent receipts below, or narrow the search by sale ID/cashier, date, or amount.</p>
+<div class="d-flex justify-content-between align-items-center">
+    <h1>Refund a Sale</h1>
+    <a href="{% url 'sale_add' %}" class="btn btn-outline-secondary">Back to Sales</a>
+</div>
+<p>Pick from the recent receipts below, or narrow the search by sale ID/cashier, date, or amount -- scanning a sale's own receipt barcode also works here (it just types the sale ID into the search box).</p>
 
 <form method="get">
     <input type="text" name="q" value="{{ query }}" placeholder="Sale ID or cashier name" autofocus>
@@ -21,6 +24,7 @@
     <thead>
         <tr>
             <th>ID</th>
+            <th>Date</th>
             <th>Time</th>
             <th>Cashier</th>
             <th>Amount</th>
@@ -31,14 +35,15 @@
         {% for sale in results %}
         <tr>
             <td>{{ sale.id }}</td>
-            <td>{{ sale.time_of_sale|date:"d.m.Y H:i" }}</td>
+            <td>{{ sale.time_of_sale|date:"d.m.Y" }}</td>
+            <td>{{ sale.time_of_sale|date:"H:i" }}</td>
             <td>{{ sale.cashier }}</td>
             <td>{{ sale.total_amount }}</td>
             <td><a href="{% url 'refund_new' sale.pk %}">Refund</a></td>
         </tr>
         {% empty %}
         <tr>
-            <td colspan="5">No sales found.</td>
+            <td colspan="6">No sales found.</td>
         </tr>
         {% endfor %}
     </tbody>
