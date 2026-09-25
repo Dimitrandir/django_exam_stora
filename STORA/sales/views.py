@@ -267,6 +267,57 @@ def sale_fiscal_retry(request, pk):
     return redirect('sale_details', pk=sale.pk)
 
 
+@login_required
+@permission_required('sales.add_saleattributes', raise_exception=True)
+def fiscal_reports(request):
+    """End-of-day fiscal reports screen -- reachable from the POS "Sales"
+    menu, same permission as ringing up a sale (both Cashier and Manager can
+    close out a till), not gated behind a Manager-only permission like the
+    sale-record retry above."""
+    return render(request, 'sales/fiscal_reports.html', {'fiscal_enabled': settings.FISCAL_ENABLED})
+
+
+@login_required
+@permission_required('sales.add_saleattributes', raise_exception=True)
+@require_POST
+def fiscal_report_x(request):
+    """On-demand action, not tied to any STORA record -- errors go straight
+    back as JSON for the page's own JS to alert(), nothing to retry later."""
+    try:
+        fiscal.print_x_report()
+    except fiscal.FiscalPrintError as exc:
+        return JsonResponse({'error': str(exc)}, status=502)
+    return JsonResponse({'ok': True})
+
+
+@login_required
+@permission_required('sales.add_saleattributes', raise_exception=True)
+@require_POST
+def fiscal_report_z(request):
+    try:
+        fiscal.print_z_report()
+    except fiscal.FiscalPrintError as exc:
+        return JsonResponse({'error': str(exc)}, status=502)
+    return JsonResponse({'ok': True})
+
+
+@login_required
+@permission_required('sales.add_saleattributes', raise_exception=True)
+@require_POST
+def fiscal_report_period(request):
+    start_date = parse_date(request.POST.get('start_date', ''))
+    end_date = parse_date(request.POST.get('end_date', ''))
+    if not start_date or not end_date:
+        return JsonResponse({'error': 'Pick both a start and an end date.'}, status=400)
+    if end_date < start_date:
+        return JsonResponse({'error': 'End date must be on or after the start date.'}, status=400)
+    try:
+        fiscal.print_period_report(start_date, end_date)
+    except fiscal.FiscalPrintError as exc:
+        return JsonResponse({'error': str(exc)}, status=502)
+    return JsonResponse({'ok': True})
+
+
 class SalesDeleteView(LoginRequiredMixin, StaffPermissionRequiredMixin, DeleteView):
     permission_required = 'sales.delete_saleattributes'
     model = SaleAttributes
@@ -480,6 +531,15 @@ def refund_new(request, pk):
                     RefundItems.objects.create(
                         refund=refund, original_item=item, refund_quantity=qty, price_at_refund=item.price_at_sale,
                     )
+
+            # Same reasoning/placement as the CASH-sale fiscal print in
+            # sales_add above -- synchronous, after the refund is committed,
+            # never blocks it. Only possible at all if the ORIGINAL sale was
+            # itself fiscally printed (see fiscal.print_fiscal_refund) --
+            # skipped silently otherwise, same as a CARD original sale.
+            if settings.FISCAL_ENABLED and sale.payment_method == SaleAttributes.CASH:
+                fiscal.attempt_print_refund(refund)
+
             return redirect('refund_details', pk=refund.pk)
 
     return render(request, 'sales/refund_new.html', {
@@ -497,3 +557,15 @@ class RefundDetailView(LoginRequiredMixin, StaffPermissionRequiredMixin, DetailV
         context = super().get_context_data(**kwargs)
         context['refund_items'] = self.object.items.select_related('original_item__sale_item').all()
         return context
+
+
+@login_required
+@permission_required('sales.change_saleattributes', raise_exception=True)
+@require_POST
+def refund_fiscal_retry(request, pk):
+    """Re-attempts fiscal storno printing for a refund whose first attempt
+    failed -- same pattern as sale_fiscal_retry."""
+    refund = get_object_or_404(RefundAttributes, pk=pk)
+    if settings.FISCAL_ENABLED:
+        fiscal.attempt_print_refund(refund)
+    return redirect('refund_details', pk=refund.pk)

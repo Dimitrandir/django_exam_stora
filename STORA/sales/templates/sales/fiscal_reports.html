@@ -1,0 +1,79 @@
+{% extends 'base.html' %}
+
+{% block title %}STORA - Fiscal Reports{% endblock %}
+
+{% block content %}
+
+<h1 class="h2 mb-1">Fiscal Reports</h1>
+<p class="text-muted">Reports print directly on the fiscal device's own paper -- nothing shown here comes back as data.</p>
+
+{% if not fiscal_enabled %}
+<div class="form-errors">Fiscal printing is disabled on this machine (FISCAL_ENABLED). These buttons will not work.</div>
+{% endif %}
+
+<div class="mb-4">
+    <h2 class="h4">Daily</h2>
+    <p class="text-muted small">X Report is just a reading -- run it as many times as you like. Z Report closes out the day and resets today's totals on the device -- run it once, at the end of the day.</p>
+    <button type="button" id="fiscal-x-btn" class="btn button-save">X Report</button>
+    <button type="button" id="fiscal-z-btn" class="btn btn-outline-danger">Z Report (resets today's totals)</button>
+</div>
+
+<div class="mb-4">
+    <h2 class="h4">Period (monthly / yearly)</h2>
+    <form id="fiscal-period-form" class="d-flex align-items-end gap-2 flex-wrap">
+        {% csrf_token %}
+        <div>
+            <label for="fiscal-period-start" class="form-label">From</label>
+            <input type="date" id="fiscal-period-start" name="start_date" class="form-control" required>
+        </div>
+        <div>
+            <label for="fiscal-period-end" class="form-label">To</label>
+            <input type="date" id="fiscal-period-end" name="end_date" class="form-control" required>
+        </div>
+        <button type="submit" class="btn button-save">Print Period Report</button>
+    </form>
+</div>
+
+{% endblock content %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+    function runReport(url, body, button) {
+        button.disabled = true;
+        return fetch(url, {
+            method: 'POST',
+            headers: {'X-CSRFToken': csrfToken, 'Content-Type': 'application/x-www-form-urlencoded'},
+            body: body || '',
+        })
+            .then(function (r) { return r.json().then(function (data) { return {ok: r.ok, data: data}; }); })
+            .then(function (result) {
+                if (!result.ok) { alert(result.data.error || 'Report failed.'); return; }
+                alert('Done -- check the printer.');
+            })
+            .catch(function () { alert('Network error -- check your connection and try again.'); })
+            .finally(function () { button.disabled = false; });
+    }
+
+    document.getElementById('fiscal-x-btn').addEventListener('click', function () {
+        runReport('{% url "fiscal_report_x" %}', '', this);
+    });
+
+    document.getElementById('fiscal-z-btn').addEventListener('click', function () {
+        if (!confirm('Print the Z report? This resets today\'s accumulated totals on the fiscal device -- only do this once, at the end of the day.')) return;
+        runReport('{% url "fiscal_report_z" %}', '', this);
+    });
+
+    document.getElementById('fiscal-period-form').addEventListener('submit', function (e) {
+        e.preventDefault();
+        var start = document.getElementById('fiscal-period-start').value;
+        var end = document.getElementById('fiscal-period-end').value;
+        if (!start || !end) return;
+        var body = new URLSearchParams({start_date: start, end_date: end});
+        runReport('{% url "fiscal_report_period" %}', body, e.submitter || this.querySelector('button[type=submit]'));
+    });
+});
+</script>
+{% endblock %}

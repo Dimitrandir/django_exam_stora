@@ -60,6 +60,12 @@ class SaleAttributes(models.Model):
     fiscal_unic_sale_num = models.CharField(max_length=40, blank=True)
     fiscal_error = models.TextField(blank=True)
     fiscal_printed_at = models.DateTimeField(null=True, blank=True)
+    # The device's own sequential receipt number (FDEndFiscRcp response's
+    # "FiscReceipt") -- needed later to storno this exact receipt (FDStartFiscRcp's
+    # DocLink field for a Refund document points back to this number, see
+    # RefundAttributes below). Not the same thing as fiscal_unic_sale_num
+    # (the УНП we generated) or the pk of this row.
+    fiscal_receipt_number = models.PositiveIntegerField(null=True, blank=True)
 
     class Meta:
         verbose_name = 'Sale'
@@ -272,6 +278,16 @@ class RefundAttributes(models.Model):
     reason = models.CharField(max_length=20, choices=REASON_CHOICES)
     time_of_refund = models.DateTimeField(auto_now_add=True)
     total_amount = models.DecimalField(default=0.00, decimal_places=2, max_digits=12)
+
+    # Fiscal printer status, same fields/meaning as SaleAttributes's own
+    # (see STORA.sales.fiscal) -- reuses SaleAttributes' FISCAL_* choices
+    # rather than redefining an identical enum here.
+    fiscal_status = models.CharField(
+        max_length=7, choices=SaleAttributes.FISCAL_STATUS_CHOICES, default=SaleAttributes.FISCAL_NONE,
+    )
+    fiscal_unic_sale_num = models.CharField(max_length=40, blank=True)
+    fiscal_error = models.TextField(blank=True)
+    fiscal_printed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         verbose_name = 'Refund'

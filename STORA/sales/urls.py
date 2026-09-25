@@ -13,7 +13,12 @@ urlpatterns = [
     path('refund/', views.refund_find, name='refund_find'),
     path('refund/<int:pk>/new/', views.refund_new, name='refund_new'),
     path('refund/<int:pk>/', RefundDetailView.as_view(), name='refund_details'),
+    path('refund/<int:pk>/fiscal-retry/', views.refund_fiscal_retry, name='refund_fiscal_retry'),
     path('<int:pk>/', SalesDetailView.as_view(), name='sale_details'),
     path('<int:pk>/fiscal-retry/', views.sale_fiscal_retry, name='sale_fiscal_retry'),
     path('delete/<int:pk>/', SalesDeleteView.as_view(), name='sale_delete'),
+    path('fiscal-reports/', views.fiscal_reports, name='fiscal_reports'),
+    path('fiscal-reports/x/', views.fiscal_report_x, name='fiscal_report_x'),
+    path('fiscal-reports/z/', views.fiscal_report_z, name='fiscal_report_z'),
+    path('fiscal-reports/period/', views.fiscal_report_period, name='fiscal_report_period'),
 ]

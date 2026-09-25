@@ -1044,13 +1044,14 @@ class FiscalPrintReceiptTests(TestCase):
     @patch('STORA.sales.fiscal._stop_ecrcommapp')
     def test_happy_path_sends_expected_command_sequence(self, mock_stop, mock_start, mock_post):
         mock_start.return_value = MagicMock()
-        mock_post.return_value = {}
+        mock_post.return_value = {'FiscReceipt': 3, 'AllReceipt': 5}
 
-        unic_sale_num = fiscal.print_fiscal_receipt(self.sale)
+        result = fiscal.print_fiscal_receipt(self.sale)
 
         sent_commands = [call.args[0] for call in mock_post.call_args_list]
         self.assertEqual(sent_commands, ['FDStartFiscRcp', 'FDSaleItem', 'FDTotalSum', 'FDEndFiscRcp'])
-        self.assertTrue(unic_sale_num.startswith('DY000001-OP01-'))
+        self.assertTrue(result['unic_sale_num'].startswith('DY000001-OP01-'))
+        self.assertEqual(result['receipt_number'], 3)
         mock_stop.assert_called_once()
 
     @override_settings(**FISCAL_SETTINGS)
@@ -1101,11 +1102,12 @@ class FiscalAttemptPrintTests(TestCase):
 
     @patch('STORA.sales.fiscal.print_fiscal_receipt')
     def test_success_marks_printed(self, mock_print):
-        mock_print.return_value = 'DY000001-OP01-0000001'
+        mock_print.return_value = {'unic_sale_num': 'DY000001-OP01-0000001', 'receipt_number': 3}
         fiscal.attempt_print(self.sale)
         self.sale.refresh_from_db()
         self.assertEqual(self.sale.fiscal_status, SaleAttributes.FISCAL_PRINTED)
         self.assertEqual(self.sale.fiscal_unic_sale_num, 'DY000001-OP01-0000001')
+        self.assertEqual(self.sale.fiscal_receipt_number, 3)
         self.assertIsNotNone(self.sale.fiscal_printed_at)
 
     @patch('STORA.sales.fiscal.print_fiscal_receipt')
@@ -1186,5 +1188,337 @@ class SaleFiscalRetryViewTests(TestCase):
     def test_anonymous_is_redirected_to_login(self):
         self.client.logout()
         response = self.client.post(reverse('sale_fiscal_retry', kwargs={'pk': self.sale.pk}))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn('/accounts/login/', response.url)
+
+
+class FiscalDailyReportTests(TestCase):
+    """print_x_report/print_z_report -- _post_command/_start_ecrcommapp/
+    _stop_ecrcommapp mocked, so this checks the Item value/orchestration,
+    not the real device."""
+
+    def test_disabled_raises(self):
+        with self.assertRaises(fiscal.FiscalPrintError):
+            fiscal.print_x_report()
+        with self.assertRaises(fiscal.FiscalPrintError):
+            fiscal.print_z_report()
+
+    @override_settings(**FISCAL_SETTINGS)
+    @patch('STORA.sales.fiscal._post_command')
+    @patch('STORA.sales.fiscal._start_ecrcommapp')
+    @patch('STORA.sales.fiscal._stop_ecrcommapp')
+    def test_x_report_uses_item_1_and_stops_app(self, mock_stop, mock_start, mock_post):
+        mock_start.return_value = MagicMock()
+        fiscal.print_x_report()
+        mock_post.assert_called_once_with('FDDailyRpt', {'Item': 1, 'Option': ''})
+        mock_stop.assert_called_once()
+
+    @override_settings(**FISCAL_SETTINGS)
+    @patch('STORA.sales.fiscal._post_command')
+    @patch('STORA.sales.fiscal._start_ecrcommapp')
+    @patch('STORA.sales.fiscal._stop_ecrcommapp')
+    def test_z_report_uses_item_0_and_stops_app(self, mock_stop, mock_start, mock_post):
+        mock_start.return_value = MagicMock()
+        fiscal.print_z_report()
+        mock_post.assert_called_once_with('FDDailyRpt', {'Item': 0, 'Option': ''})
+        mock_stop.assert_called_once()
+
+    @override_settings(**FISCAL_SETTINGS)
+    @patch('STORA.sales.fiscal._post_command')
+    @patch('STORA.sales.fiscal._start_ecrcommapp')
+    @patch('STORA.sales.fiscal._stop_ecrcommapp')
+    def test_app_is_stopped_even_if_report_fails(self, mock_stop, mock_start, mock_post):
+        mock_start.return_value = MagicMock()
+        mock_post.side_effect = fiscal.FiscalPrintError('boom')
+        with self.assertRaises(fiscal.FiscalPrintError):
+            fiscal.print_x_report()
+        mock_stop.assert_called_once()
+
+
+class FiscalPeriodReportTests(TestCase):
+    def test_disabled_raises(self):
+        with self.assertRaises(fiscal.FiscalPrintError):
+            fiscal.print_period_report(timezone.now().date(), timezone.now().date())
+
+    @override_settings(**FISCAL_SETTINGS)
+    @patch('STORA.sales.fiscal._post_command')
+    @patch('STORA.sales.fiscal._start_ecrcommapp')
+    @patch('STORA.sales.fiscal._stop_ecrcommapp')
+    def test_dates_formatted_as_ddmmyy(self, mock_stop, mock_start, mock_post):
+        mock_start.return_value = MagicMock()
+        start = timezone.datetime(2026, 2, 1).date()
+        end = timezone.datetime(2026, 3, 14).date()
+
+        fiscal.print_period_report(start, end)
+
+        mock_post.assert_called_once_with('FDRptFromFMByDate', {
+            'StartDate': '010226', 'EndDate': '140326', 'PAY': 'PAY',
+        })
+
+
+class FiscalReportsViewTests(TestCase):
+    def setUp(self):
+        self.cashier = User.objects.create_user(username='fiscal-rpt-cashier', password='pass12345', role=User.CASHIER)
+        self.warehouse = User.objects.create_user(username='fiscal-rpt-warehouse', password='pass12345', role=User.WAREHOUSE)
+
+    def test_anonymous_is_redirected_to_login(self):
+        response = self.client.get(reverse('fiscal_reports'))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn('/accounts/login/', response.url)
+
+    def test_warehouse_has_no_access(self):
+        self.client.force_login(self.warehouse)
+        self.assertEqual(self.client.get(reverse('fiscal_reports')).status_code, 403)
+
+    def test_cashier_can_view_page(self):
+        self.client.force_login(self.cashier)
+        self.assertEqual(self.client.get(reverse('fiscal_reports')).status_code, 200)
+
+    @patch('STORA.sales.views.fiscal.print_x_report')
+    def test_x_report_success(self, mock_print):
+        self.client.force_login(self.cashier)
+        response = self.client.post(reverse('fiscal_report_x'))
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()['ok'])
+        mock_print.assert_called_once()
+
+    @patch('STORA.sales.views.fiscal.print_z_report')
+    def test_z_report_failure_returns_error_json(self, mock_print):
+        mock_print.side_effect = fiscal.FiscalPrintError('device unreachable')
+        self.client.force_login(self.cashier)
+        response = self.client.post(reverse('fiscal_report_z'))
+        self.assertEqual(response.status_code, 502)
+        self.assertIn('device unreachable', response.json()['error'])
+
+    @patch('STORA.sales.views.fiscal.print_period_report')
+    def test_period_report_success(self, mock_print):
+        self.client.force_login(self.cashier)
+        response = self.client.post(reverse('fiscal_report_period'), {
+            'start_date': '2026-02-01', 'end_date': '2026-03-14',
+        })
+        self.assertEqual(response.status_code, 200)
+        mock_print.assert_called_once()
+
+    def test_period_report_missing_dates_returns_400(self):
+        self.client.force_login(self.cashier)
+        response = self.client.post(reverse('fiscal_report_period'), {})
+        self.assertEqual(response.status_code, 400)
+
+    def test_period_report_end_before_start_returns_400(self):
+        self.client.force_login(self.cashier)
+        response = self.client.post(reverse('fiscal_report_period'), {
+            'start_date': '2026-03-14', 'end_date': '2026-02-01',
+        })
+        self.assertEqual(response.status_code, 400)
+
+
+class FiscalRefundTests(TestCase):
+    """print_fiscal_refund orchestration -- same mocked boundary as
+    FiscalPrintReceiptTests."""
+
+    def setUp(self):
+        self.tax_group = TaxGroup.objects.create(name='Standard', rate=Decimal('20.00'), fiscal_letter='Б')
+        self.product = Product.objects.create(
+            internal_code='P0000050', name='Refundable Product', sell_price=Decimal('5.00'),
+            quantity=Decimal('10.000'), tax_group=self.tax_group,
+        )
+        self.cashier = User.objects.create_user(username='refund-fiscal-cashier', password='pass12345')
+        self.sale = SaleAttributes.objects.create(
+            cashier=self.cashier, payment_method=SaleAttributes.CASH, amount_paid=Decimal('5.00'),
+            fiscal_status=SaleAttributes.FISCAL_PRINTED, fiscal_receipt_number=3,
+            fiscal_printed_at=timezone.datetime(2026, 3, 14, 12, 30, tzinfo=timezone.get_current_timezone()),
+        )
+        self.sale_item = SaleItems.objects.create(
+            sale=self.sale, sale_item=self.product, sale_quantity=Decimal('1.000'), price_at_sale=Decimal('5.00'),
+        )
+        self.refund = RefundAttributes.objects.create(
+            original_sale=self.sale, cashier=self.cashier, reason=RefundAttributes.RETURN_COMPLAINT,
+        )
+        self.refund_item = RefundItems.objects.create(
+            refund=self.refund, original_item=self.sale_item, refund_quantity=Decimal('1.000'),
+            price_at_refund=Decimal('5.00'),
+        )
+
+    def test_disabled_raises(self):
+        with self.assertRaises(fiscal.FiscalPrintError):
+            fiscal.print_fiscal_refund(self.refund)
+
+    @override_settings(**FISCAL_SETTINGS)
+    def test_original_sale_not_fiscalized_raises_without_touching_subprocess(self):
+        self.sale.fiscal_status = SaleAttributes.FISCAL_NONE
+        self.sale.fiscal_receipt_number = None
+        self.sale.save()
+
+        with patch('STORA.sales.fiscal._start_ecrcommapp') as mock_start:
+            with self.assertRaises(fiscal.FiscalPrintError):
+                fiscal.print_fiscal_refund(self.refund)
+            mock_start.assert_not_called()
+
+    @override_settings(**FISCAL_SETTINGS)
+    @patch('STORA.sales.fiscal._post_command')
+    @patch('STORA.sales.fiscal._start_ecrcommapp')
+    @patch('STORA.sales.fiscal._stop_ecrcommapp')
+    def test_happy_path_sends_refund_fields(self, mock_stop, mock_start, mock_post):
+        mock_start.return_value = MagicMock()
+        mock_post.return_value = {}
+
+        unic_sale_num = fiscal.print_fiscal_refund(self.refund)
+
+        sent_commands = [call.args[0] for call in mock_post.call_args_list]
+        self.assertEqual(sent_commands, ['FDStartFiscRcp', 'FDSaleItem', 'FDTotalSum', 'FDEndFiscRcp'])
+
+        start_call = mock_post.call_args_list[0]
+        start_data = start_call.args[1]
+        self.assertEqual(start_data['Refund'], 'R')
+        self.assertEqual(start_data['Reason'], 0)  # RETURN_COMPLAINT -> 0
+        self.assertEqual(start_data['DocLink'], 3)
+        self.assertEqual(start_data['DocLinkDT'], '14-03-26 12:30')
+
+        item_call = mock_post.call_args_list[1]
+        item_data = item_call.args[1]
+        self.assertEqual(item_data['Sale type'], 'Refund')
+
+        self.assertTrue(unic_sale_num.startswith('DY000001-OP01-'))
+        mock_stop.assert_called_once()
+
+    @override_settings(**FISCAL_SETTINGS)
+    @patch('STORA.sales.fiscal._post_command')
+    @patch('STORA.sales.fiscal._start_ecrcommapp')
+    @patch('STORA.sales.fiscal._stop_ecrcommapp')
+    def test_operator_error_reason_maps_to_1(self, mock_stop, mock_start, mock_post):
+        self.refund.reason = RefundAttributes.OPERATOR_ERROR
+        self.refund.save()
+        mock_start.return_value = MagicMock()
+        mock_post.return_value = {}
+
+        fiscal.print_fiscal_refund(self.refund)
+
+        start_data = mock_post.call_args_list[0].args[1]
+        self.assertEqual(start_data['Reason'], 1)
+
+    @override_settings(**FISCAL_SETTINGS)
+    @patch('STORA.sales.fiscal._post_command')
+    @patch('STORA.sales.fiscal._start_ecrcommapp')
+    @patch('STORA.sales.fiscal._stop_ecrcommapp')
+    def test_failure_after_open_attempts_cancel(self, mock_stop, mock_start, mock_post):
+        mock_start.return_value = MagicMock()
+
+        def side_effect(cmd, cmd_data, timeout=15):
+            if cmd == 'FDSaleItem':
+                raise fiscal.FiscalPrintError('boom')
+            return {}
+
+        mock_post.side_effect = side_effect
+
+        with self.assertRaises(fiscal.FiscalPrintError):
+            fiscal.print_fiscal_refund(self.refund)
+
+        sent_commands = [call.args[0] for call in mock_post.call_args_list]
+        self.assertEqual(sent_commands, ['FDStartFiscRcp', 'FDSaleItem', 'FDCancelRcp'])
+
+
+class FiscalAttemptPrintRefundTests(TestCase):
+    def setUp(self):
+        self.cashier = User.objects.create_user(username='refund-attempt-cashier', password='pass12345')
+        self.sale = SaleAttributes.objects.create(
+            cashier=self.cashier, payment_method=SaleAttributes.CASH, amount_paid=Decimal('1.00'),
+            fiscal_status=SaleAttributes.FISCAL_PRINTED, fiscal_receipt_number=1, fiscal_printed_at=timezone.now(),
+        )
+        self.refund = RefundAttributes.objects.create(
+            original_sale=self.sale, cashier=self.cashier, reason=RefundAttributes.RETURN_COMPLAINT,
+        )
+
+    @patch('STORA.sales.fiscal.print_fiscal_refund')
+    def test_success_marks_printed(self, mock_print):
+        mock_print.return_value = 'DY000001-OP01-0000002'
+        fiscal.attempt_print_refund(self.refund)
+        self.refund.refresh_from_db()
+        self.assertEqual(self.refund.fiscal_status, SaleAttributes.FISCAL_PRINTED)
+        self.assertEqual(self.refund.fiscal_unic_sale_num, 'DY000001-OP01-0000002')
+        self.assertIsNotNone(self.refund.fiscal_printed_at)
+
+    @patch('STORA.sales.fiscal.print_fiscal_refund')
+    def test_failure_marks_failed_and_does_not_raise(self, mock_print):
+        mock_print.side_effect = fiscal.FiscalPrintError('device unreachable')
+        fiscal.attempt_print_refund(self.refund)  # must not raise
+        self.refund.refresh_from_db()
+        self.assertEqual(self.refund.fiscal_status, SaleAttributes.FISCAL_FAILED)
+        self.assertIn('device unreachable', self.refund.fiscal_error)
+
+
+class RefundNewViewFiscalIntegrationTests(TestCase):
+    def setUp(self):
+        self.cashier = User.objects.create_user(username='refund-view-cashier', password='pass12345', role=User.CASHIER)
+        self.client.force_login(self.cashier)
+        self.product = Product.objects.create(
+            internal_code='P0000051', name='Refund View Product', sell_price=Decimal('3.00'), quantity=Decimal('10.000'),
+        )
+
+    def _make_sale(self, payment_method):
+        sale = SaleAttributes.objects.create(
+            cashier=self.cashier, payment_method=payment_method,
+            amount_paid=Decimal('3.00') if payment_method == SaleAttributes.CASH else None,
+            card_amount=Decimal('3.00') if payment_method == SaleAttributes.CARD else None,
+            fiscal_status=SaleAttributes.FISCAL_PRINTED, fiscal_receipt_number=1, fiscal_printed_at=timezone.now(),
+        )
+        item = SaleItems.objects.create(
+            sale=sale, sale_item=self.product, sale_quantity=Decimal('1.000'), price_at_sale=Decimal('3.00'),
+        )
+        return sale, item
+
+    @override_settings(FISCAL_ENABLED=True)
+    @patch('STORA.sales.views.fiscal.attempt_print_refund')
+    def test_cash_original_sale_triggers_attempt_print_refund(self, mock_attempt):
+        sale, item = self._make_sale(SaleAttributes.CASH)
+        self.client.post(reverse('refund_new', kwargs={'pk': sale.pk}), {
+            'reason': RefundAttributes.RETURN_COMPLAINT,
+            f'refund_qty_{item.pk}': '1',
+        })
+        mock_attempt.assert_called_once()
+
+    @override_settings(FISCAL_ENABLED=True)
+    @patch('STORA.sales.views.fiscal.attempt_print_refund')
+    def test_card_original_sale_never_triggers_attempt_print_refund(self, mock_attempt):
+        sale, item = self._make_sale(SaleAttributes.CARD)
+        self.client.post(reverse('refund_new', kwargs={'pk': sale.pk}), {
+            'reason': RefundAttributes.RETURN_COMPLAINT,
+            f'refund_qty_{item.pk}': '1',
+        })
+        mock_attempt.assert_not_called()
+
+    @override_settings(FISCAL_ENABLED=False)
+    @patch('STORA.sales.views.fiscal.attempt_print_refund')
+    def test_disabled_never_triggers_attempt_print_refund(self, mock_attempt):
+        sale, item = self._make_sale(SaleAttributes.CASH)
+        self.client.post(reverse('refund_new', kwargs={'pk': sale.pk}), {
+            'reason': RefundAttributes.RETURN_COMPLAINT,
+            f'refund_qty_{item.pk}': '1',
+        })
+        mock_attempt.assert_not_called()
+
+
+class RefundFiscalRetryViewTests(TestCase):
+    def setUp(self):
+        self.manager = User.objects.create_user(username='refund-retry-manager', password='pass12345', role=User.MANAGER)
+        self.client.force_login(self.manager)
+        self.sale = SaleAttributes.objects.create(
+            cashier=self.manager, payment_method=SaleAttributes.CASH, amount_paid=Decimal('1.00'),
+            fiscal_status=SaleAttributes.FISCAL_PRINTED, fiscal_receipt_number=1, fiscal_printed_at=timezone.now(),
+        )
+        self.refund = RefundAttributes.objects.create(
+            original_sale=self.sale, cashier=self.manager, reason=RefundAttributes.RETURN_COMPLAINT,
+            fiscal_status=SaleAttributes.FISCAL_FAILED, fiscal_error='device unreachable',
+        )
+
+    @override_settings(FISCAL_ENABLED=True)
+    @patch('STORA.sales.views.fiscal.attempt_print_refund')
+    def test_retry_calls_attempt_print_refund_and_redirects(self, mock_attempt):
+        response = self.client.post(reverse('refund_fiscal_retry', kwargs={'pk': self.refund.pk}))
+        mock_attempt.assert_called_once()
+        self.assertRedirects(response, reverse('refund_details', kwargs={'pk': self.refund.pk}))
+
+    def test_anonymous_is_redirected_to_login(self):
+        self.client.logout()
+        response = self.client.post(reverse('refund_fiscal_retry', kwargs={'pk': self.refund.pk}))
         self.assertEqual(response.status_code, 302)
         self.assertIn('/accounts/login/', response.url)

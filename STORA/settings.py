@@ -213,6 +213,10 @@ FISCAL_ECRCOMMAPP_PATH = os.environ.get('FISCAL_ECRCOMMAPP_PATH', '')
 FISCAL_COM_PORT = os.environ.get('FISCAL_COM_PORT', 'COM4')
 FISCAL_API_URL = os.environ.get('FISCAL_API_URL', 'http://127.0.0.1:7000/Api')
 FISCAL_DEVICE_SERIAL = os.environ.get('FISCAL_DEVICE_SERIAL', '')
+# Separate from FISCAL_DEVICE_SERIAL -- "Номер на ФП" (fiscal memory number)
+# in Daisy Manager, a different number than the device's own serial. Only
+# needed for storno (FDStartFiscRcp's FiskMem field), not a normal sale.
+FISCAL_DEVICE_FM_NUMBER = os.environ.get('FISCAL_DEVICE_FM_NUMBER', '')
 FISCAL_OPERATOR_NUM = os.environ.get('FISCAL_OPERATOR_NUM', '1')
 FISCAL_OPERATOR_PASSWORD = os.environ.get('FISCAL_OPERATOR_PASSWORD', '1')
 

@@ -1142,6 +1142,51 @@ Apps: accounts, core, products, deliveries, sales, reports.
     `fiscal.py` опитва best-effort `FDCancelRcp`, преди да върне грешката
     — но точните параметри на тази команда никога не са тествани на живо
     (за разлика от всяка друга команда тук), само `CmdData: {}`.
+  - **Реален капан, хванат на живо при първия истински тест:** COM номерът
+    на апарата може да се смени сам (COM4 → COM7 за нашия пилотен апарат,
+    след прекъсване на USB връзката/рестарт) — симптом е `"Invalid COM
+    Port"` в конзолата на ECRCommApp, докато `_wait_for_server` изчерпи
+    10-те си секунди и продажбата остане `FAILED` с "ECRCommApp did not
+    become ready in time." Провери Device Manager → Ports (COM & LPT) за
+    реалния номер, оправи `FISCAL_COM_PORT` в `.env`, рестартирай Django.
+  - **X/Z и месечен/годишен отчет** — една и съща команда `FDDailyRpt` за
+    X/Z (`Item`: 0=Z с нулиране, 1=X без нулиране, `Option`: '' за "no
+    operator clear" — потвърдена стойност от реален работещ пример в
+    наръчника, не от отделно илюстрирания "Operator clear"), и
+    `FDRptFromFMByDate` (дати във формат `DDMMYY`) за произволен период —
+    "месечен"/"годишен" не са отделни команди, само по-широк диапазон.
+    Нов екран `sales/fiscal_reports.html`, достъпен от Sales менюто (и
+    оттам от POS overlay менюто) — права `sales.add_saleattributes`
+    (Cashier И Manager, нарочно, потвърдено с потребителя — дневното
+    затваряне не е Manager-only тук). Всички тези команди печатат директно
+    на хартията на апарата, нищо не се връща като данни за показване в
+    STORA.
+  - **Сторно (`RefundAttributes`/`RefundItems`) — реална фискална
+    интеграция.** `Refund` полето на `FDStartFiscRcp` приема **`"R"`** за
+    сторно (`""` за нормална продажба) — потвърдено директно от dropdown-а
+    в ECRWebApp, не е в текстовата документация никъде. `Reason` е **0/1/2**
+    в СЪЩИЯ ред като `RefundAttributes.REASON_CHOICES`
+    (RETURN_COMPLAINT/OPERATOR_ERROR/TAX_BASE_REDUCTION) — потвърдено на
+    живо, а не просто "logical guess" от модела си документация (макар тя
+    изрично да го е предвидила точно за това). Сторно бон трябва да сочи
+    назад към ОРИГИНАЛНИЯ фискален бон: `DocLink` = неговия
+    `SaleAttributes.fiscal_receipt_number` (ново поле — номерът, който
+    самият апарат дава при `FDEndFiscRcp`, различен от УНП-то, което ние
+    генерираме), `DocLinkDT` = `fiscal_printed_at` във формат `DD-MM-YY
+    HH:mm`, `FiskMem` = номера на фискалната памет на апарата
+    (`FISCAL_DEVICE_FM_NUMBER` в `.env` — ДРУГО число от серийния номер на
+    устройството, виж Daisy Manager). Ако оригиналната продажба никога не
+    е била фискализирана (`fiscal_status != PRINTED`), `print_fiscal_refund`
+    отказва веднага, преди изобщо да отвори бон на апарата — няма смисъл
+    от сторно на нещо, което не съществува фискално. `RefundAttributes`
+    получи същите `fiscal_status`/`fiscal_error`/`fiscal_printed_at`/
+    `fiscal_unic_sale_num` полета като `SaleAttributes` (преизползва
+    `SaleAttributes.FISCAL_STATUS_CHOICES`, не дублира enum-а), плюс
+    "Retry Fiscal Print" бутон на `refund_details.html`, огледален на
+    `sale_details.html`. Общата "отвори→продай→плати→затвори" верига е
+    извадена в споделен `_run_receipt()` helper в `fiscal.py` (ползван и от
+    обикновена продажба, и от сторно) — единствената разлика е `Sale type`
+    (`"Sale"` vs `"Refund"`) и допълнителните полета в `FDStartFiscRcp`.
 
 **Технически капани (открити наскоро, лесно се повтарят)**  
 - **Product create/edit темплейтите рендират полетата на ProductForms**

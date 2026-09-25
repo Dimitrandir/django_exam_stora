@@ -7,6 +7,14 @@
 <h1>Refund #{{ refund.id }} of Sale #{{ refund.original_sale_id }}</h1>
 <p>{{ refund.time_of_refund|date:"d.m.Y H:i" }} -- {{ refund.cashier }} -- {{ refund.get_reason_display }}</p>
 
+{% if refund.fiscal_status == 'FAILED' %}
+<div class="form-errors">
+    Fiscal storno receipt was NOT printed: {{ refund.fiscal_error }}
+</div>
+{% elif refund.fiscal_status == 'PRINTED' %}
+<p class="text-muted">Fiscal storno receipt printed at {{ refund.fiscal_printed_at|date:"d.m.Y H:i" }} (УНП {{ refund.fiscal_unic_sale_num }}).</p>
+{% endif %}
+
 <table border="2">
     <thead>
         <tr>
@@ -30,5 +38,12 @@
 <h2 align="center">Total Refunded: {{ refund.total_amount|currency }}</h2>
 
 <a href="{% url 'sale_details' refund.original_sale_id %}">View Original Sale</a>
+
+{% if refund.fiscal_status == 'FAILED' and perms.sales.change_saleattributes %}
+<form method="post" action="{% url 'refund_fiscal_retry' refund.pk %}" style="display:inline;">
+    {% csrf_token %}
+    <button type="submit" class="btn button-save">Retry Fiscal Print</button>
+</form>
+{% endif %}
 
 {% endblock %}

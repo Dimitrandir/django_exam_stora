@@ -134,38 +134,27 @@ def _validate_items(sale):
     return items
 
 
-def print_fiscal_receipt(sale):
-    """Prints a real fiscal receipt for `sale` on the Daisy Perfect S01.
-    Raises FiscalPrintError on any failure. Only meaningful for CASH sales
-    right now (see sales_add) -- CARD/MIXED have no fiscal Payment type
-    mapped yet. Callers that must not let a failure here block anything
-    (i.e. every real caller) should use `attempt_print` instead."""
-    if not settings.FISCAL_ENABLED:
-        raise FiscalPrintError('Fiscal printing is disabled (FISCAL_ENABLED).')
-
-    items = _validate_items(sale)
-    unic_sale_num = _next_unic_sale_num()
-
+def _run_receipt(start_cmd_data, items, sale_type, amount_in):
+    """Shared open -> sell -> total -> close sequence for both a real sale
+    and a storno -- only what differs between them (FDStartFiscRcp's extra
+    fields, whether each line is a Sale or Refund, the paid/refunded amount)
+    is passed in. `items` is a list of {'name', 'tax_letter', 'price', 'qty'}
+    dicts. Returns FDEndFiscRcp's response CmdData (has FiscReceipt/
+    AllReceipt)."""
     process = _start_ecrcommapp()
     receipt_open = False
     try:
-        _post_command('FDStartFiscRcp', {
-            'Operator': int(settings.FISCAL_OPERATOR_NUM),
-            'Password': int(settings.FISCAL_OPERATOR_PASSWORD),
-            'UnicSaleNum': unic_sale_num,
-            'Invoice': '', 'Refund': '', 'Credit': '',
-            'Reason': 0, 'DocLink': 0, 'DocLinkDT': '', 'FiskMem': '', 'InvLink': '',
-        })
+        _post_command('FDStartFiscRcp', start_cmd_data)
         receipt_open = True
 
         for item in items:
             _post_command('FDSaleItem', {
-                'Text1': item.sale_item.name[:28],
+                'Text1': item['name'][:28],
                 'Text2': '',
-                'TaxGrp': _tax_letter_for(item.sale_item),
-                'Sale type': 'Sale',
-                'Price': str(item.price_at_sale),
-                'Qty': str(item.sale_quantity),
+                'TaxGrp': item['tax_letter'],
+                'Sale type': sale_type,
+                'Price': str(item['price']),
+                'Qty': str(item['qty']),
                 'Percent': '0',
                 'Netto': '0',
             })
@@ -173,10 +162,10 @@ def print_fiscal_receipt(sale):
         _post_command('FDTotalSum', {
             'Text1': '', 'Text2': '',
             'Payment type': 'В Брой',
-            'AmountIn': str(sale.amount_paid),
+            'AmountIn': str(amount_in),
         })
 
-        _post_command('FDEndFiscRcp', {})
+        end_result = _post_command('FDEndFiscRcp', {})
         receipt_open = False
     except FiscalPrintError:
         if receipt_open:
@@ -187,12 +176,41 @@ def print_fiscal_receipt(sale):
             try:
                 _post_command('FDCancelRcp', {})
             except FiscalPrintError:
-                logger.warning('Could not cancel the half-open fiscal receipt for Sale #%s', sale.pk)
+                logger.warning('Could not cancel a half-open fiscal receipt.')
         raise
     finally:
         _stop_ecrcommapp(process)
 
-    return unic_sale_num
+    return end_result
+
+
+def print_fiscal_receipt(sale):
+    """Prints a real fiscal receipt for `sale` on the Daisy Perfect S01.
+    Raises FiscalPrintError on any failure. Only meaningful for CASH sales
+    right now (see sales_add) -- CARD/MIXED have no fiscal Payment type
+    mapped yet. Returns {'unic_sale_num', 'receipt_number'} -- the latter is
+    needed later to storno this exact receipt (see print_fiscal_refund).
+    Callers that must not let a failure here block anything (i.e. every real
+    caller) should use `attempt_print` instead."""
+    if not settings.FISCAL_ENABLED:
+        raise FiscalPrintError('Fiscal printing is disabled (FISCAL_ENABLED).')
+
+    sale_items = _validate_items(sale)
+    unic_sale_num = _next_unic_sale_num()
+    items = [
+        {'name': i.sale_item.name, 'tax_letter': _tax_letter_for(i.sale_item),
+         'price': i.price_at_sale, 'qty': i.sale_quantity}
+        for i in sale_items
+    ]
+    start_data = {
+        'Operator': int(settings.FISCAL_OPERATOR_NUM),
+        'Password': int(settings.FISCAL_OPERATOR_PASSWORD),
+        'UnicSaleNum': unic_sale_num,
+        'Invoice': '', 'Refund': '', 'Credit': '',
+        'Reason': 0, 'DocLink': 0, 'DocLinkDT': '', 'FiskMem': '', 'InvLink': '',
+    }
+    end_result = _run_receipt(start_data, items, 'Sale', sale.amount_paid)
+    return {'unic_sale_num': unic_sale_num, 'receipt_number': end_result.get('FiscReceipt')}
 
 
 def attempt_print(sale):
@@ -201,7 +219,7 @@ def attempt_print(sale):
     from .models import SaleAttributes
 
     try:
-        unic_sale_num = print_fiscal_receipt(sale)
+        result = print_fiscal_receipt(sale)
     except FiscalPrintError as exc:
         sale.fiscal_status = SaleAttributes.FISCAL_FAILED
         sale.fiscal_error = str(exc)
@@ -210,6 +228,155 @@ def attempt_print(sale):
     else:
         sale.fiscal_status = SaleAttributes.FISCAL_PRINTED
         sale.fiscal_error = ''
-        sale.fiscal_unic_sale_num = unic_sale_num
+        sale.fiscal_unic_sale_num = result['unic_sale_num']
+        sale.fiscal_receipt_number = result['receipt_number']
         sale.fiscal_printed_at = timezone.now()
-        sale.save(update_fields=['fiscal_status', 'fiscal_error', 'fiscal_unic_sale_num', 'fiscal_printed_at'])
+        sale.save(update_fields=[
+            'fiscal_status', 'fiscal_error', 'fiscal_unic_sale_num', 'fiscal_receipt_number', 'fiscal_printed_at',
+        ])
+
+
+# Storno Reason values, confirmed live against the real ECRWebApp dropdown
+# (0/1/2, in this exact order) -- matches RefundAttributes.REASON_CHOICES'
+# own order 1:1 by design (see that model's docstring), spelled out
+# explicitly here anyway rather than relying on list position, so a future
+# reordering of REASON_CHOICES can't silently send the wrong Reason to the
+# device.
+def _storno_reason_map():
+    from .models import RefundAttributes
+    return {
+        RefundAttributes.RETURN_COMPLAINT: 0,
+        RefundAttributes.OPERATOR_ERROR: 1,
+        RefundAttributes.TAX_BASE_REDUCTION: 2,
+    }
+
+
+def _validate_refund_items(refund):
+    items = list(refund.items.select_related('original_item__sale_item__tax_group'))
+    if not items:
+        raise FiscalPrintError('Refund has no items to fiscalize.')
+    for item in items:
+        _tax_letter_for(item.original_item.sale_item)
+    return items
+
+
+def print_fiscal_refund(refund):
+    """Prints a real storno fiscal receipt for `refund`, referencing the
+    original sale's own fiscal receipt on the device (FDStartFiscRcp's
+    DocLink/DocLinkDT/FiskMem) -- only possible if that original sale was
+    itself fiscally printed. Only meaningful for a CASH original sale, same
+    boundary as print_fiscal_receipt. Use `attempt_print_refund` from a
+    view, never this directly."""
+    from .models import SaleAttributes
+
+    if not settings.FISCAL_ENABLED:
+        raise FiscalPrintError('Fiscal printing is disabled (FISCAL_ENABLED).')
+
+    original_sale = refund.original_sale
+    if original_sale.fiscal_status != SaleAttributes.FISCAL_PRINTED or not original_sale.fiscal_receipt_number:
+        raise FiscalPrintError('The original sale was never fiscally printed -- cannot storno it on the device.')
+
+    reason_map = _storno_reason_map()
+    if refund.reason not in reason_map:
+        raise FiscalPrintError(f'Unknown refund reason "{refund.reason}".')
+
+    refund_items = _validate_refund_items(refund)
+    unic_sale_num = _next_unic_sale_num()
+    items = [
+        {'name': i.original_item.sale_item.name, 'tax_letter': _tax_letter_for(i.original_item.sale_item),
+         'price': i.price_at_refund, 'qty': i.refund_quantity}
+        for i in refund_items
+    ]
+    start_data = {
+        'Operator': int(settings.FISCAL_OPERATOR_NUM),
+        'Password': int(settings.FISCAL_OPERATOR_PASSWORD),
+        'UnicSaleNum': unic_sale_num,
+        'Invoice': '', 'Refund': 'R', 'Credit': '',
+        'Reason': reason_map[refund.reason],
+        'DocLink': original_sale.fiscal_receipt_number,
+        'DocLinkDT': original_sale.fiscal_printed_at.strftime('%d-%m-%y %H:%M'),
+        'FiskMem': settings.FISCAL_DEVICE_FM_NUMBER,
+        'InvLink': '',
+    }
+    _run_receipt(start_data, items, 'Refund', refund.total_amount)
+    return unic_sale_num
+
+
+def attempt_print_refund(refund):
+    """Never raises -- same pattern as attempt_print, for RefundAttributes."""
+    from .models import SaleAttributes
+
+    try:
+        unic_sale_num = print_fiscal_refund(refund)
+    except FiscalPrintError as exc:
+        refund.fiscal_status = SaleAttributes.FISCAL_FAILED
+        refund.fiscal_error = str(exc)
+        refund.save(update_fields=['fiscal_status', 'fiscal_error'])
+        logger.warning('Fiscal storno failed for Refund #%s: %s', refund.pk, exc)
+    else:
+        refund.fiscal_status = SaleAttributes.FISCAL_PRINTED
+        refund.fiscal_error = ''
+        refund.fiscal_unic_sale_num = unic_sale_num
+        refund.fiscal_printed_at = timezone.now()
+        refund.save(update_fields=['fiscal_status', 'fiscal_error', 'fiscal_unic_sale_num', 'fiscal_printed_at'])
+
+
+# Daily report Item values, straight from the FDDailyRpt table in
+# kasov_aparat_ECRCommApp_Guide.pdf (order they're listed in, 0-indexed --
+# confirmed by the worked example there, which used Item=0 for the Z report
+# it showed a real response for).
+_DAILY_RPT_ITEM_Z = 0
+_DAILY_RPT_ITEM_X = 1
+
+
+def _print_daily_report(item):
+    """Shared by print_x_report/print_z_report -- these are on-demand admin
+    actions (a button on a screen), not tied to any STORA record, so unlike
+    attempt_print() this DOES raise FiscalPrintError -- the caller (the view)
+    shows it directly, there's nothing to persist a retry-able status on."""
+    if not settings.FISCAL_ENABLED:
+        raise FiscalPrintError('Fiscal printing is disabled (FISCAL_ENABLED).')
+    process = _start_ecrcommapp()
+    try:
+        # Option='' -- "No operator clear" (confirmed the actual, working
+        # request in the guide's own worked example uses this, not the
+        # separately-illustrated "Operator clear" string); a single-till
+        # pilot store has no separate per-operator totals worth resetting.
+        _post_command('FDDailyRpt', {'Item': item, 'Option': ''})
+    finally:
+        _stop_ecrcommapp(process)
+
+
+def print_x_report():
+    """X report -- a snapshot reading of today's totals so far, does NOT
+    reset anything. Safe to run any number of times a day."""
+    _print_daily_report(_DAILY_RPT_ITEM_X)
+
+
+def print_z_report():
+    """Z report -- daily financial close. Resets today's accumulated totals
+    on the device once printed; this is a real, once-a-day bookkeeping
+    action, not just a reading (the device itself also enforces this: two Z
+    reports the same day without a sale in between just reprint an empty
+    one, per the guide)."""
+    _print_daily_report(_DAILY_RPT_ITEM_Z)
+
+
+def print_period_report(start_date, end_date):
+    """Detailed fiscal-memory report for a date range (start_date/end_date
+    are date objects) -- covers "monthly"/"yearly" reports, there's no
+    separate command for those, just a wider date range here. Prints
+    directly on the device's own paper; PAY=True also adds a by-payment-
+    method breakdown. Nothing comes back as structured data to show in
+    STORA itself."""
+    if not settings.FISCAL_ENABLED:
+        raise FiscalPrintError('Fiscal printing is disabled (FISCAL_ENABLED).')
+    process = _start_ecrcommapp()
+    try:
+        _post_command('FDRptFromFMByDate', {
+            'StartDate': start_date.strftime('%d%m%y'),
+            'EndDate': end_date.strftime('%d%m%y'),
+            'PAY': 'PAY',
+        })
+    finally:
+        _stop_ecrcommapp(process)
