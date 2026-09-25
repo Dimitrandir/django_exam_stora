@@ -1014,16 +1014,95 @@ Apps: accounts, core, products, deliveries, sales, reports.
   **hard (** **PROTECT** **), но вече може да се архивира вместо това**
   **(** **Product.is_archived** **).** `ProductDeleteView` при `ProtectedError`
   вече предлага "Archive instead" бутон (POST към `product_archive`
-  view/URL) вместо само съобщение за грешка. Архивиран продукт изчезва от
-  Products списъка по подразбиране (`ProductListView.get_queryset()`
-  филтрира `is_archived=False`), виждаш го пак през чекбокс "Show
-  archived" (`?show_archived=1`, същия patтern като Price Lists "Show
-  deleted"). Обратимо — pill toggle бутон в грида ("Archived"/"Active",
-  същия механизъм като `show_on_pos` toggle-а, през `product_inline_update`
-  endpoint-а, `is_archived` добавено в `ProductInlineEditForm.Meta.fields`).
-  НЕ маха продукта от нищо друго (баркод/доставчик търсачки в Sales/
-  Deliveries все още го намират) — архивирането е само "махни от Products
-  списъка", не пълно деактивиране навсякъде; не е поискано засега.
+  view/URL) вместо само съобщение за грешка. Обратимо — pill toggle бутон
+  в грида ("Archived"/"Active", същия механизъм като `show_on_pos`
+  toggle-а, през `product_inline_update` endpoint-а, `is_archived`
+  добавено в `ProductInlineEditForm.Meta.fields`). НЕ маха продукта от
+  нищо друго (баркод/доставчик търсачки в Sales/Deliveries все още го
+  намират) — архивирането е само "махни от Products списъка", не пълно
+  деактивиране навсякъде; не е поискано засега.
+  **Скриването на архивирани продукти вече е чисто клиентски Tabulator
+  филтър, не заявка към сървъра** (`?show_archived=1` беше премахнато) —
+  `ProductListView.get_queryset()` винаги връща всички продукти;
+  `products_list.html` пази `is_archived` колоната `visible: false` по
+  подразбиране и слага `table.addFilter(hideArchivedFilter)`. Показването
+  на архивираните е вързано директно за видимостта на самата "Archived"
+  колона (`table.on('columnVisibilityChanged', ...)` — показваш колоната
+  през Columns ▾ → филтърът маха се; скриваш я пак → филтърът се връща.
+  Няма отделен чекбокс/бутон за това.
+  **Bulk delete (Products грид) вече архивира вместо да откаже**, когато
+  продукт е защитен от история (`ProductBulkActionView`, action=delete) —
+  същия "Archive instead" фолбек като единичния delete, само автоматичен
+  (няма confirm страница за да предложи избор при цял batch). Отговорът
+  носи `deleted`/`archived` брой + `message` (не `error`) когато има
+  архивирани — JS показва `alert(message)` вместо `alert(error)`.
+
+- **Revision "Found Qty" вече е директно редактируемо поле** (числов
+  editor, идентичен патърн като Deliveries/Sales — виж CLAUDE.md-ов HTML5
+  number-input min/step капан), не read-only колона. Два отделни начина да
+  промениш количество, с различна семантика:
+  1. **Сканиране на баркод / Enter fallback без dropdown match**
+     (`addCount`, `RevisionItemsManager.add_count`) — **адитивно**, +N към
+     текущия found_quantity. Нарочно оставено непроменено — физическо
+     сканиране бройка по бройка трябва да трупа число, не да го замества
+     (и поддържа множество компютъри да броят един и същ продукт
+     едновременно, виж модела).
+  2. **Търсене в dropdown-а и клик/Enter върху резултат** (`selectProduct`
+     → `addForEditing`) — вече **НЕ** праща автоматично +1. Ако продуктът
+     още не е в ревизията, добавя ред на 0 (през нов `revision_set_item`
+     endpoint / `RevisionItemsManager.set_count` — **презаписва**, не
+     трупа) и веднага фокусира редактируемата клетка за писане. Ако вече
+     е в ревизията, само фокусира съществуващия ред (без да нулира вече
+     преброеното). Директно редактиране на клетката (за КОЙТО и да е ред,
+     нов или стар) също минава през `set_count` — коригира числото точно
+     на въведената стойност, включително надолу (нещо, което `add_count`
+     не може, тъй като отказва отрицателна разлика).
+  `_serialize_item` вече носи и `unit_type` (за min/step на editor-а).
+- **Revision "Remove" вече не е бутон вътре в грида** — местено долу под
+  таблицата (tap ред → `.is-selected-for-delete` → "Remove Line" бутон),
+  същия patтern като Deliveries/Sales ("Триене на ред вече не е бутон в
+  самия грид"). Старата вътрешна "Remove" колона (и нейният `removeItem`
+  извикващ `cellClick`) — премахната; `removeItem(id, name)` функцията
+  самата остана непроменена, само вика се от новото място.
+- **`RevisionAttributes.name`** (CharField, blank=True) — ревизиите вече
+  могат да се кръщават. По избор при стартиране (текстово поле на
+  `revision_home.html`, подадено към `revision_start`), или после през
+  "Rename" бутон (нов `revision_rename` endpoint, POST, `prompt()`-based) —
+  работи независимо от статус (OPEN/COMPLETED/CANCELLED), тъй като
+  преименуването е чисто етикетиране, не действие, което пипа наличност.
+  `__str__` пада обратно на `"Revision #{pk}"`, ако името е празно —
+  никъде другаде в кода не се разчита на name да съществува.
+- **"Load into Revision/Delivery/Write-off/Scrap"** — bulk действие в
+  Products грида (checkbox селекция → бутони "Revision"/"Delivery"/
+  "Write-off"/"Scrap" в bulk-actions-bar), пренася избраните продукти към
+  съответния екран вместо клиентът да ги търси наново там. Механизъм:
+  `?preload=<id>,<id>,...` в URL-а на целевия екран, четено от **самата
+  приемаща страна**, не през сесия — просто query string.
+  - **Revision**: `revision_home` view-ото ползва `request.GET['preload']`
+    директно (server-side, преди темплейта изобщо да рендира) — join-ва
+    отворената ревизия ако има такава, иначе стартира нова на място (без
+    отделен клик "Start Revision"), после `get_or_create` всеки продукт
+    на found_quantity=0 (не пипа вече преброен продукт) и redirect-ва
+    направо към `revision_view`.
+  - **Delivery/Write-off/Scrap**: `_delivery_items_table.html` чете
+    `?preload=` client-side, **задължително вътре в
+    `table.on('tableBuilt', ...)`**, не веднага след
+    `initExcelStyleTable()` връща table обекта — Tabulator строи се
+    асинхронно, `table.addRow()` преди `tableBuilt` събитието трудно
+    гърми undefined-property грешки надолу по веригата (хванато живо,
+    вижда се като "Table Not Initialized" warning + счупени по-нататъшни
+    fetch `.then()` callback-и). Добавя всеки продукт на
+    `delivery_quantity: 0` (не 1 — 1 е за single-item search-add, 0 тук
+    защото продуктите са изрично избрани за редакция, не бърз единичен
+    add), **добавя към каквато чернова вече е отворена**, не я замества
+    (естествено, тъй като preload-ът просто добавя редове СЛЕД
+    seed-редовете от draft-а). Query string-ът се маха веднага след
+    обработка (`history.replaceState`), за да не се дублират редовете при
+    презареждане на страницата. `delivery_quantity=0` минава покрай
+    модела си `MinValueValidator(0.001)` само защото формата не е
+    submit-ната още — клиентът трябва да го оправи преди Complete, иначе
+    per-item грешката (вече показваме такива, виж по-горе) ще му каже
+    точно кой ред.
 
 **Технически капани (открити наскоро, лесно се повтарят)**  
 - **Product create/edit темплейтите рендират полетата на ProductForms**
