@@ -59,19 +59,16 @@ class ProductListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListView
     GRID_SLOT_COUNT = 3
 
     def get_queryset(self):
-        queryset = Product.objects.select_related('category', 'tax_group').prefetch_related(
+        # Every product goes to the page regardless of Product.is_archived
+        # -- hiding archived ones is a client-side Tabulator filter, tied
+        # to whether the "Archived" column is shown (see products_list.html),
+        # not a server-side/query-string toggle.
+        return Product.objects.select_related('category', 'tax_group').prefetch_related(
             'barcode', 'product_suppliers__supplier'
         )
-        # Archived products (see Product.is_archived) don't clutter the
-        # everyday list by default -- same "?show_deleted=1" idea as
-        # PriceListListView, just reversible instead of one-way.
-        if self.request.GET.get('show_archived') != '1':
-            queryset = queryset.filter(is_archived=False)
-        return queryset
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['show_archived'] = self.request.GET.get('show_archived') == '1'
         products_data = []
         products_list = list(context['products'])
         price_list_matches = resolve_prices(products_list)
@@ -208,20 +205,26 @@ class ProductBulkActionView(LoginRequiredMixin, View):
                 return JsonResponse({'error': 'You do not have permission to do this.'}, status=403)
             # Delete one at a time -- a single protected product in a bulk
             # QuerySet.delete() would abort the whole batch and leave
-            # nothing deleted, even the unprotected ones.
-            deleted, blocked = 0, []
+            # nothing deleted, even the unprotected ones. A product blocked
+            # by history (ProtectedError) gets archived instead of just
+            # refused -- same "Archive instead" fallback as the single-
+            # product ProductDeleteView, just automatic here since there's
+            # no confirmation page to offer the choice on for a whole batch.
+            deleted, archived = 0, []
             for product in products:
                 try:
                     product.delete()
                     deleted += 1
                 except ProtectedError:
-                    blocked.append(product.name)
-            response = {'deleted': deleted}
-            if blocked:
-                response['error'] = (
-                    'Could not delete (has sale/delivery history): ' + ', '.join(blocked)
+                    product.is_archived = True
+                    product.save(update_fields=['is_archived'])
+                    archived.append(product.name)
+            response = {'deleted': deleted, 'archived': len(archived)}
+            if archived:
+                response['message'] = (
+                    'Archived instead (has sale/delivery history): ' + ', '.join(archived)
                 )
-            return JsonResponse(response, status=200 if deleted else 400)
+            return JsonResponse(response)
 
         return JsonResponse({'error': 'Unknown action.'}, status=400)
 

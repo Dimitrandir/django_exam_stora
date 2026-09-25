@@ -742,6 +742,30 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    // "Load into Delivery/Write-off/Scrap" from the Products grid
+    // (?preload=<id>,<id>,...) -- appended to whatever draft is already
+    // open here (see rebuildHiddenInputs/delivery_draft_save, this screen
+    // shares one draft slot with Sales per CLAUDE.md), not replacing it.
+    // Added at quantity 0 (editable immediately), not 1 -- these are
+    // products the clerk explicitly picked to work on, not a quick single-
+    // item scan/search where defaulting to 1 makes sense. The query string
+    // is stripped right after so reloading the page doesn't re-add them.
+    table.on('tableBuilt', function () {
+        var params = new URLSearchParams(window.location.search);
+        var preload = params.get('preload');
+        if (!preload) return;
+        preload.split(',').filter(Boolean).forEach(function (id) {
+            var product = productsById[id];
+            if (!product) return;
+            var existing = table.getRows().find(function (r) { return String(r.getData().delivery_item) === String(product.id); });
+            if (existing) return;
+            table.addRow(buildRow(product, {delivery_quantity: 0}));
+        });
+        params.delete('preload');
+        var newQuery = params.toString();
+        history.replaceState(null, '', window.location.pathname + (newQuery ? '?' + newQuery : ''));
+    });
+
     // -- Search-to-add, same debounced trigram-search pattern as the recipe
     // ingredient picker (_recipe_formset.html) --
     var searchInput = document.getElementById('delivery-item-search-input');

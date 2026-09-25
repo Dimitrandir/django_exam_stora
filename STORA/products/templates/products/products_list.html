@@ -12,22 +12,9 @@
 
 {% block content %}
 
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <div>
-        <h1 class="h2 mb-1">Products List</h1>
-        <p class="text-muted mb-0">Overview of all products in stock. Click a row to open it, a column header to sort, use the ▾ to filter.</p>
-        <label class="form-check-label" style="cursor:pointer;">
-            <input type="checkbox" id="show-archived-toggle" {% if show_archived %}checked{% endif %}> Show archived
-        </label>
-    </div>
-    <div class="page-actions">
-        {% if perms.products.add_product %}
-        <a href="{% url 'product_create' %}" class="icon-btn icon-btn--add">
-            <span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--add"></span></span>
-            <span class="icon-btn__label">New Product</span>
-        </a>
-        {% endif %}
-    </div>
+<div class="mb-4">
+    <h1 class="h2 mb-1">Products List</h1>
+    <p class="text-muted mb-0">Overview of all products in stock. Click a row to open it, a column header to sort, use the ▾ to filter. Archived products are hidden -- show the "Archived" column (Columns ▾) to see them too.</p>
 </div>
 
 <div id="bulk-actions-bar" class="bulk-actions-bar d-none align-items-center gap-2 flex-wrap mb-2">
@@ -49,6 +36,19 @@
         <span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--check"></span></span>
         <span class="icon-btn__label">Apply price</span>
     </button>
+    {% endif %}
+    {% if perms.revisions.add_revisionattributes or perms.deliveries.add_deliveryattributes %}
+    <div class="d-flex align-items-center gap-1">
+        <span class="text-muted small">Load into:</span>
+        {% if perms.revisions.add_revisionattributes %}
+        <button type="button" id="bulk-load-revision-btn" class="btn btn-sm btn-outline-secondary">Revision</button>
+        {% endif %}
+        {% if perms.deliveries.add_deliveryattributes %}
+        <button type="button" id="bulk-load-delivery-btn" class="btn btn-sm btn-outline-secondary">Delivery</button>
+        <button type="button" id="bulk-load-writeoff-btn" class="btn btn-sm btn-outline-secondary">Write-off</button>
+        <button type="button" id="bulk-load-scrap-btn" class="btn btn-sm btn-outline-secondary">Scrap</button>
+        {% endif %}
+    </div>
     {% endif %}
     {% if perms.products.delete_product %}
     <button type="button" id="bulk-delete-btn" class="icon-btn icon-btn--delete icon-btn--sm ms-auto">
@@ -243,7 +243,7 @@ document.addEventListener('DOMContentLoaded', function () {
             formatter: posToggleFormatter, cellClick: posToggleCellClick,
         },
         {
-            title: 'Archived', field: 'is_archived', width: 100, hozAlign: 'center',
+            title: 'Archived', field: 'is_archived', width: 100, hozAlign: 'center', visible: false,
             formatter: archiveToggleFormatter, cellClick: archiveToggleCellClick,
         },
         {
@@ -302,6 +302,22 @@ document.addEventListener('DOMContentLoaded', function () {
         window.location = row.getData().view_url;
     });
 
+    // "New Product" moves into the table card's own toolbar too (used to
+    // sit up in the page header) -- built as a plain DOM element so it can
+    // be handed to attachTableExportToToolbar's extraButtons and land right
+    // next to "Columns ▾"/Export, same reasoning as Enable Edit below (one
+    // toolbar for every table-level action instead of scattering them
+    // around the page).
+    var addProductBtn = null;
+    if ({{ perms.products.add_product|yesno:"true,false" }}) {
+        addProductBtn = document.createElement('a');
+        addProductBtn.href = '{% url "product_create" %}';
+        addProductBtn.className = 'icon-btn icon-btn--add icon-btn--sm';
+        addProductBtn.innerHTML =
+            '<span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--add"></span></span>' +
+            '<span class="icon-btn__label">New Product</span>';
+    }
+
     // Enable Edit moves into the table card's own toolbar too (built here
     // as a plain DOM element, not template markup, so it can be handed to
     // attachTableExportToToolbar's extraButtons and land in the bar next
@@ -321,12 +337,24 @@ document.addEventListener('DOMContentLoaded', function () {
     // Export to Excel moves into the table card's own toolbar (the bar
     // data-table.js's addColumnChooser() inserts just above the grid for
     // "Columns ▾"), as a round icon-btn instead of a plain outline button.
-    attachTableExportToToolbar(table, '.data-table-card', 'products.xlsx', 'Products', editToggleBtn ? [editToggleBtn] : []);
+    var toolbarExtras = [addProductBtn, editToggleBtn].filter(Boolean);
+    attachTableExportToToolbar(table, '.data-table-card', 'products.xlsx', 'Products', toolbarExtras);
 
-    document.getElementById('show-archived-toggle').addEventListener('change', function (e) {
-        var params = new URLSearchParams(window.location.search);
-        if (e.target.checked) { params.set('show_archived', '1'); } else { params.delete('show_archived'); }
-        window.location.search = params.toString();
+    // Archived products are hidden by default (this filter), no separate
+    // checkbox -- showing the "Archived" column itself (via Columns ▾) is
+    // what reveals them, and hiding the column again goes back to hiding
+    // them too. Server sends every product regardless (see
+    // ProductListView.get_queryset) -- this is purely a client-side
+    // Tabulator filter, so no reload/round-trip is needed either way.
+    function hideArchivedFilter(data) { return !data.is_archived; }
+    table.addFilter(hideArchivedFilter);
+    table.on('columnVisibilityChanged', function (column, visible) {
+        if (column.getField() !== 'is_archived') return;
+        if (visible) {
+            table.removeFilter(hideArchivedFilter);
+        } else {
+            table.addFilter(hideArchivedFilter);
+        }
     });
 
     if (editToggleBtn) {
@@ -609,9 +637,42 @@ document.addEventListener('DOMContentLoaded', function () {
 
             bulkPost('delete').then(function (result) {
                 if (result.data.error) alert(result.data.error);
+                else if (result.data.message) alert(result.data.message);
                 location.reload();
             });
         });
+    }
+
+    // "Load into Revision/Delivery/Write-off/Scrap" -- hands the selected
+    // products off to that screen via ?preload=<id1>,<id2>,... in the URL,
+    // instead of the clerk having to re-search each one by hand there.
+    // Each target screen reads this off window.location.search itself
+    // (revision_home/revision_view server-side for Revision; the delivery
+    // items table's own JS client-side for Delivery/Write-off/Scrap, on
+    // top of/appended to whatever draft is already open there -- see
+    // CLAUDE.md's shared cashier_last_operation session slot).
+    function loadInto(url) {
+        var selected = table.getSelectedData();
+        if (!selected.length) return;
+        var ids = selected.map(function (row) { return row.id; });
+        window.location = url + '?preload=' + ids.join(',');
+    }
+
+    var loadRevisionBtn = document.getElementById('bulk-load-revision-btn');
+    if (loadRevisionBtn) {
+        loadRevisionBtn.addEventListener('click', function () { loadInto('{% url "revision_home" %}'); });
+    }
+    var loadDeliveryBtn = document.getElementById('bulk-load-delivery-btn');
+    if (loadDeliveryBtn) {
+        loadDeliveryBtn.addEventListener('click', function () { loadInto('{% url "delivery_add" %}'); });
+    }
+    var loadWriteoffBtn = document.getElementById('bulk-load-writeoff-btn');
+    if (loadWriteoffBtn) {
+        loadWriteoffBtn.addEventListener('click', function () { loadInto('{% url "writeoff_add" %}'); });
+    }
+    var loadScrapBtn = document.getElementById('bulk-load-scrap-btn');
+    if (loadScrapBtn) {
+        loadScrapBtn.addEventListener('click', function () { loadInto('{% url "scrap_add" %}'); });
     }
 });
 </script>

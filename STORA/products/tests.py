@@ -203,15 +203,12 @@ class ProductDeleteProtectedTests(TestCase):
         self.assertTrue(Product.objects.filter(pk=product.pk).exists())
         self.assertEqual(SaleItems.objects.filter(sale_item=product).count(), 1)
 
+        # Hiding archived products by default is a client-side Tabulator
+        # filter now (see products_list.html), not a server-side/query-
+        # string toggle -- the server always sends every product, flagged.
         list_response = self.client.get(reverse('product_list'))
-        self.assertNotIn(
-            product.pk, [row['id'] for row in list_response.context['products_data']],
-        )
-
-        shown_response = self.client.get(reverse('product_list'), {'show_archived': '1'})
-        self.assertIn(
-            product.pk, [row['id'] for row in shown_response.context['products_data']],
-        )
+        row = next(r for r in list_response.context['products_data'] if r['id'] == product.pk)
+        self.assertTrue(row['is_archived'])
 
     def test_archived_toggle_via_inline_update_endpoint(self):
         manager = Employee.objects.create_user(
@@ -785,7 +782,7 @@ class ProductBulkActionViewTests(TestCase):
         self.assertEqual(response.json()['deleted'], 2)
         self.assertFalse(Product.objects.filter(pk__in=[self.product1.pk, self.product2.pk]).exists())
 
-    def test_bulk_delete_skips_protected_but_deletes_rest(self):
+    def test_bulk_delete_archives_protected_instead_and_deletes_rest(self):
         sale = SaleAttributes.objects.create(cashier=self.manager)
         SaleItems.objects.create(sale=sale, sale_item=self.product1, sale_quantity=1)
 
@@ -794,8 +791,11 @@ class ProductBulkActionViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         body = response.json()
         self.assertEqual(body['deleted'], 1)
-        self.assertIn('error', body)
-        self.assertTrue(Product.objects.filter(pk=self.product1.pk).exists())
+        self.assertEqual(body['archived'], 1)
+        self.assertIn('message', body)
+        self.assertNotIn('error', body)
+        self.product1.refresh_from_db()
+        self.assertTrue(self.product1.is_archived)
         self.assertFalse(Product.objects.filter(pk=self.product2.pk).exists())
 
     def test_no_ids_selected_is_rejected(self):

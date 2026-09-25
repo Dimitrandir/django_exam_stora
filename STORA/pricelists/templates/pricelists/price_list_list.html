@@ -9,11 +9,8 @@
 
 {% block content %}
 
-<div class="d-flex justify-content-between align-items-center mb-3">
+<div class="mb-3">
     <h1 class="mb-0">Price Lists</h1>
-    {% if perms.pricelists.add_pricelist %}
-    <a href="{% url 'price_list_create' %}" class="btn button-save">+ New Price List</a>
-    {% endif %}
 </div>
 
 <div class="mb-2">
@@ -60,7 +57,20 @@ document.addEventListener('DOMContentLoaded', function () {
         window.location = row.getData().view_url;
     });
 
-    attachTableExportToToolbar(table, '#price-lists-table-card', 'price_lists.xlsx', 'Price Lists');
+    // "New Price List" moves into the table card's own toolbar too (used to
+    // sit up in the page header), same reasoning/convention as Products
+    // List's and Categories List's own "New" buttons.
+    var addPriceListBtn = null;
+    if ({{ perms.pricelists.add_pricelist|yesno:"true,false" }}) {
+        addPriceListBtn = document.createElement('a');
+        addPriceListBtn.href = '{% url "price_list_create" %}';
+        addPriceListBtn.className = 'icon-btn icon-btn--add icon-btn--sm';
+        addPriceListBtn.innerHTML =
+            '<span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--add"></span></span>' +
+            '<span class="icon-btn__label">New Price List</span>';
+    }
+
+    attachTableExportToToolbar(table, '#price-lists-table-card', 'price_lists.xlsx', 'Price Lists', addPriceListBtn ? [addPriceListBtn] : []);
 
     document.getElementById('show-deleted-toggle').addEventListener('change', function (e) {
         var params = new URLSearchParams(window.location.search);

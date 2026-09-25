@@ -13,17 +13,9 @@
 {% block content %}
 
 <div class="category-list-page">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-            <h1 class="h2 mb-1">Categories List</h1>
-            <p class="text-muted mb-0">The category tree used across Products and the POS shortcuts panel. Click a row to edit it, a column header to sort, use the ▾ to filter.</p>
-        </div>
-        {% if perms.products.add_category %}
-        <a href="{% url 'category_create' %}" class="icon-btn icon-btn--add">
-            <span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--add"></span></span>
-            <span class="icon-btn__label">Add category</span>
-        </a>
-        {% endif %}
+    <div class="mb-4">
+        <h1 class="h2 mb-1">Categories List</h1>
+        <p class="text-muted mb-0">The category tree used across Products and the POS shortcuts panel. Click a row to edit it, a column header to sort, use the ▾ to filter.</p>
     </div>
 
     {% if can_delete_category %}
@@ -169,10 +161,23 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    // "Add category" moves into the table card's own toolbar too (used to
+    // sit up in the page header), same reasoning as Products List's own
+    // "New Product" button -- one toolbar for every table-level action.
+    var addCategoryBtn = null;
+    if ({{ perms.products.add_category|yesno:"true,false" }}) {
+        addCategoryBtn = document.createElement('a');
+        addCategoryBtn.href = '{% url "category_create" %}';
+        addCategoryBtn.className = 'icon-btn icon-btn--add icon-btn--sm';
+        addCategoryBtn.innerHTML =
+            '<span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--add"></span></span>' +
+            '<span class="icon-btn__label">Add category</span>';
+    }
+
     // Export to Excel moves into the table card's own toolbar (the bar
     // data-table.js's addColumnChooser() inserts just above the grid for
     // "Columns ▾"), as a round icon-btn instead of a plain outline button.
-    attachTableExportToToolbar(table, '.data-table-card', 'categories.xlsx', 'Categories');
+    attachTableExportToToolbar(table, '.data-table-card', 'categories.xlsx', 'Categories', addCategoryBtn ? [addCategoryBtn] : []);
 });
 </script>
 {% endblock %}
