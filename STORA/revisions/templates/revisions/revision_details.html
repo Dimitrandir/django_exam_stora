@@ -9,7 +9,14 @@
 
 {% block content %}
 
-<h1>Stock Revision #{{ revision.pk }}{% if revision.status == 'CANCELLED' %} <span class="text-danger">(Cancelled)</span>{% endif %}</h1>
+<h1>
+    <span id="revision-name-display">{{ revision.name|default:"" }}</span>
+    <span class="text-muted">#{{ revision.pk }}</span>
+    {% if revision.status == 'CANCELLED' %} <span class="text-danger">(Cancelled)</span>{% endif %}
+</h1>
+{% if perms.revisions.change_revisionattributes %}
+<button type="button" id="revision-rename-btn" class="btn btn-sm btn-outline-secondary mb-2">Rename</button>
+{% endif %}
 <p class="text-muted">
     Started by {{ revision.started_by }} at {{ revision.started_at|date:"d.m.Y H:i" }}.
     {% if revision.status == 'CANCELLED' %}
@@ -19,6 +26,7 @@
     {% endif %}
 </p>
 
+{% csrf_token %}
 {{ items_data|json_script:"revision-items-data" }}
 <div id="revision-items-table-card" class="data-table-card">
     <div id="revision-items-table" class="table-sm"></div>
@@ -99,6 +107,23 @@ document.addEventListener('DOMContentLoaded', function () {
     ], {placeholder: 'No items were counted in this revision.'});
 
     attachTableExportToToolbar(table, '#revision-items-table-card', 'revision_{{ revision.pk }}_items.xlsx', 'Revision Items');
+
+    var renameBtn = document.getElementById('revision-rename-btn');
+    if (renameBtn) {
+        renameBtn.addEventListener('click', function () {
+            var current = document.getElementById('revision-name-display').textContent.trim();
+            var name = prompt('Revision name:', current);
+            if (name === null) return;
+            fetch('{% url "revision_rename" revision.pk %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+                },
+                body: new URLSearchParams({name: name}),
+            }).then(function () { location.reload(); });
+        });
+    }
 });
 </script>
 {% endblock %}

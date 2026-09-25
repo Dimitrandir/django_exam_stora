@@ -29,6 +29,10 @@ def _serialize_item(item):
         'product_id': item.product_id,
         'internal_code': item.product.internal_code,
         'name': item.product.name,
+        # Drives the Found Qty editor's min/step (0.001 for weight, 1 for
+        # piece) -- same reasoning as the delivery/sale grids' own Qty
+        # column, see CLAUDE.md's HTML5 number-input min/step trap.
+        'unit_type': item.product.unit_type,
         'found_quantity': float(item.found_quantity),
         'system_quantity_at_start': float(item.system_quantity_at_start),
         'quantity_diff': float(item.found_quantity - item.system_quantity_at_start),
@@ -42,6 +46,29 @@ def _serialize_item(item):
 @login_required
 @permission_required('revisions.add_revisionattributes', raise_exception=True)
 def revision_home(request):
+    # "Load into Revision" from the Products grid (?preload=<id>,<id>,...)
+    # -- joins the open revision if there is one, otherwise starts a new
+    # one on the spot (no extra "Start Revision" click), then adds each
+    # product at found_quantity=0 (editable immediately, see
+    # RevisionItemsManager) and sends the clerk straight into it. Doesn't
+    # touch a product that's already being counted here -- get_or_create
+    # only sets the 0-default on a genuinely new row.
+    preload = request.GET.get('preload', '')
+    if preload:
+        open_revision = _get_open_revision()
+        if open_revision is None:
+            open_revision = RevisionAttributes.objects.create(started_by=request.user)
+        ids = [pid for pid in preload.split(',') if pid]
+        for product in Product.objects.filter(pk__in=ids):
+            RevisionItems.objects.get_or_create(
+                revision=open_revision, product=product,
+                defaults={
+                    'system_quantity_at_start': product.quantity,
+                    'price_at_revision': product.delivery_price,
+                },
+            )
+        return redirect('revision_view', pk=open_revision.pk)
+
     open_revision = _get_open_revision()
     return render(request, 'revisions/revision_home.html', {'open_revision': open_revision})
 
@@ -59,9 +86,10 @@ def revision_start(request):
     open_revision = _get_open_revision()
     if open_revision:
         return redirect('revision_view', pk=open_revision.pk)
+    name = request.POST.get('name', '').strip()
     try:
         with transaction.atomic():
-            revision = RevisionAttributes.objects.create(started_by=request.user)
+            revision = RevisionAttributes.objects.create(started_by=request.user, name=name)
     except IntegrityError:
         revision = _get_open_revision()
     return redirect('revision_view', pk=revision.pk)
@@ -138,6 +166,36 @@ def revision_add_item(request, pk):
 @require_POST
 @login_required
 @permission_required('revisions.add_revisionattributes', raise_exception=True)
+def revision_set_item(request, pk):
+    """Sets a product's found_quantity to an exact value -- backs the
+    directly-editable Found Qty cell in revision_detail.html (both for
+    correcting an existing count and for the blank-then-typed value a
+    freshly search-added product starts at). Deliberately separate from
+    revision_add_item's +N-per-scan semantics -- see
+    RevisionItemsManager.set_count."""
+    try:
+        revision = RevisionAttributes.objects.get(pk=pk, status=RevisionAttributes.STATUS_OPEN)
+    except RevisionAttributes.DoesNotExist:
+        return JsonResponse({'error': 'This revision is no longer open.'}, status=409)
+
+    product_id = request.POST.get('product_id')
+    product = get_object_or_404(Product, pk=product_id)
+
+    try:
+        quantity = Decimal(request.POST.get('quantity', ''))
+    except InvalidOperation:
+        return JsonResponse({'error': 'Invalid quantity.'}, status=400)
+    if quantity < 0:
+        return JsonResponse({'error': 'Quantity cannot be negative.'}, status=400)
+
+    item = RevisionItems.objects.set_count(revision, product, quantity)
+    item.product = product  # already have it -- skip the extra select_related query
+    return JsonResponse(_serialize_item(item))
+
+
+@require_POST
+@login_required
+@permission_required('revisions.add_revisionattributes', raise_exception=True)
 def revision_remove_item(request, pk, item_id):
     try:
         revision = RevisionAttributes.objects.get(pk=pk, status=RevisionAttributes.STATUS_OPEN)
@@ -148,6 +206,19 @@ def revision_remove_item(request, pk, item_id):
     if not deleted:
         return JsonResponse({'error': 'That row is already gone.'}, status=404)
     return JsonResponse({'ok': True})
+
+
+@require_POST
+@login_required
+@permission_required('revisions.change_revisionattributes', raise_exception=True)
+def revision_rename(request, pk):
+    """Renames a revision -- allowed regardless of status (open, completed,
+    or cancelled), unlike every other action here, since naming/relabeling
+    something is a bookkeeping tweak, not a stock-affecting action."""
+    revision = get_object_or_404(RevisionAttributes, pk=pk)
+    revision.name = request.POST.get('name', '').strip()
+    revision.save(update_fields=['name'])
+    return redirect('revision_view', pk=revision.pk)
 
 
 @require_POST
@@ -209,6 +280,7 @@ class RevisionListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListVie
         context['revisions_data'] = [
             {
                 'id': revision.pk,
+                'name': revision.name,
                 'status': revision.status,
                 'started_by': str(revision.started_by),
                 'started_at': revision.started_at.strftime('%Y-%m-%d %H:%M'),

@@ -14,10 +14,16 @@
 <section class="sale-form">
     <header class="page-header pos-header">
         <div class="pos-header__info">
-            <h1>Stock Revision #{{ revision.pk }}</h1>
+            <h1>
+                <span id="revision-name-display">{{ revision.name|default:"" }}</span>
+                <span class="text-muted">#{{ revision.pk }}</span>
+            </h1>
             <p class="pos-header__meta">
                 <span id="live-clock"></span> — started by {{ revision.started_by }}
                 at {{ revision.started_at|date:"d.m.Y H:i" }}
+                {% if perms.revisions.change_revisionattributes %}
+                <button type="button" id="revision-rename-btn" class="btn btn-sm btn-outline-secondary ms-2">Rename</button>
+                {% endif %}
             </p>
         </div>
     </header>
@@ -37,6 +43,13 @@
     <div id="revision-items-table-card" class="data-table-card">
         <div id="revision-items-table" class="table-sm"></div>
     </div>
+
+    {% if can_complete %}
+    <div class="d-flex align-items-center gap-2 mt-2">
+        <button type="button" id="revision-remove-line-btn" class="button-delete-line pill-btn">Remove Line</button>
+    </div>
+    <p class="text-muted small mt-1 mb-0">Tap a row to select it, then Remove Line to take it out of this revision.</p>
+    {% endif %}
 
     {% if can_complete %}
     <footer class="page-actions">
@@ -114,6 +127,48 @@
         return isNaN(v) ? '' : v;
     }
 
+    function quantityStep(row) {
+        return row.unit_type === 'weight' ? 0.001 : 1;
+    }
+
+    // Same custom editor as the Deliveries/Sales grids (Tabulator's built-in
+    // editor:'number' has no Enter-key handling at all -- confirmed against
+    // the vendored build, see CLAUDE.md) -- Enter commits via success(value)
+    // and refocuses the search box, ready for the next scan/search; Escape
+    // cancels. min/step come from quantityStep() (0.001 for weight, 1 for
+    // piece), not a fixed 0.001 -- see CLAUDE.md's HTML5 number-input min/
+    // step trap (min:0.001 + step:1 makes whole numbers invalid).
+    function numberEditor(cell, onRendered, success, cancel, editorParams) {
+        var params = editorParams || {};
+        var input = document.createElement('input');
+        input.type = 'number';
+        if (params.min !== undefined) input.min = params.min;
+        if (params.step !== undefined) input.step = params.step;
+        input.style.padding = '4px';
+        input.style.width = '100%';
+        input.style.boxSizing = 'border-box';
+        input.style.height = '100%';
+        input.value = cell.getValue();
+        onRendered(function () { input.focus(); input.select(); });
+
+        function commit() {
+            var value = input.value === '' ? 0 : parseFloat(input.value);
+            success(value);
+        }
+
+        input.addEventListener('blur', commit);
+        input.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                commit();
+                searchInput.focus();
+            } else if (e.key === 'Escape') {
+                cancel();
+            }
+        });
+        return input;
+    }
+
     // Built through the shared listing-table helper (sort, Excel-style
     // per-column filter, Columns chooser, Export to Excel, the resize/
     // column-width row-height fixes -- see CLAUDE.md table convention) so
@@ -124,7 +179,11 @@
         {title: '#', field: 'internal_code', formatter: 'rownum', width: 50, hozAlign: 'center', headerFilter: false, hideable: false},
         {title: 'Code', field: 'internal_code', width: 110},
         {title: 'Name', field: 'name', widthGrow: 3},
-        {title: 'Found Qty', field: 'found_quantity', width: 110, hozAlign: 'right', bottomCalc: 'sum'},
+        {
+            title: 'Found Qty', field: 'found_quantity', width: 110, hozAlign: 'right', bottomCalc: 'sum',
+            editor: numberEditor,
+            editorParams: function (cell) { return {min: quantityStep(cell.getData()), step: quantityStep(cell.getData())}; },
+        },
         {title: 'System Qty', field: 'system_quantity_at_start', width: 120, hozAlign: 'right', bottomCalc: 'sum'},
         {
             title: 'Diff Qty', field: 'quantity_diff', width: 110, hozAlign: 'right',
@@ -146,17 +205,92 @@
             title: 'Diff Sum', field: 'sum_diff', width: 120, hozAlign: 'right',
             formatter: moneyDiffFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
         },
-        {
-            title: 'Remove', width: 90, hozAlign: 'center', headerSort: false, headerFilter: false, hideable: false,
-            formatter: function () { return '<button type="button" class="btn btn-sm btn-outline-danger">Remove</button>'; },
-            cellClick: function (e, cell) {
-                var data = cell.getRow().getData();
-                removeItem(data.id, data.name);
-            },
-        },
     ], {placeholder: 'Search or scan a product above to start counting.'});
 
+    // -- Selecting a line to remove -- tap its row (same pattern as the
+    // Deliveries/Sales grids, see CLAUDE.md "Триене на ред вече не е бутон
+    // в самия грид"), instead of a per-row Remove button baked into the
+    // table itself. --
+    var selectedRow = null;
+
+    function clearRowSelection() {
+        if (selectedRow) {
+            selectedRow.getElement().classList.remove('is-selected-for-delete');
+            selectedRow = null;
+        }
+    }
+
+    table.on('rowClick', function (e, row) {
+        if (selectedRow === row) {
+            clearRowSelection();
+            return;
+        }
+        clearRowSelection();
+        selectedRow = row;
+        row.getElement().classList.add('is-selected-for-delete');
+    });
+
+    var removeLineBtn = document.getElementById('revision-remove-line-btn');
+    if (removeLineBtn) {
+        removeLineBtn.addEventListener('click', function () {
+            if (!selectedRow) {
+                alert('Select a line first (tap its row).');
+                return;
+            }
+            var data = selectedRow.getData();
+            removeItem(data.id, data.name);
+            selectedRow = null;
+        });
+    }
+
+    // Persists a directly-typed/corrected Found Qty to the server as an
+    // exact value (revision_set_item -- see its own comment for why this
+    // is separate from addCount's +N-per-scan endpoint). Reverts the cell
+    // on any failure, same pattern as every other editable-grid screen in
+    // the app.
+    table.on('cellEdited', function (cell) {
+        if (cell.getField() !== 'found_quantity') return;
+        var data = cell.getRow().getData();
+        var previousValue = cell.getOldValue();
+        fetch('{% url "revision_set_item" revision.pk %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-CSRFToken': csrfToken,
+            },
+            body: new URLSearchParams({product_id: data.product_id, quantity: String(data.found_quantity)}),
+        }).then(function (r) {
+            if (r.status === 409) {
+                document.getElementById('revision-closed-banner').style.display = '';
+                throw new Error('closed');
+            }
+            return r.json();
+        }).then(function (result) {
+            if (result.error) {
+                alert(result.error);
+                cell.setValue(previousValue);
+                return;
+            }
+            upsertRow(result);
+        }).catch(function () {
+            alert('Could not save this count -- check your connection and try again.');
+            cell.setValue(previousValue);
+        });
+    });
+
     attachTableExportToToolbar(table, '#revision-items-table-card', 'revision_{{ revision.pk }}_items.xlsx', 'Revision Items');
+
+    // While a cell (only Found Qty is editable) is actively being edited,
+    // the 4s poll below must NOT call table.setData() -- that fully
+    // re-renders the grid from whatever the server has right now, which for
+    // a just-added row is still 0 (nothing has been typed/committed yet).
+    // Without this guard, typing into a freshly-added row for more than ~4s
+    // makes the in-progress edit vanish and the cell appear to "reset to
+    // zero" -- confirmed live, this is exactly that bug, not a real timeout.
+    var isEditingCell = false;
+    table.on('cellEditing', function () { isEditingCell = true; });
+    table.on('cellEdited', function () { isEditingCell = false; });
+    table.on('cellEditCancelled', function () { isEditingCell = false; });
 
     function upsertRow(item) {
         if (table.getRow(item.id)) {
@@ -260,6 +394,55 @@
         }).catch(function () { /* network hiccup -- the next poll will reconcile */ });
     }
 
+    // Same deferred-then-refetch-the-cell trick as the Deliveries grid's
+    // focusCellEditor -- cell.edit(true) right after addRow/updateData
+    // doesn't reliably grab real keyboard focus (Tabulator may still be
+    // mid-redraw), so this waits a tick and re-fetches the cell fresh from
+    // the row rather than trusting a reference captured before the redraw.
+    function focusFoundQtyEditor(rowId) {
+        setTimeout(function () {
+            var row = table.getRow(rowId);
+            if (!row) return;
+            var cell = row.getCell('found_quantity');
+            cell.edit(true);
+            var input = cell.getElement().querySelector('input');
+            if (input) { input.focus(); input.select(); }
+        }, 0);
+    }
+
+    // Searching and picking a product is a deliberate "I want to count
+    // this" action -- unlike scanning (addCount, additive, see its own
+    // comment above), it should never silently guess a count. A product
+    // not yet in this revision is added at 0 and immediately handed the
+    // editable Found Qty cell to type the real number into; a product
+    // already being counted here just gets that same cell focused again,
+    // WITHOUT resetting whatever's already been counted.
+    function addForEditing(product) {
+        var existing = table.getData().find(function (r) { return String(r.product_id) === String(product.id); });
+        if (existing) {
+            focusFoundQtyEditor(existing.id);
+            return;
+        }
+        fetch('{% url "revision_set_item" revision.pk %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-CSRFToken': csrfToken,
+            },
+            body: new URLSearchParams({product_id: product.id, quantity: '0'}),
+        }).then(function (r) {
+            if (r.status === 409) {
+                document.getElementById('revision-closed-banner').style.display = '';
+                throw new Error('closed');
+            }
+            return r.json();
+        }).then(function (data) {
+            if (data.error) { alert(data.error); return; }
+            upsertRow(data);
+            focusFoundQtyEditor(data.id);
+        }).catch(function () { /* network hiccup -- the next poll will reconcile */ });
+    }
+
     const searchInput = document.getElementById('revision-item-search-input');
     const resultsBox = document.getElementById('revision-item-search-results');
     let currentResults = [];
@@ -313,12 +496,15 @@
     }
 
     function selectProduct(product) {
-        addCount(product, 1);
+        addForEditing(product);
         resultsBox.classList.remove('is-open');
         searchInput.value = '';
         currentResults = [];
         highlightedIndex = -1;
-        searchInput.focus();
+        // Not re-focusing searchInput here on purpose -- addForEditing is
+        // about to hand real keyboard focus to the Found Qty cell, so the
+        // counter can type the number right away (Enter afterwards sends
+        // focus back to the search box, see numberEditor above).
     }
 
     searchInput.addEventListener('input', runSearch);
@@ -376,6 +562,7 @@
 
     // -- Poll so counts entered on another computer show up here too. --
     setInterval(function () {
+        if (isEditingCell) return; // see the guard set up above -- don't stomp on an in-progress edit
         fetch('{% url "revision_items_data" revision.pk %}')
             .then(function (r) { return r.json(); })
             .then(function (data) {
@@ -387,6 +574,23 @@
             })
             .catch(function () { /* transient network error -- next poll will retry */ });
     }, 4000);
+
+    var renameBtn = document.getElementById('revision-rename-btn');
+    if (renameBtn) {
+        renameBtn.addEventListener('click', function () {
+            var current = document.getElementById('revision-name-display').textContent.trim();
+            var name = prompt('Revision name:', current);
+            if (name === null) return;
+            fetch('{% url "revision_rename" revision.pk %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-CSRFToken': csrfToken,
+                },
+                body: new URLSearchParams({name: name}),
+            }).then(function () { location.reload(); });
+        });
+    }
 
     {% if can_complete %}
     document.getElementById('revision-complete-btn').addEventListener('click', function () {

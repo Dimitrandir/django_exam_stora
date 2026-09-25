@@ -18,8 +18,9 @@
     </div>
     {% else %}
     <p class="text-muted">No revision is currently open.</p>
-    <form method="post" action="{% url 'revision_start' %}">
+    <form method="post" action="{% url 'revision_start' %}" class="d-flex align-items-center gap-2">
         {% csrf_token %}
+        <input type="text" name="name" class="form-control" style="max-width: 280px;" placeholder="Revision name (optional)">
         <button type="submit" class="btn button-save">Start New Revision</button>
     </form>
     {% endif %}

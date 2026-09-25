@@ -15,6 +15,11 @@ class RevisionAttributes(models.Model):
     STATUS_CHOICES = [(STATUS_OPEN, 'Open'), (STATUS_COMPLETED, 'Completed'), (STATUS_CANCELLED, 'Cancelled')]
 
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default=STATUS_OPEN)
+    # Optional -- most revisions are still fine identified by #pk alone
+    # (every template already falls back to that), but a shop running
+    # several counts (e.g. "Fridge only", "Weekly full count") wants a
+    # label to tell them apart in the history list at a glance.
+    name = models.CharField(max_length=100, blank=True, verbose_name='Name')
     started_by = models.ForeignKey(Employee, on_delete=models.PROTECT, related_name='revisions_started',
                                     verbose_name='Started By')
     started_at = models.DateTimeField(auto_now_add=True)
@@ -42,7 +47,8 @@ class RevisionAttributes(models.Model):
         ]
 
     def __str__(self):
-        return f'Revision #{self.pk} ({self.status})'
+        label = self.name if self.name else f'Revision #{self.pk}'
+        return f'{label} ({self.status})'
 
 
 class RevisionItemsManager(models.Manager):
@@ -66,6 +72,26 @@ class RevisionItemsManager(models.Manager):
                 },
             )
             item.found_quantity += quantity
+            item.save(update_fields=['found_quantity'])
+            return item
+
+    def set_count(self, revision, product, quantity):
+        """Sets this product's found_quantity to an exact value, instead of
+        adding to it -- used when a counter directly types/corrects the
+        number in the grid (a deliberate "this is the real count" entry),
+        as opposed to add_count's "+1 per scan" semantics. Also how a
+        freshly-added product starts (at 0, see revision_detail.html) so
+        it lands editable rather than silently pre-set to 1 with no way to
+        fix a typo."""
+        with transaction.atomic():
+            item, created = self.select_for_update().get_or_create(
+                revision=revision, product=product,
+                defaults={
+                    'system_quantity_at_start': product.quantity,
+                    'price_at_revision': product.delivery_price,
+                },
+            )
+            item.found_quantity = quantity
             item.save(update_fields=['found_quantity'])
             return item
 
