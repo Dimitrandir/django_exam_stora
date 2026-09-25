@@ -955,6 +955,165 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
     white-space: nowrap !important;
 }
 
+/* "Classic" Tabulator skin -- TRIAL ONLY, opt-in via adding this class
+   alongside .data-table-card (outer wrapper) and table-sm (the div
+   Tabulator turns into its own .tabulator root). Reproduces the look of
+   the OLD plain <table> pages (Suppliers/Categories lists, see their own
+   `table, th, td` rules near the top of this file) on a Tabulator grid:
+   dark header bar, white left-aligned header text, flat square corners,
+   #ddd grid lines, no zebra striping, light-gray row hover -- the literal
+   opposite direction from the rounded/shadowed Material-3-ish card look
+   the rest of the Tabulator tables use (see STYLES.md, which explicitly
+   asks to avoid "flat Bootstrap look"). Requested live as a "let's just
+   see how it looks" comparison against Suppliers -- kept as a separate
+   opt-in class rather than touching the shared theme, so it's a one-line
+   revert (remove the class) if it isn't kept.
+
+   style.css loads BEFORE tabulator_bootstrap5.min.css in <head> (each
+   template's own {% block extra_css %}), so the vendor theme's rules
+   normally win any tie -- every property below either uses !important or
+   a selector chain at least as specific as the vendor rule it overrides
+   (confirmed by grepping the vendored CSS directly), same approach as
+   the .tabulator-cell wrap-instead-of-truncate override above. */
+.tabulator.tabulator-classic {
+    border: 1px solid #ddd;
+    border-radius: 0;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.data-table-card.tabulator-classic {
+    background: transparent;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 0;
+}
+
+.tabulator.tabulator-classic .tabulator-header,
+.tabulator.tabulator-classic .tabulator-col {
+    background-color: var(--secondary-color) !important;
+}
+
+/* Full shorthand, not just border-right-color -- a later vendor rule
+   (`.tabulator .tabulator-header .tabulator-col{border-right:none}`,
+   confirmed by grepping the vendored CSS -- a wider context grep than
+   first tried, which had missed the .tabulator .tabulator-header prefix
+   and undercounted its specificity) sets border-right-STYLE to none,
+   which hides the border regardless of what color it's given. First fix
+   attempt only overrode the color and matched that rule's specificity
+   exactly (3 classes each) -- equal specificity loses the tie to
+   whichever stylesheet loads later, which is the vendor CSS here (see
+   file-level comment above), so it silently lost (flagged live: "там са
+   белички" -- the dividers between header columns weren't showing at
+   all, width computed to 0px). .tabulator-header in the chain here makes
+   this 4 classes, plus !important, to not depend on load order at all. */
+.tabulator.tabulator-classic .tabulator-header .tabulator-col {
+    border-right: 1px solid #ddd !important;
+}
+
+.tabulator.tabulator-classic .tabulator-col-title {
+    color: #ffffff !important;
+    /* 700 (not 600) -- matches Suppliers List's <th>, which gets browsers'
+       default bold weight for table headers with no explicit override. */
+    font-weight: 700;
+    text-align: center !important;
+    /* Wrap instead of ellipsis-truncate on a narrowed column -- same
+       reasoning as the body-cell wrap fix above (see its own comment):
+       nowrap+ellipsis silently clips text with no visual indicator, and
+       combined with center-alignment here it looked actively broken
+       (flagged live as "шантаво" -- half a word missing from the START
+       of a centered title, with no "..." to explain why, since ellipsis
+       only ever marks the END of a truncated line). Selector chain
+       matches the vendor's own most-specific title rule
+       (`.tabulator .tabulator-header .tabulator-col .tabulator-col-content
+       .tabulator-col-title.tabulator-col-title-wrap{text-overflow:clip;
+       white-space:normal}`, normally an opt-in per-column modifier) so
+       this applies unconditionally to every column instead of needing
+       each one to opt in. */
+    white-space: normal !important;
+    text-overflow: clip !important;
+    overflow: visible !important;
+}
+
+/* Sort arrows/filter toggle default to mid-gray (#666/#bbb, see vendor
+   CSS) -- barely visible against the dark header background otherwise. */
+.tabulator.tabulator-classic .tabulator-col-sorter {
+    color: rgba(255, 255, 255, 0.75) !important;
+}
+
+.tabulator.tabulator-classic .tabulator-col-sorter .tabulator-arrow {
+    border-bottom-color: rgba(255, 255, 255, 0.75) !important;
+    border-top-color: rgba(255, 255, 255, 0.75) !important;
+}
+
+/* The "▾" per-column Excel-style filter toggle (.excel-filter-toggle,
+   see its own rule further down this file) has no color of its own --
+   normally fine (inherits the page's dark body text), invisible against
+   this theme's dark header (flagged live). Scoped narrowly: this class
+   is ONLY ever used for the per-column header filter (see that rule's
+   own comment), never anywhere with a light background, so there's no
+   case where forcing it white here would be wrong. */
+.tabulator.tabulator-classic .excel-filter-toggle {
+    color: #ffffff !important;
+}
+
+/* Shrink the header bar as much as the content allows ("дебелина ...
+   максимално" -- flagged live). Without table-sm (dropped for this
+   theme, see the div's own class list in each template) the vendor
+   bootstrap5 theme falls back to its spacious 12px header padding
+   (`.tabulator .tabulator-header .tabulator-col .tabulator-col-content
+   {padding:12px}`, 4-class specificity -- matched + one class here to
+   beat it) instead of the compact 4px default; this trims it further
+   still, and removes the header-filter row's own top margin, since every
+   bit of vertical padding compounds across title + filter rows. */
+.tabulator.tabulator-classic .tabulator-header .tabulator-col .tabulator-col-content {
+    padding: 2px 4px !important;
+}
+
+.tabulator.tabulator-classic .tabulator-header-filter {
+    margin-top: 0 !important;
+}
+
+.tabulator.tabulator-classic .tabulator-row,
+.tabulator.tabulator-classic .tabulator-row.tabulator-row-even {
+    background-color: #ffffff !important;
+    border-bottom: 1px solid #eee;
+}
+
+.tabulator.tabulator-classic .tabulator-row:hover {
+    background-color: #f9f9f9 !important;
+}
+
+/* Selector chain matches (one class longer than) table-sm's own
+   `.tabulator.table-sm .tabulator-tableholder .tabulator-table
+   .tabulator-row .tabulator-cell { padding: 5px !important }` so this
+   wins on specificity, not just !important vs !important source order.
+   text-align: center !important -- requested for every column, including
+   the numeric ones (Qty/Price/etc normally get an inline
+   `style="text-align: right"` from their column's own hozAlign:'right',
+   see CLAUDE.md's table convention -- inline styles beat any class
+   selector unless it's !important, so this is the one place in the trial
+   that actually needs it). Centering numbers is a real step away from
+   that convention's own reasoning (right-aligned digits line up visually
+   -- see the moneyFormatter/tabular-nums comments elsewhere in this
+   file), worth keeping in mind if this trial becomes permanent. */
+.tabulator.tabulator-classic .tabulator-tableholder .tabulator-table .tabulator-row .tabulator-cell {
+    border-right: 1px solid #ddd;
+    padding: 10px 12px !important;
+    text-align: center !important;
+}
+
+/* The bottomCalc totals row (.tabulator-calcs-holder, e.g. Products'
+   Code-column count) lives under .tabulator-footer, OUTSIDE
+   .tabulator-tableholder -- the body-cell padding rule just above never
+   reaches it, so it kept the vendor's spacious 12px default and looked
+   "unnecessarily thick" next to the now-thin header/body (flagged live).
+   `.tabulator-row .tabulator-cell{padding:12px}` (2-class, no
+   !important) is what sets that -- this beats it on specificity alone,
+   !important added to match the rest of this theme's approach. */
+.tabulator.tabulator-classic .tabulator-calcs-holder .tabulator-cell {
+    padding: 4px 12px !important;
+}
+
 .sale-form__categories {
     /* Width, not a flex ratio, so it can be dragged to a specific size --
        --categories-width is set from JS (syncCategoriesWidth), restored
