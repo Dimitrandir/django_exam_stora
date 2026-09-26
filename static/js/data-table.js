@@ -184,10 +184,23 @@
                 // surprising; instead "(All)" always means literally all rows,
                 // matching what a user expects from a checkbox labelled that.
                 search.addEventListener('click', function (e) { e.stopPropagation(); });
+                // Multi-word, order-independent matching -- same idea as
+                // the project's multi_token_icontains_q helper (see
+                // CLAUDE.md) used everywhere else free-text search
+                // happens, just a client-side version here since this
+                // panel filters values already loaded in the browser, not
+                // a server queryset. "сол хрус" -> ["сол","хрус"], both
+                // must appear somewhere in the value (any order) for it to
+                // match -- so it finds "Солети Хрус Хрус" (flagged live:
+                // the plain single-substring check before this needed the
+                // typed text to appear as one continuous run, so "сол
+                // хрус" itself never matched anything).
                 search.addEventListener('input', function () {
-                    var q = search.value.toLowerCase();
+                    var tokens = search.value.toLowerCase().split(/\s+/).filter(Boolean);
                     rows.forEach(function (row) {
-                        row.label.style.display = row.value.toLowerCase().indexOf(q) > -1 ? '' : 'none';
+                        var value = row.value.toLowerCase();
+                        var matches = tokens.every(function (t) { return value.indexOf(t) > -1; });
+                        row.label.style.display = matches ? '' : 'none';
                     });
                 });
                 setTimeout(function () { search.focus(); }, 0);
@@ -275,6 +288,19 @@
             layout: 'fitColumns',
             columns: columns,
             placeholder: options.placeholder || 'No data found.',
+            // Opt-in per table (options.height, e.g. 'calc(100vh - 320px)',
+            // same idea as the POS cart's own fixed height in sale_add.html).
+            // Tabulator only switches to virtual-DOM row rendering (only the
+            // rows actually scrolled into view get real DOM nodes) when the
+            // table has a bounded height -- without one it falls back to
+            // "auto" and renders every row for real, which is fine for a
+            // few hundred rows but froze the browser tab outright at
+            // 3,000-10,000 (confirmed live: even a trivial JS call timed
+            // out for minutes). Left off by default -- a short table looks
+            // worse with an empty scroll box than just growing with its
+            // content, so this is only worth it for tables expected to
+            // hold a lot of rows.
+            height: options.height || undefined,
             // Drag a header left/right to reorder columns -- applies to
             // every table built through this helper (see CLAUDE.md table
             // convention). Tabulator keeps track of the new order itself
@@ -393,8 +419,15 @@
      * @param extraButtons   optional array of extra DOM elements (e.g. an
      *                       "Enable Edit" icon-btn) to insert into the same
      *                       bar, before the Export button
+     * @param titleElement   optional DOM element (e.g. a page title +
+     *                       popup-tip) inserted as a third child between
+     *                       "Columns ▾" and the actions group -- lets a
+     *                       page fold its own heading into this bar instead
+     *                       of a separate block above the table (first
+     *                       used by products_list.html, to reclaim the
+     *                       vertical space a standalone header took up).
      */
-    global.attachTableExportToToolbar = function (table, cardSelector, filename, sheetName, extraButtons) {
+    global.attachTableExportToToolbar = function (table, cardSelector, filename, sheetName, extraButtons, titleElement) {
         table.on('tableBuilt', function () {
             var card = document.querySelector(cardSelector);
             if (!card) return;
@@ -421,6 +454,8 @@
                 bar.style.justifyContent = 'flex-end';
             }
             bar.classList.add('data-table-card__toolbar');
+
+            if (titleElement) bar.appendChild(titleElement);
 
             // Grouped into ONE wrapper (not appended to the bar individually)
             // -- the bar is `justify-content: space-between`, which spreads

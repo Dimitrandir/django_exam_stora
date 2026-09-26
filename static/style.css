@@ -84,6 +84,71 @@ body.pos-compact-nav main.main-wide {
 
 h1 { color: var(--primary-color); border-bottom: 2px solid var(--accent-color); padding-bottom: 10px; }
 
+/* Products List page -- same "trim the unused side padding" idea already
+   applied to the POS screen (body.pos-compact-nav above), just scoped to
+   this one page instead of every main-wide table page, since no one else
+   has asked for it yet (that scoping reasoning is spelled out on the POS
+   rule itself). Frees up real horizontal room for the grid ("има място",
+   flagged live) without changing Deliveries/Reports/etc, which haven't
+   been reviewed with this in mind. */
+main.products-page-main {
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+    padding-top: 1rem !important;
+}
+
+main.products-page-main .products-page-container {
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+}
+
+/* Focus mode -- "Full Screen" toggle in the table's own toolbar (see
+   products_list.html) adds this to <body>. Same idea as the POS screen's
+   body.pos-compact-nav (hide the site's own chrome, let the one thing
+   that matters use the space), just as an explicit on/off toggle instead
+   of always-on for this page. The table's own height (calc(100vh -
+   170px), set inline by Tabulator at build time -- see
+   initExcelStyleTable's height option) needs !important here to win over
+   that inline style; the toggle's click handler fires a synthetic
+   'resize' right after this class flips so Tabulator's own resize
+   listener (data-table.js) picks up the new size. */
+body.products-table-focus nav.navbar {
+    display: none;
+}
+
+body.products-table-focus main.products-page-main {
+    padding-top: 0.5rem !important;
+    margin-top: 0 !important;
+}
+
+body.products-table-focus #products-table {
+    height: calc(100vh - 60px) !important;
+}
+
+/* The standalone heading block above the grid was tried two ways (soft
+   restyle, then just a smaller plain h1) and both left "too much empty
+   space" above the table (flagged live) -- removed entirely. The title
+   now lives INSIDE the table's own toolbar bar instead (see
+   toolbarTitle in products_list.html's script, passed to
+   attachTableExportToToolbar) -- plain text, not an <h1>, so it never
+   picks up the global h1 rule's blue underline at all ("без синята
+   черта", explicitly asked for), sitting between "Columns ▾" and
+   "New Product"/Export. */
+.data-table-card__toolbar-title {
+    font-weight: 600;
+    color: var(--primary-color);
+    white-space: nowrap;
+}
+
+.data-table-card__toolbar-title .popup-tip__trigger {
+    vertical-align: middle;
+    margin-left: 0.25rem;
+}
+
+.products-page-header .popup-tip__trigger {
+    vertical-align: middle;
+}
+
 /* Tables */
 table {
     width: 100%;
@@ -1102,6 +1167,25 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
     text-align: center !important;
 }
 
+/* Per-column alignment overrides (flagged live) -- Name reads better
+   left-aligned (it's text, not a number to compare down the column);
+   Sell Price/Markup %/Stock back to right-aligned, the usual "digits line
+   up" reasoning for numeric columns (see the comment on the blanket
+   center rule above for why that convention was dropped project-wide for
+   this theme in the first place -- these three are an explicit
+   exception, not a full reversal). One class longer than the blanket
+   rule above (attribute selector adds a class-equivalent), so it wins
+   without depending on source order. */
+.tabulator.tabulator-classic .tabulator-tableholder .tabulator-table .tabulator-row .tabulator-cell[tabulator-field="name"] {
+    text-align: left !important;
+}
+
+.tabulator.tabulator-classic .tabulator-tableholder .tabulator-table .tabulator-row .tabulator-cell[tabulator-field="sell_price"],
+.tabulator.tabulator-classic .tabulator-tableholder .tabulator-table .tabulator-row .tabulator-cell[tabulator-field="markup_percent"],
+.tabulator.tabulator-classic .tabulator-tableholder .tabulator-table .tabulator-row .tabulator-cell[tabulator-field="quantity"] {
+    text-align: right !important;
+}
+
 /* The bottomCalc totals row (.tabulator-calcs-holder, e.g. Products'
    Code-column count) lives under .tabulator-footer, OUTSIDE
    .tabulator-tableholder -- the body-cell padding rule just above never
@@ -1109,9 +1193,24 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
    "unnecessarily thick" next to the now-thin header/body (flagged live).
    `.tabulator-row .tabulator-cell{padding:12px}` (2-class, no
    !important) is what sets that -- this beats it on specificity alone,
-   !important added to match the rest of this theme's approach. */
+   !important added to match the rest of this theme's approach. Trimmed
+   again (4px -> 2px vertical) on a second pass, still "too thick" at the
+   first size (flagged live). */
 .tabulator.tabulator-classic .tabulator-calcs-holder .tabulator-cell {
-    padding: 4px 12px !important;
+    padding: 2px 12px !important;
+}
+
+/* Trimming the cell's own padding (above) wasn't enough -- the vendor
+   theme also puts min-height:40px on the ROW wrapping it
+   (.tabulator-row{border-bottom:1px solid #dee2e6;min-height:40px},
+   1-class specificity, unrelated to table-sm), taller than the now-
+   28px-tall cell inside it, so the extra space just showed up as
+   leftover room below the number (flagged live from a screenshot:
+   "долната лента... продължава да е много дебела, от долната страна").
+   Matched to the cell's own height instead of guessing a smaller
+   min-height. */
+.tabulator.tabulator-classic .tabulator-calcs-holder .tabulator-row {
+    min-height: 28px !important;
 }
 
 .sale-form__categories {
@@ -2255,6 +2354,25 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
 .icon-btn__glyph--visibility {
     -webkit-mask: url("visibility.png") center / contain no-repeat;
     mask: url("visibility.png") center / contain no-repeat;
+    /* The circle itself is centered around this glyph's own box, but the
+       eye SHAPE inside visibility.png isn't centered within ITS canvas
+       (some blank margin at the bottom of the source image) -- sits
+       visibly low as a result (flagged live). Nudging the glyph box up a
+       touch is simpler than re-cropping the asset. */
+    transform: translateY(-1px);
+}
+
+/* Expand arrows -- "Full Screen" toggle next to the Columns ▾ eye
+   (products_list.html), hides the site nav so only the table stays on
+   screen. Hand-built (not a copied icon-font path) from 4 explicitly
+   mirrored L-shaped corner brackets, all 4 the same size/inset -- the
+   first attempt (a from-memory "standard" fullscreen path) turned out
+   NOT actually symmetric on closer inspection (the bottom-right bracket
+   was taller/shifted than the other three), which read as the icon
+   being clipped in one corner (flagged live). */
+.icon-btn__glyph--fullscreen {
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 4 L10 4 L10 6 L6 6 L6 10 L4 10 Z M20 4 L14 4 L14 6 L18 6 L18 10 L20 10 Z M4 20 L10 20 L10 18 L6 18 L6 14 L4 14 Z M20 20 L14 20 L14 18 L18 18 L18 14 L20 14 Z'/%3E%3C/svg%3E") center / contain no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 4 L10 4 L10 6 L6 6 L6 10 L4 10 Z M20 4 L14 4 L14 6 L18 6 L18 10 L20 10 Z M4 20 L10 20 L10 18 L6 18 L6 14 L4 14 Z M20 20 L14 20 L14 18 L18 18 L18 14 L20 14 Z'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 
 /* Same search icon as .pill-search-wrapper__icon below, reused via mask so

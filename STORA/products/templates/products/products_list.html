@@ -3,8 +3,8 @@
 {% block title %}STORA - Products List{% endblock %}
 {% load static cache_bust %}
 
-{% block main_class %}main-wide{% endblock %}
-{% block container_class %}container-fluid{% endblock %}
+{% block main_class %}main-wide products-page-main{% endblock %}
+{% block container_class %}container-fluid products-page-container{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
@@ -12,10 +12,6 @@
 
 {% block content %}
 
-<div class="mb-4">
-    <h1 class="h2 mb-1">Products List</h1>
-    <p class="text-muted mb-0">Overview of all products in stock. Click a row to open it, a column header to sort, use the ▾ to filter. Archived products are hidden -- show the "Archived" column (Columns ▾) to see them too.</p>
-</div>
 
 <div id="bulk-actions-bar" class="bulk-actions-bar d-none align-items-center gap-2 flex-wrap mb-2">
     <strong><span id="bulk-selected-count">0</span> selected</strong>
@@ -276,6 +272,15 @@ document.addEventListener('DOMContentLoaded', function () {
             // meaningful. Revisit (e.g. split into two calcs) then.
             title: 'Stock', field: 'quantity', width: 110, hozAlign: 'right', sorter: 'number',
             formatter: stockFormatter, bottomCalc: 'sum',
+            // The per-row formatter rounds piece products to whole units
+            // and only shows decimals for weight ones -- for the SUMMED
+            // total (a mix of both across the catalog) that distinction
+            // doesn't apply, so this always shows exactly 2 decimals
+            // instead (flagged live).
+            bottomCalcFormatter: function (cell) {
+                var v = Number(cell.getValue());
+                return isNaN(v) ? '' : v.toFixed(2);
+            },
         },
         // Read-only: a product can have several barcodes/suppliers, but a
         // grid needs a fixed number of columns. Editing them still happens
@@ -286,7 +291,16 @@ document.addEventListener('DOMContentLoaded', function () {
         {title: 'Supplier (Primary)', field: 'supplier_1', width: 160},
         {title: 'Alt Supplier 1', field: 'supplier_2', width: 160, visible: false},
         {title: 'Alt Supplier 2', field: 'supplier_3', width: 160, visible: false},
-    ], {placeholder: 'No products found.', selectableRows: true, persist: 'products-list'});
+    ], {
+        placeholder: 'No products found.', selectableRows: true, persist: 'products-list',
+        // Bounded height -> Tabulator's virtual DOM (see initExcelStyleTable's
+        // own comment) -- without this, a large catalog renders every row as
+        // a real DOM node at once and the tab locks up (confirmed live at
+        // 3,000+ products). The offset leaves room for the site nav, page
+        // title/description, and the Columns/Export toolbar bar above the
+        // grid.
+        height: 'calc(100vh - 170px)',
+    });
 
     // Row click opens the product -- disabled while Edit mode is on, since
     // every editable cell removes its own editor in that state (see below),
@@ -338,7 +352,87 @@ document.addEventListener('DOMContentLoaded', function () {
     // data-table.js's addColumnChooser() inserts just above the grid for
     // "Columns ▾"), as a round icon-btn instead of a plain outline button.
     var toolbarExtras = [addProductBtn, editToggleBtn].filter(Boolean);
-    attachTableExportToToolbar(table, '.data-table-card', 'products.xlsx', 'Products', toolbarExtras);
+
+    // Page title folded into the table's own toolbar (between "Columns ▾"
+    // and "New Product"/Export) instead of a separate heading block above
+    // the grid -- tried live to reclaim the vertical space that block took
+    // up ("много празно място", flagged live). No border/h1 styling at
+    // all here (plain span, not an <h1>) -- specifically asked for "без
+    // синята черта", so it doesn't inherit the global h1 rule's underline.
+    var toolbarTitle = document.createElement('span');
+    toolbarTitle.className = 'data-table-card__toolbar-title';
+    toolbarTitle.innerHTML =
+        'Products List' +
+        '<span class="popup-tip">' +
+        '<button type="button" class="popup-tip__trigger" aria-label="Explanation">?</button>' +
+        '<span class="popup-tip__bubble">Overview of all products in stock. Click a row to open it, a column header to sort, use the ▾ to filter. Archived products are hidden -- show the "Archived" column (Columns ▾) to see them too.</span>' +
+        '</span>';
+
+    attachTableExportToToolbar(table, '.data-table-card', 'products.xlsx', 'Products', toolbarExtras, toolbarTitle);
+
+    // Focus mode -- hides the site's own top nav (same idea as the POS
+    // screen's body.pos-compact-nav) and lets the table grow into that
+    // space, so only the toolbar + grid are left on screen ("да изчезва
+    // всичко и да остава само таблицата", flagged live). Sits right next
+    // to the "Columns ▾" eye icon ("до оченцето"), not in the New
+    // Product/Export group -- inserted here (after
+    // attachTableExportToToolbar registers its own tableBuilt listener)
+    // so this one fires after the bar/Columns ▾ widget already exist.
+    // .is-active (filled blue, same as Enable Edit) while on, specifically
+    // so the still-on state is visually loud enough that a manager
+    // notices they're in it and need to press it again to leave.
+    table.on('tableBuilt', function () {
+        var bar = document.querySelector('.data-table-card__toolbar');
+        var columnsWidget = bar ? bar.querySelector(':scope > .excel-filter') : null;
+        if (!bar || !columnsWidget) return;
+
+        var focusBtn = document.createElement('button');
+        focusBtn.type = 'button';
+        focusBtn.className = 'icon-btn icon-btn--outline icon-btn--sm';
+        focusBtn.innerHTML =
+            '<span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--fullscreen"></span></span>' +
+            '<span class="icon-btn__label">Full Screen</span>';
+
+        // Bar is `justify-content: space-between`, which only really works
+        // as "first item left, last item right" -- a loose sibling dropped
+        // in the middle doesn't stay next to Columns ▾, it gets its OWN
+        // equal share of the leftover space and ends up far away from it
+        // (flagged live: rendered clear across the bar instead of right
+        // next to the eye). Same fix as the actions group on the right:
+        // wrap both buttons in one flex group so they move as a pair.
+        var leftGroup = document.createElement('div');
+        leftGroup.className = 'data-table-card__toolbar-actions';
+        bar.insertBefore(leftGroup, columnsWidget);
+        leftGroup.appendChild(columnsWidget);
+        leftGroup.appendChild(focusBtn);
+
+        focusBtn.addEventListener('click', function () {
+            var on = document.body.classList.toggle('products-table-focus');
+            focusBtn.classList.toggle('is-active', on);
+            focusBtn.querySelector('.icon-btn__label').textContent = on ? 'Exit Full Screen' : 'Full Screen';
+            // Real browser fullscreen too (same pattern as the POS
+            // screen's own pos-fullscreen-btn), not just hiding the site
+            // nav ("да изораща целия браузер във фул скрийн", asked for
+            // live after seeing the nav-hide-only version). .catch(()=>{})
+            // because requestFullscreen rejects if the browser/OS denies
+            // it (e.g. no user-gesture context, or the user already left
+            // fullscreen some other way) -- not worth surfacing as an
+            // error, the nav stays hidden either way.
+            if (on) {
+                document.documentElement.requestFullscreen().catch(function () {});
+            } else if (document.fullscreenElement) {
+                document.exitFullscreen();
+            }
+            // The table's own height is a fixed calc(100vh - ...) set at
+            // build time (see initExcelStyleTable's height option) --
+            // hiding the nav changes how much room is actually available,
+            // but Tabulator doesn't know that on its own. It already
+            // recalculates on a real window 'resize' (see data-table.js),
+            // so firing a synthetic one reuses that same path instead of
+            // needing a second way to trigger the same recalculation.
+            window.dispatchEvent(new Event('resize'));
+        });
+    });
 
     // Archived products are hidden by default (this filter), no separate
     // checkbox -- showing the "Archived" column itself (via Columns ▾) is
