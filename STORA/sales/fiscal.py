@@ -31,12 +31,20 @@ class FiscalPrintError(Exception):
 def _post_command(cmd, cmd_data, timeout=15):
     """POSTs one ReqCommand to ECRCommApp and returns the ResCommand's
     CmdData dict on success. Raises FiscalPrintError on any transport,
-    service, or device-reported error."""
+    service, or device-reported error. Every error message names the COM
+    port that was used -- asked for live so a failure on screen says
+    exactly what was tried and where, not just that something failed (the
+    port is the one thing that's actually changed between working and
+    failing sessions so far, see the COM4->COM7 drift noted in
+    DEPLOYMENT.md/CLAUDE.md)."""
+    port = settings.FISCAL_COM_PORT
+    if settings.FISCAL_DEBUG:
+        logger.info('Fiscal: sending %s on %s -- %s', cmd, port, cmd_data)
     body = {
         'WebSrvCmd': {
             'CmdType': 'CmdCOMPort',
             'Cmd': {
-                'ComPortName': settings.FISCAL_COM_PORT,
+                'ComPortName': port,
                 'COMPortMsgList': [{'ReqCommand': {'Cmd': cmd, 'CmdData': cmd_data}}],
             },
         },
@@ -49,22 +57,24 @@ def _post_command(cmd, cmd_data, timeout=15):
         with urllib.request.urlopen(request, timeout=timeout) as response:
             result = json.loads(response.read().decode('utf-8'))
     except (urllib.error.URLError, OSError, ValueError) as exc:
-        raise FiscalPrintError(f'Could not reach the fiscal device service: {exc}') from exc
+        raise FiscalPrintError(f'{cmd} on {port}: could not reach the fiscal device service -- {exc}') from exc
 
     web_srv_cmd = result.get('WebSrvCmd', {})
     if web_srv_cmd.get('HasErr'):
-        raise FiscalPrintError(f'Fiscal device service error: {web_srv_cmd.get("Res")}')
+        raise FiscalPrintError(f'{cmd} on {port}: fiscal device service error -- {web_srv_cmd.get("Res")}')
 
     msg_list = web_srv_cmd.get('Cmd', {}).get('COMPortMsgList') or []
     if not msg_list:
-        raise FiscalPrintError('Fiscal device service returned an empty response.')
+        raise FiscalPrintError(f'{cmd} on {port}: fiscal device service returned an empty response.')
     msg = msg_list[0]
     if msg.get('HasErr'):
-        raise FiscalPrintError(f'Fiscal device COM error: {msg.get("Res")}')
+        raise FiscalPrintError(f'{cmd} on {port}: fiscal device COM error -- {msg.get("Res")}')
 
     res_command = msg.get('ResCommand', {})
     if not res_command.get('IsValid') or res_command.get('ErrorCode', 0) != 0:
-        raise FiscalPrintError(f'{cmd} failed -- device error code {res_command.get("ErrorCode")}')
+        raise FiscalPrintError(f'{cmd} on {port}: device error code {res_command.get("ErrorCode")}')
+    if settings.FISCAL_DEBUG:
+        logger.info('Fiscal: %s on %s succeeded -- %s', cmd, port, res_command.get('CmdData', {}))
     return res_command.get('CmdData', {})
 
 
@@ -73,25 +83,34 @@ def _wait_for_server(process, timeout=10):
     both the HTTP service AND the COM port are actually reachable, not just
     that the process started."""
     deadline = time.monotonic() + timeout
+    last_error = None
     while time.monotonic() < deadline:
         if process.poll() is not None:
             raise FiscalPrintError('ECRCommApp exited before it became ready.')
         try:
             _post_command('FDStatus', {}, timeout=2)
             return
-        except FiscalPrintError:
+        except FiscalPrintError as exc:
+            last_error = exc
             time.sleep(0.5)
-    raise FiscalPrintError('ECRCommApp did not become ready in time.')
+    raise FiscalPrintError(
+        f'ECRCommApp did not become ready in time on {settings.FISCAL_COM_PORT} '
+        f'(last attempt: {last_error}).'
+    )
 
 
 def _start_ecrcommapp():
     if not settings.FISCAL_ECRCOMMAPP_PATH:
         raise FiscalPrintError('FISCAL_ECRCOMMAPP_PATH is not configured.')
+    if settings.FISCAL_DEBUG:
+        logger.info('Fiscal: starting ECRCommApp (%s) for %s', settings.FISCAL_ECRCOMMAPP_PATH, settings.FISCAL_COM_PORT)
     try:
         process = subprocess.Popen([settings.FISCAL_ECRCOMMAPP_PATH])
     except OSError as exc:
-        raise FiscalPrintError(f'Could not start ECRCommApp: {exc}') from exc
+        raise FiscalPrintError(f'Could not start ECRCommApp ({settings.FISCAL_ECRCOMMAPP_PATH}): {exc}') from exc
     _wait_for_server(process)
+    if settings.FISCAL_DEBUG:
+        logger.info('Fiscal: ECRCommApp is ready on %s', settings.FISCAL_COM_PORT)
     return process
 
 
@@ -228,6 +247,8 @@ def attempt_print(sale):
     outcome on the sale itself (fiscal_status/fiscal_error/...) instead."""
     from .models import SaleAttributes
 
+    if settings.FISCAL_DEBUG:
+        logger.info('Fiscal: attempting print for Sale #%s on %s', sale.pk, settings.FISCAL_COM_PORT)
     try:
         result = print_fiscal_receipt(sale)
     except FiscalPrintError as exc:
@@ -244,6 +265,8 @@ def attempt_print(sale):
         sale.save(update_fields=[
             'fiscal_status', 'fiscal_error', 'fiscal_unic_sale_num', 'fiscal_receipt_number', 'fiscal_printed_at',
         ])
+        if settings.FISCAL_DEBUG:
+            logger.info('Fiscal: Sale #%s printed -- receipt #%s', sale.pk, result['receipt_number'])
 
 
 # Storno Reason values, confirmed live against the real ECRWebApp dropdown
@@ -316,6 +339,8 @@ def attempt_print_refund(refund):
     """Never raises -- same pattern as attempt_print, for RefundAttributes."""
     from .models import SaleAttributes
 
+    if settings.FISCAL_DEBUG:
+        logger.info('Fiscal: attempting storno print for Refund #%s on %s', refund.pk, settings.FISCAL_COM_PORT)
     try:
         unic_sale_num = print_fiscal_refund(refund)
     except FiscalPrintError as exc:
@@ -329,6 +354,8 @@ def attempt_print_refund(refund):
         refund.fiscal_unic_sale_num = unic_sale_num
         refund.fiscal_printed_at = timezone.now()
         refund.save(update_fields=['fiscal_status', 'fiscal_error', 'fiscal_unic_sale_num', 'fiscal_printed_at'])
+        if settings.FISCAL_DEBUG:
+            logger.info('Fiscal: Refund #%s storno printed -- УНП %s', refund.pk, unic_sale_num)
 
 
 # Daily report Item values, straight from the FDDailyRpt table in

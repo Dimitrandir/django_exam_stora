@@ -219,6 +219,15 @@ FISCAL_DEVICE_SERIAL = os.environ.get('FISCAL_DEVICE_SERIAL', '')
 FISCAL_DEVICE_FM_NUMBER = os.environ.get('FISCAL_DEVICE_FM_NUMBER', '')
 FISCAL_OPERATOR_NUM = os.environ.get('FISCAL_OPERATOR_NUM', '1')
 FISCAL_OPERATOR_PASSWORD = os.environ.get('FISCAL_OPERATOR_PASSWORD', '1')
+# Verbose step-by-step logging (every command sent to ECRCommApp + its
+# response) while live-testing against the real device -- asked for after a
+# multi-day debugging session where a failure only ever showed up as a
+# terse final error, with no visibility into which specific step it
+# happened on. Off by default (same reasoning as FISCAL_ENABLED -- a
+# normal cashier shift shouldn't get a noisy log for every sale). See the
+# 'STORA.sales.fiscal' logger entry below, which this depends on to
+# actually reach the console/log file.
+FISCAL_DEBUG = os.environ.get('FISCAL_DEBUG', 'False') == 'True'
 
 CELERY_BROKER_URL = 'redis://localhost:6379/0'
 CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
@@ -261,6 +270,18 @@ LOGGING = {
     },
     'loggers': {
         'django': {
+            'handlers': ['file', 'console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        # Root is WARNING (above), so this logger's own logger.info() calls
+        # -- the FISCAL_DEBUG step-by-step trace in STORA/sales/fiscal.py --
+        # would otherwise be silently dropped before ever reaching a
+        # handler. The trace calls themselves stay gated behind
+        # settings.FISCAL_DEBUG in the code, so this being always-INFO
+        # doesn't make a normal sale noisy -- fiscal.py just never calls
+        # logger.info() at all when that flag is off.
+        'STORA.sales.fiscal': {
             'handlers': ['file', 'console'],
             'level': 'INFO',
             'propagate': False,
