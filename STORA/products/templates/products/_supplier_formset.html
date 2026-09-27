@@ -3,12 +3,11 @@
 <div id="supplier-forms-container">
     {% for supplier_form in supplier_formset %}
     <div class="supplier-row" style="border:1px solid #ddd; border-radius:4px; padding:8px 12px; margin-bottom:8px;">
-        <strong>{% if forloop.first %}Primary Supplier{% else %}Alternate Supplier #<span class="supplier-index">{{ forloop.counter0 }}</span>{% endif %}</strong>
+        <strong class="supplier-index">{% if forloop.first %}Primary{% elif forloop.counter0 == 1 %}Secondary{% elif forloop.counter0 == 2 %}Tertiary{% else %}Alternate #{{ forloop.counter0 }}{% endif %}</strong>
         {{ supplier_form.id }}
         {{ supplier_form.position }}
         {{ supplier_form.supplier }}
         <p>
-            <label>Supplier</label>
             <div class="position-relative supplier-search-wrapper" style="max-width: 320px;">
                 <input type="text" class="form-control form-control-sm supplier-search-input" placeholder="Search supplier by name..." autocomplete="off"
                        value="{% if supplier_form.instance.supplier_id %}{{ supplier_form.instance.supplier.name }}{% endif %}">
@@ -27,12 +26,11 @@
 
 <template id="empty-supplier-form">
     <div class="supplier-row" style="border:1px solid #ddd; border-radius:4px; padding:8px 12px; margin-bottom:8px;">
-        <strong>Alternate Supplier #<span class="supplier-index"></span></strong>
+        <strong class="supplier-index"></strong>
         {{ supplier_formset.empty_form.id }}
         {{ supplier_formset.empty_form.position }}
         {{ supplier_formset.empty_form.supplier }}
         <p>
-            <label>Supplier</label>
             <div class="position-relative supplier-search-wrapper" style="max-width: 320px;">
                 <input type="text" class="form-control form-control-sm supplier-search-input" placeholder="Search supplier by name..." autocomplete="off">
                 <div class="global-search-results supplier-search-results"></div>
@@ -52,10 +50,12 @@
     // Same idea as the barcode formset: position 1 = primary, matching
     // whatever's first in the list; renumbering keeps the hidden position
     // input in sync with what's displayed.
+    var POSITION_LABELS = ['Primary', 'Secondary', 'Tertiary'];
+
     function renumber() {
         container.querySelectorAll('.supplier-row').forEach(function (row, i) {
-            var label = row.querySelector('strong');
-            label.textContent = i === 0 ? 'Primary Supplier' : 'Alternate Supplier #' + i;
+            var label = row.querySelector('.supplier-index');
+            label.textContent = POSITION_LABELS[i] || ('Alternate #' + i);
             var positionInput = row.querySelector('input[name$="-position"]');
             if (positionInput) positionInput.value = i + 1;
         });

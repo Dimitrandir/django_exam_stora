@@ -62,12 +62,13 @@
             <div class="field">
                 {{ form.category.label_tag }}
                 <div class="field__row">
-                    <div class="position-relative category-search-wrapper" style="max-width: 320px;">
-                        <input type="text" id="category-search-input" class="form-control form-control-sm" placeholder="Search category by name..." autocomplete="off"
+                    <div class="pill-search-wrapper pill-search-wrapper--with-browse category-search-wrapper" style="max-width: 320px;">
+                        <span class="pill-search-wrapper__icon"></span>
+                        <input type="text" id="category-search-input" class="pill-input" placeholder="Search category by name..." autocomplete="off"
                                value="{% if form.instance.category_id %}{{ form.instance.category.name }}{% endif %}">
+                        <button type="button" id="category-tree-btn" class="pill-search-wrapper__browse-btn" title="Browse categories as a tree">Browse</button>
                         <div id="category-search-results" class="global-search-results"></div>
                     </div>
-                    <button type="button" id="category-tree-btn" class="field__chip" title="Browse categories as a tree">Browse</button>
                     {{ form.category }}
                     <a href="{% url 'category_create' %}?popup=1" target="_blank" class="field__aux-link">+ New category</a>
                 </div>
@@ -199,7 +200,8 @@
 
     <div class="product-form__actions">
         <button type="submit">Update Product</button>
-        <a href="{% url 'product_list'%}">Cancel and back to Products</a>
+        <a href="{% url 'product_list'%}"
+           onclick="return confirm('Cancel these changes? Anything edited on this page will be discarded.');">Cancel and back to Products</a>
         {% if perms.products.delete_product %}<a href="{% url 'product_delete' product.pk %}" class="button_delete">DELETE this product</a>{% endif %}
     </div>
 </form>

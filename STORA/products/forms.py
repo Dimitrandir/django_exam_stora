@@ -82,6 +82,15 @@ class ProductForms(forms.ModelForm):
         # same fix already used in ProductInlineEditForm below.
         self.fields['category'].required = False
 
+        # The field itself is a `.field--tiny` narrow column (see
+        # product_create.html) -- the model's own choices ("Piece (pcs)"/
+        # "Weight (kg)") were overflowing that width, so this form
+        # specifically shows just "pcs"/"kg" instead. Only overrides what
+        # this ONE form's <select> renders, not Product.UNIT_TYPE_CHOICES
+        # itself -- get_unit_type_display() elsewhere (product detail page,
+        # history log, ...) keeps the fuller wording.
+        self.fields['unit_type'].choices = [(Product.PIECE, 'pcs'), (Product.WEIGHT, 'kg')]
+
         # Every product in this shop is VAT group "Б" (20%) unless someone
         # picks something else -- defaulting the dropdown to it saves
         # re-selecting the same thing on nearly every new product. Only for
@@ -183,6 +192,29 @@ class BarcodeForm(forms.ModelForm):
             # no manual input needed.
             'position': forms.HiddenInput(),
         }
+
+    def has_changed(self):
+        # renumber() (see _barcode_formset.html) keeps every barcode row's
+        # hidden `position` field in sync with its spot in the DOM,
+        # including the always-present blank "extra" row (formset extra=1
+        # -- a brand-new product starts with one ready-to-fill barcode
+        # field) whenever there's more than one row on the page. That
+        # renumbering alone makes `position` differ from its default
+        # (model default is 1; a 2nd/3rd row gets renumbered to 2/3), so
+        # Django's formset sees this still-empty row as "changed" and
+        # saves it as a genuine Barcode(code=None) row on every single
+        # product save -- confirmed live (an edited product quietly grew
+        # an extra blank barcode row each time it was saved). Only
+        # `position` differing, on a row that was never actually saved
+        # before, doesn't count as a real change. An EXISTING barcode
+        # (already has a pk) reporting only `position` changed is a
+        # legitimate reorder (e.g. an earlier row got deleted) and must
+        # still save normally -- this only short-circuits brand-new,
+        # still-blank rows.
+        changed = set(self.changed_data)
+        if not self.instance.pk and changed and changed <= {'position'}:
+            return False
+        return bool(changed)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

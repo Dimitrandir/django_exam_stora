@@ -8,6 +8,24 @@
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
+<style>
+    /* Signals the Sell/Delivery Price and Markup % bottom-calc cells are
+       clickable (cycles mean/min/max -- see cyclePriceStat in extra_js) --
+       confirmed live people click the number itself expecting exactly
+       this, not just the separate "Stat: Mean" toolbar button. */
+    #products-table .tabulator-calcs-bottom .tabulator-cell[tabulator-field="sell_price"],
+    #products-table .tabulator-calcs-bottom .tabulator-cell[tabulator-field="delivery_price"],
+    #products-table .tabulator-calcs-bottom .tabulator-cell[tabulator-field="markup_percent"] {
+        cursor: pointer;
+    }
+
+    /* The mean/min/max + "Products count:" labels run noticeably wider
+       than a bare number -- a touch smaller than the table's own body
+       text keeps them from crowding their columns (asked for live). */
+    #products-table .tabulator-calcs-bottom .tabulator-cell {
+        font-size: 0.78rem;
+    }
+</style>
 {% endblock %}
 
 {% block content %}
@@ -33,7 +51,7 @@
         <span class="icon-btn__label">Apply price</span>
     </button>
     {% endif %}
-    {% if perms.revisions.add_revisionattributes or perms.deliveries.add_deliveryattributes %}
+    {% if perms.revisions.add_revisionattributes or perms.deliveries.add_deliveryattributes or perms.orders.add_orderattributes %}
     <div class="d-flex align-items-center gap-1">
         <span class="text-muted small">Load into:</span>
         {% if perms.revisions.add_revisionattributes %}
@@ -43,6 +61,9 @@
         <button type="button" id="bulk-load-delivery-btn" class="btn btn-sm btn-outline-secondary">Delivery</button>
         <button type="button" id="bulk-load-writeoff-btn" class="btn btn-sm btn-outline-secondary">Write-off</button>
         <button type="button" id="bulk-load-scrap-btn" class="btn btn-sm btn-outline-secondary">Scrap</button>
+        {% endif %}
+        {% if perms.orders.add_orderattributes %}
+        <button type="button" id="bulk-load-order-btn" class="btn btn-sm btn-outline-secondary">Order</button>
         {% endif %}
     </div>
     {% endif %}
@@ -95,6 +116,31 @@ document.addEventListener('DOMContentLoaded', function () {
     function markupFormatter(cell) {
         var v = cell.getValue();
         return v === null || v === undefined || isNaN(v) ? '' : v.toFixed(1) + '%';
+    }
+
+    // Bottom-of-column stat for Sell/Delivery Price and Markup % -- cycles
+    // mean/min/max together (one shared mode, not per-column), asked for
+    // live so filtering down to one category and checking its price spread
+    // doesn't need three separate columns/screens. Tabulator's own built-in
+    // presets ('avg'/'min'/'max') do the actual math -- a CUSTOM bottomCalc
+    // function that reads other columns' values turned out unreliable
+    // against this vendored build elsewhere in the app (see
+    // _order_items_table.html's Value column), but these are plain
+    // single-column aggregates, the well-trodden native code path, not
+    // that same custom-function case.
+    var priceStatModes = ['avg', 'min', 'max'];
+    var priceStatLabels = {avg: 'mean', min: 'min', max: 'max'};
+    var priceStatIndex = 0;
+    var priceStatFields = ['sell_price', 'delivery_price', 'markup_percent'];
+
+    function priceBottomCalcFormatter(cell) {
+        var v = Number(cell.getValue());
+        return isNaN(v) ? '' : priceStatLabels[priceStatModes[priceStatIndex]] + ': ' + v.toFixed(2);
+    }
+
+    function markupBottomCalcFormatter(cell) {
+        var v = Number(cell.getValue());
+        return isNaN(v) ? '' : priceStatLabels[priceStatModes[priceStatIndex]] + ': ' + v.toFixed(1) + '%';
     }
 
     function getCookie(name) {
@@ -224,7 +270,15 @@ document.addEventListener('DOMContentLoaded', function () {
             width: 40, headerSort: false, headerFilter: false, hideable: false,
             cellClick: function (e, cell) { cell.getRow().toggleSelect(); },
         },
-        {title: 'Code', field: 'internal_code', width: 90, bottomCalc: 'count'},
+        {
+            title: 'Code', field: 'internal_code', width: 90, bottomCalc: 'count',
+            // Plain number, not "Products count: N" -- that wrapped onto two
+            // lines in this narrow a column (flagged live). The label still
+            // shows, just as a native hover tooltip instead of always-on text.
+            bottomCalcFormatter: function (cell) {
+                return '<span title="Products count">' + cell.getValue() + '</span>';
+            },
+        },
         {title: 'Name', field: 'name', width: 300},
         {title: 'Category', field: 'category', width: 130},
         {title: 'Tax Group', field: 'tax_group', width: 110, visible: false},
@@ -244,15 +298,16 @@ document.addEventListener('DOMContentLoaded', function () {
         },
         {
             title: 'Sell Price', field: 'sell_price', width: 90, hozAlign: 'right', sorter: 'number',
-            formatter: currencyFormatter,
+            formatter: currencyFormatter, bottomCalc: 'avg', bottomCalcFormatter: priceBottomCalcFormatter,
         },
         {
             title: 'Delivery Price', field: 'delivery_price', width: 90, hozAlign: 'right', sorter: 'number',
             formatter: currencyFormatter, visible: false,
+            bottomCalc: 'avg', bottomCalcFormatter: priceBottomCalcFormatter,
         },
         {
             title: 'Markup %', field: 'markup_percent', width: 80, hozAlign: 'right', sorter: 'number',
-            formatter: markupFormatter,
+            formatter: markupFormatter, bottomCalc: 'avg', bottomCalcFormatter: markupBottomCalcFormatter,
         },
         {
             title: 'Price List', field: 'price_list_name', width: 130,
@@ -313,7 +368,15 @@ document.addEventListener('DOMContentLoaded', function () {
         var cellEl = e.target.closest('.tabulator-cell');
         var field = cellEl ? cellEl.getAttribute('tabulator-field') : null;
         if (field === null || field === 'show_on_pos' || field === 'is_archived' || field === 'price_list_name') return;
-        window.location = row.getData().view_url;
+        // The bottom calcs "row" (mean/min/max, see cyclePriceStat below)
+        // fires this same rowClick event, but its row data is the
+        // aggregate result, not a real product -- no view_url on it at all,
+        // so clicking it navigated to /products/undefined (confirmed live).
+        // Guarding on the field name alone wouldn't cover this since the
+        // field names match real columns; checking the URL itself does.
+        var viewUrl = row.getData().view_url;
+        if (!viewUrl) return;
+        window.location = viewUrl;
     });
 
     // "New Product" moves into the table card's own toolbar too (used to
@@ -347,6 +410,41 @@ document.addEventListener('DOMContentLoaded', function () {
             '<span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--edit"></span></span>' +
             '<span class="icon-btn__label">Enable Edit</span>';
     }
+
+    // Cycles the Sell/Delivery Price + Markup % bottom-of-column stat
+    // between mean/min/max (see priceStatModes above) -- filter down to
+    // one category first (Excel-style column filter), then click directly
+    // on one of the three bottom calc cells to see its average markup,
+    // cheapest/priciest sell price, etc. No separate toolbar button for
+    // this any more (removed, asked for live) -- the cells themselves are
+    // the only trigger now.
+    function cyclePriceStat() {
+        priceStatIndex = (priceStatIndex + 1) % priceStatModes.length;
+        var mode = priceStatModes[priceStatIndex];
+        priceStatFields.forEach(function (field) {
+            var column = table.getColumn(field);
+            // updateDefinition() rebuilds the column from its definition --
+            // it does NOT know about visibility toggled live via Columns ▾
+            // (that's tracked separately from the stored definition), so
+            // without re-passing the CURRENT visibility explicitly here,
+            // this would silently re-hide Delivery Price if someone had
+            // shown it (see CLAUDE.md's own "Enable Edit" pitfall on
+            // exactly this).
+            column.updateDefinition({bottomCalc: mode, visible: column.isVisible()});
+        });
+    }
+
+    // Delegated (not bound to the calc cells directly) -- the bottom calc
+    // row's own cells get torn down and rebuilt by Tabulator on every
+    // recalculation (including the one cyclePriceStat itself just
+    // triggered), so a direct listener would only ever survive one click.
+    document.getElementById('products-table').addEventListener('click', function (e) {
+        var cell = e.target.closest('.tabulator-calcs-bottom .tabulator-cell');
+        if (!cell) return;
+        var field = cell.getAttribute('tabulator-field');
+        if (priceStatFields.indexOf(field) === -1) return;
+        cyclePriceStat();
+    });
 
     // Export to Excel moves into the table card's own toolbar (the bar
     // data-table.js's addColumnChooser() inserts just above the grid for
@@ -767,6 +865,10 @@ document.addEventListener('DOMContentLoaded', function () {
     var loadScrapBtn = document.getElementById('bulk-load-scrap-btn');
     if (loadScrapBtn) {
         loadScrapBtn.addEventListener('click', function () { loadInto('{% url "scrap_add" %}'); });
+    }
+    var loadOrderBtn = document.getElementById('bulk-load-order-btn');
+    if (loadOrderBtn) {
+        loadOrderBtn.addEventListener('click', function () { loadInto('{% url "order_new" %}'); });
     }
 });
 </script>

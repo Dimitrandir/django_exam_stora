@@ -472,6 +472,10 @@ class IngredientSearchView(LoginRequiredMixin, StaffPermissionRequiredMixin, Vie
                 'category': product.category.name if product.category else '',
                 'unit_type': product.unit_type,
                 'delivery_price': float(product.delivery_price) if product.delivery_price is not None else 0,
+                # Not used by the recipe-ingredient picker this endpoint was
+                # built for, but the Orders "+ Add product" picker (orders/
+                # _order_items_table.html) needs it for its In Stock column.
+                'quantity': float(product.quantity),
             }
             for product in products
         ]})

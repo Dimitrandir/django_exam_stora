@@ -71,11 +71,12 @@
                 <div class="field">
                     {{ form.category.label_tag }}
                     <div class="field__row">
-                        <div class="position-relative category-search-wrapper" style="max-width: 320px;">
-                            <input type="text" id="category-search-input" class="form-control form-control-sm" placeholder="Search category by name..." autocomplete="off">
+                        <div class="pill-search-wrapper pill-search-wrapper--with-browse category-search-wrapper" style="max-width: 320px;">
+                            <span class="pill-search-wrapper__icon"></span>
+                            <input type="text" id="category-search-input" class="pill-input" placeholder="Search category by name..." autocomplete="off">
+                            <button type="button" id="category-tree-btn" class="pill-search-wrapper__browse-btn" title="Browse categories as a tree">Browse</button>
                             <div id="category-search-results" class="global-search-results"></div>
                         </div>
-                        <button type="button" id="category-tree-btn" class="field__chip" title="Browse categories as a tree">Browse</button>
                         {{ form.category }}
                         <a href="{% url 'category_create' %}?popup=1" target="_blank" class="field__aux-link">+ New category</a>
                     </div>
@@ -193,7 +194,8 @@
         <div class="product-form__actions">
             <button type="submit">Save</button>
             <button type="submit" name="save_and_new" value="1">Save and New</button>
-            <a href="{% url 'product_list' %}">Cancel</a>
+            <a href="{% url 'product_list' %}"
+               onclick="return confirm('Cancel adding this product? Everything entered so far will be discarded.');">Cancel</a>
         </div>
 
     </form>

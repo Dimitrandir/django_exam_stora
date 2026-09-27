@@ -7,15 +7,27 @@
         {{ barcode_form.id }}
         {{ barcode_form.position }}
         <p>
-            {{ barcode_form.code.label_tag }}
             {{ barcode_form.code }}
             {{ barcode_form.code.errors }}
         </p>
+        {% if forloop.counter == 1 %}
         <label><small>{{ barcode_form.is_scale_code }} {{ barcode_form.is_scale_code.label }}</small></label>
         <span class="popup-tip">
             <button type="button" class="popup-tip__trigger" aria-label="Explanation">?</button>
             <span class="popup-tip__bubble">{{ barcode_form.is_scale_code.help_text }}</span>
         </span>
+        {% else %}
+        {% comment %}
+        Only the first barcode can be the "scale" one -- a product carries
+        at most one physical scale-printed barcode prefix (see
+        scale_barcode.py). Kept in the DOM here, just visually hidden, not
+        omitted outright -- an existing product that had this set on a
+        later row before this restriction existed would otherwise silently
+        lose that flag the next time this form is saved (an unrendered
+        BooleanField posts as unchecked/False, not "leave it alone").
+        {% endcomment %}
+        <div style="display:none;">{{ barcode_form.is_scale_code }}</div>
+        {% endif %}
         {% if barcode_form.instance.pk %}
         <br><label>{{ barcode_form.DELETE }} Remove this barcode</label>
         {% endif %}
@@ -25,16 +37,19 @@
 
 <button type="button" id="add-barcode-btn">+ Add another barcode</button>
 
+<!-- No is_scale_code here at all (unlike the loop above) -- "+ Add
+     another barcode" only ever appends a new row after whatever's already
+     there, so a JS-added row is never the first one and can never be a
+     scale barcode; nothing pre-existing to preserve either, since it's
+     brand new. -->
 <template id="empty-barcode-form">
     <div class="barcode-row" style="border:1px solid #ddd; border-radius:4px; padding:8px 12px; margin-bottom:8px;">
         <strong>Barcode #<span class="barcode-index"></span></strong>
         {{ barcode_formset.empty_form.id }}
         {{ barcode_formset.empty_form.position }}
         <p>
-            {{ barcode_formset.empty_form.code.label_tag }}
             {{ barcode_formset.empty_form.code }}
         </p>
-        <label><small>{{ barcode_formset.empty_form.is_scale_code }} {{ barcode_formset.empty_form.is_scale_code.label }}</small></label>
     </div>
 </template>
 
