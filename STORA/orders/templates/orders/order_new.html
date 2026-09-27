@@ -1,0 +1,189 @@
+{% extends 'base.html' %}
+
+{% block title %}STORA - New Order{% endblock %}
+{% load static cache_bust %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
+{% endblock %}
+
+{% block content %}
+
+<h1 class="h2 mb-3">New Order</h1>
+
+{% if form.errors %}
+<div class="form-errors">{{ form.errors }}</div>
+{% endif %}
+{% if error %}
+<div class="form-errors">{{ error }}</div>
+{% endif %}
+
+{% if preload %}
+<div class="alert alert-info">
+    {{ preload_count }} product{{ preload_count|pluralize }} carried over from the Products list -- pick a
+    supplier and period below, then Load; they'll be added to the grid alongside whatever that supplier's
+    own candidates turn out to be.
+</div>
+{% endif %}
+
+<section class="report-filter card shadow-sm border-0 rounded-4 mb-4">
+    <div class="card-body">
+        <form method="get" id="order-picker-form">
+            {% if preload %}<input type="hidden" name="preload" value="{{ preload }}">{% endif %}
+            <div class="d-flex flex-wrap align-items-start gap-4">
+                <div class="report-filter__field position-relative" style="max-width: 320px;">
+                    {{ form.supplier.label_tag }}
+                    <input type="text" id="supplier-search-input" class="form-control"
+                           placeholder="Search supplier by name..." autocomplete="off"
+                           value="{{ selected_supplier_name }}">
+                    <div id="supplier-search-results" class="global-search-results"></div>
+                    {{ form.supplier }}
+                </div>
+                <div class="report-filter__field">
+                    {{ form.supplier_position.label_tag }}
+                    <div class="position-chip-group">
+                        {% for checkbox in form.supplier_position %}
+                        <label class="position-chip" for="{{ checkbox.id_for_label }}">
+                            {{ checkbox.tag }}
+                            <span class="position-chip__label">{{ checkbox.choice_label }}</span>
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="d-flex flex-wrap align-items-end gap-3 mt-3">
+                <span class="fw-semibold">Load sales for period:</span>
+                <div class="report-filter__field">
+                    {{ form.start_date.label_tag }}
+                    {{ form.start_date }}
+                </div>
+                <div class="report-filter__field">
+                    {{ form.end_date.label_tag }}
+                    {{ form.end_date }}
+                </div>
+                <div class="report-filter__field">
+                    <label for="days-back-input">Days back</label>
+                    <input type="number" id="days-back-input" class="form-control" min="0"
+                           placeholder="e.g. 7" style="width: 110px;">
+                </div>
+                <button type="submit" class="btn btn-primary">Load</button>
+            </div>
+        </form>
+    </div>
+</section>
+
+{% if lines_data is not None %}
+<form method="post" id="order-form">
+    {% csrf_token %}
+    <input type="hidden" name="supplier" value="{{ form.supplier.value }}">
+    {% for position in form.supplier_position.value %}
+    <input type="hidden" name="supplier_position" value="{{ position }}">
+    {% endfor %}
+    <input type="hidden" name="start_date" value="{{ form.start_date.value }}">
+    <input type="hidden" name="end_date" value="{{ form.end_date.value }}">
+
+    {% include 'orders/_order_items_table.html' with show_order_nav_buttons=True %}
+</form>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'vendor/sheetjs/xlsx.full.min.js' %}"></script>
+<script src="{% static 'vendor/tabulator/tabulator.min.js' %}"></script>
+<script src="{% static_v 'js/data-table.js' %}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    // -- Supplier filter: same searchable picker as the Stock Movements
+    // report (see deliveries_report.html) -- copied verbatim, just a
+    // different hidden-field id.
+    (function () {
+        var searchInput = document.getElementById('supplier-search-input');
+        var resultsBox = document.getElementById('supplier-search-results');
+        var hiddenInput = document.getElementById('id_supplier');
+        var debounceTimer = null;
+        var currentController = null;
+
+        function renderResults(data) {
+            resultsBox.innerHTML = '';
+            data.results.forEach(function (supplier) {
+                var row = document.createElement('div');
+                row.className = 'global-search-result';
+                row.textContent = supplier.name;
+                row.addEventListener('click', function () {
+                    hiddenInput.value = supplier.id;
+                    searchInput.value = supplier.name;
+                    resultsBox.classList.remove('is-open');
+                });
+                resultsBox.appendChild(row);
+            });
+            resultsBox.classList.toggle('is-open', data.results.length > 0);
+        }
+
+        function runSearch() {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(function () {
+                if (currentController) currentController.abort();
+                currentController = new AbortController();
+                var params = new URLSearchParams();
+                var q = searchInput.value.trim();
+                if (q) params.set('q', q);
+                fetch('{% url "supplier_search" %}?' + params.toString(), {signal: currentController.signal})
+                    .then(function (r) { return r.json(); })
+                    .then(renderResults)
+                    .catch(function (e) { if (e.name !== 'AbortError') { /* ignore */ } });
+            }, 200);
+        }
+
+        searchInput.addEventListener('input', function () {
+            hiddenInput.value = '';
+            runSearch();
+        });
+        searchInput.addEventListener('focus', runSearch);
+        document.addEventListener('click', function (e) {
+            if (!e.target.closest('#supplier-search-input') && !e.target.closest('#supplier-search-results')) {
+                resultsBox.classList.remove('is-open');
+            }
+        });
+    })();
+
+    // "Days back" convenience field -- typing e.g. 7 sets From/To dates to
+    // [today - 7 days, today] itself, instead of picking both dates by
+    // hand every time (asked for live).
+    (function () {
+        var daysBackInput = document.getElementById('days-back-input');
+        var startInput = document.getElementById('id_start_date');
+        var endInput = document.getElementById('id_end_date');
+
+        function toIsoDate(d) {
+            return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        }
+
+        daysBackInput.addEventListener('input', function () {
+            var days = parseInt(daysBackInput.value, 10);
+            if (isNaN(days) || days < 0) return;
+            var today = new Date();
+            var start = new Date();
+            start.setDate(today.getDate() - days);
+            endInput.value = toIsoDate(today);
+            startInput.value = toIsoDate(start);
+        });
+    })();
+
+    {% if lines_data is not None and preload %}
+    // The preloaded products are already folded into lines_data server-side
+    // (see order_new view's extra_product_ids) by the time the grid below
+    // renders -- this just tidies the address bar afterward, same "clean up
+    // after yourself" convention as Deliveries' own ?preload= handling, so
+    // a page refresh at this point doesn't need to re-parse it.
+    (function () {
+        var params = new URLSearchParams(window.location.search);
+        params.delete('preload');
+        var newQuery = params.toString();
+        history.replaceState(null, '', window.location.pathname + (newQuery ? '?' + newQuery : ''));
+    })();
+    {% endif %}
+});
+</script>
+{% endblock %}

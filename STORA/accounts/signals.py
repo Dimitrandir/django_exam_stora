@@ -10,7 +10,7 @@ from STORA.accounts.models import Employee
 def create_default_groups(sender, **kwargs):
     if sender.name not in {
         'STORA.accounts', 'STORA.products', 'STORA.sales', 'STORA.deliveries', 'STORA.revisions',
-        'STORA.pricelists', 'STORA.reports',
+        'STORA.pricelists', 'STORA.reports', 'STORA.orders',
     }:
         return
 
@@ -83,8 +83,21 @@ def create_default_groups(sender, **kwargs):
             'change_revisionattributes',
         ]
     )
+    # Orders ("заявки" -- restock requests to a supplier) sit in the same
+    # job as deliveries/revisions for this role: Warehouse drafts/edits
+    # them day to day, same tier as a delivery. view_companyprofile lets
+    # them print the blank (it needs the shop's own name/BULSTAT/address)
+    # without being able to CHANGE that company info, which stays
+    # Manager-only same as everything else administrative.
+    order_permissions = Permission.objects.filter(
+        content_type__app_label='orders',
+        codename__in=['view_orderattributes', 'add_orderattributes', 'change_orderattributes', 'view_orderitems'],
+    ) | Permission.objects.filter(
+        content_type__app_label='accounts',
+        codename='view_companyprofile',
+    )
     warehouse_group.permissions.set(
-        list(product_permissions) + list(delivery_permissions) + list(revision_permissions)
+        list(product_permissions) + list(delivery_permissions) + list(revision_permissions) + list(order_permissions)
     )
 
 

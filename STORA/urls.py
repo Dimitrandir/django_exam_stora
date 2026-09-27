@@ -13,6 +13,7 @@ urlpatterns = [
     path('reports/', include('STORA.reports.urls')),
     path('revisions/', include('STORA.revisions.urls')),
     path('pricelists/', include('STORA.pricelists.urls')),
+    path('orders/', include('STORA.orders.urls')),
     path('core/clear-operation/', clear_cashier_operation, name='clear_cashier_operation'),
     path('search/', GlobalSearchView.as_view(), name='global_search'),
 ]

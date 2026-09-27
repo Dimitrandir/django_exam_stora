@@ -1,0 +1,46 @@
+{% extends 'base.html' %}
+
+{% block title %}STORA - Edit Order {{ order.order_number }}{% endblock %}
+{% load static cache_bust %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
+{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h2 mb-0">Edit Order {{ order.order_number }}</h1>
+    <a href="{% url 'order_details' order.pk %}" class="btn btn-outline-secondary">Cancel</a>
+</div>
+
+{% if error %}
+<div class="form-errors">{{ error }}</div>
+{% endif %}
+
+<p class="text-muted">
+    Supplier: <strong>{{ order.supplier.name }}</strong> --
+    {{ order.get_supplier_position_display }} supplier --
+    period {{ order.period_start|date:"d.m.Y" }} -- {{ order.period_end|date:"d.m.Y" }}
+    <br>Supplier and period can't be changed here -- only quantities. Start a new order to build against a different supplier/period.
+</p>
+
+<form method="post" id="order-form">
+    {% csrf_token %}
+    <input type="hidden" name="supplier" value="{{ order.supplier_id }}">
+    {% for position in order.get_position_list %}
+    <input type="hidden" name="supplier_position" value="{{ position }}">
+    {% endfor %}
+    <input type="hidden" name="start_date" value="{{ order.period_start|date:'Y-m-d' }}">
+    <input type="hidden" name="end_date" value="{{ order.period_end|date:'Y-m-d' }}">
+
+    {% include 'orders/_order_items_table.html' %}
+</form>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'vendor/sheetjs/xlsx.full.min.js' %}"></script>
+<script src="{% static 'vendor/tabulator/tabulator.min.js' %}"></script>
+<script src="{% static_v 'js/data-table.js' %}"></script>
+{% endblock %}

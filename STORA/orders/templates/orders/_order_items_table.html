@@ -1,0 +1,289 @@
+{% comment %}
+Shared by order_new.html and order_edit.html -- the editable candidate
+grid + AI-suggest button + hidden-input rebuild on submit. Included
+INSIDE a <form id="order-form" method="post"> that already contains
+hidden supplier/supplier_position(s)/start_date/end_date inputs (their
+exact source differs per page -- a live picker for order_new, fixed
+values for order_edit -- but this script only ever reads them off the
+DOM by name, not caring which). A multi-line {# #} comment was tried
+here first and leaked through as literal text (see CLAUDE.md -- {# #}
+only actually strips correctly on a single line in this Django version),
+{% endcomment %}
+
+{{ lines_data|json_script:"order-lines-data" }}
+<div id="order-hidden-inputs"></div>
+
+<!-- "Add product" -- lets the compose/edit grid pull in products beyond
+     whatever the period-based sales search surfaced (e.g. something new,
+     or something that just didn't sell in that window but still needs
+     reordering). Same trigram-search endpoint as the Deliveries grid's
+     own search-to-add (ingredient_search) -- not scoped to this order's
+     supplier on purpose, any product in the catalog can be added by hand. -->
+<div class="modal fade" id="orderProductPickerModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Add a Product</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <input type="text" id="order-product-picker-search" class="form-control mb-2"
+                       placeholder="Search product by name or code..." autocomplete="off">
+                <div id="order-product-picker-results" class="list-group" style="max-height: 340px; overflow-y: auto;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="order-items-table-card" class="data-table-card">
+    <div id="order-items-table" class="table-sm"></div>
+</div>
+
+<p class="mt-2 d-flex gap-2">
+    <button type="submit" class="btn button-save">Save Order</button>
+    {% if show_order_nav_buttons %}
+    <a href="{% url 'order_new' %}" class="btn btn-outline-secondary">Cancel</a>
+    <a href="{% url 'order_list' %}" class="btn btn-outline-secondary">Back to Orders</a>
+    {% endif %}
+</p>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var linesDataEl = document.getElementById('order-lines-data');
+    if (!linesDataEl) return;
+
+    // Same custom editor as Deliveries/Sales/Refunds -- Tabulator's
+    // built-in editor:'number' has no Enter-key handling (see CLAUDE.md).
+    function numberEditor(cell, onRendered, success, cancel, editorParams) {
+        var params = editorParams || {};
+        var input = document.createElement('input');
+        input.type = 'number';
+        if (params.min !== undefined) input.min = params.min;
+        input.step = params.step || 1;
+        input.style.padding = '4px';
+        input.style.width = '100%';
+        input.style.boxSizing = 'border-box';
+        input.style.height = '100%';
+        input.value = cell.getValue();
+        onRendered(function () { input.focus(); input.select(); });
+
+        function commit() {
+            var value = input.value === '' ? 0 : parseFloat(input.value);
+            if (params.min !== undefined && value < params.min) value = params.min;
+            success(value);
+        }
+
+        input.addEventListener('blur', commit);
+        input.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') { e.preventDefault(); commit(); }
+            else if (e.key === 'Escape') { cancel(); }
+        });
+        return input;
+    }
+
+    function quantityEditorParams(cell) {
+        return cell.getData().unit_type === 'weight' ? {min: 0, step: 0.001} : {min: 0, step: 1};
+    }
+
+    function quantityFormatter(cell) {
+        var v = Number(cell.getValue());
+        return isNaN(v) ? '' : v;
+    }
+
+    function moneyFormatter(cell) {
+        var v = Number(cell.getValue());
+        return isNaN(v) ? '' : v.toFixed(2);
+    }
+
+    // Value = Requested Qty x today's catalog delivery price. Kept as a
+    // real stored field (recomputed below on every Requested Qty edit --
+    // same "recalc a sibling field on commit" convention as the Deliveries/
+    // Sales grids, see CLAUDE.md) rather than a Tabulator custom bottomCalc
+    // function -- a custom bottomCalc reading other columns' live values
+    // turned out unreliable against the vendored build (silently summed to
+    // 0 no matter what was entered, flagged live), while a plain stored
+    // field + the built-in bottomCalc:'sum' preset is the exact same
+    // pattern the Orders list's own Total column already uses successfully.
+    function computeLineValue(rowData) {
+        return (Number(rowData.requested_qty) || 0) * (Number(rowData.delivery_price) || 0);
+    }
+
+    var table = initExcelStyleTable('#order-items-table', 'order-lines-data', [
+        {title: '#', field: 'internal_code', formatter: 'rownum', width: 50, hozAlign: 'center', headerFilter: false, hideable: false},
+        {title: 'Code', field: 'internal_code', width: 90, bottomCalc: 'count'},
+        {title: 'Product', field: 'name', widthGrow: 2},
+        {title: 'Barcode', field: 'barcode', width: 140},
+        {title: 'In Stock', field: 'in_stock', width: 110, hozAlign: 'right', formatter: quantityFormatter},
+        {title: 'Sold (period)', field: 'sold_qty', width: 120, hozAlign: 'right', formatter: quantityFormatter},
+        {title: '# of Sales', field: 'sale_count', width: 100, hozAlign: 'right'},
+        {
+            title: 'Requested Qty', field: 'requested_qty', width: 140, hozAlign: 'right',
+            formatter: quantityFormatter, editor: numberEditor, editorParams: quantityEditorParams,
+        },
+        {
+            title: 'Value', field: 'line_value', width: 130, hozAlign: 'right',
+            formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
+        },
+    ], {placeholder: 'No products found for this supplier/position.'});
+
+    // Seed line_value for every row already on the grid (server-rendered
+    // candidates, or pre-filled Requested Qty on the edit screen) -- the
+    // json_script data has no line_value of its own, so without this the
+    // Value column/bottom sum would read 0 until the first edit.
+    table.on('tableBuilt', function () {
+        table.getRows().forEach(function (row) {
+            row.update({line_value: computeLineValue(row.getData())});
+        });
+    });
+
+    // Requested Qty commits (real user edits, via numberEditor's Enter/blur
+    // -- see above) recompute this row's own line_value so the Value column
+    // and its bottomCalc sum stay in sync.
+    table.on('cellEdited', function (cell) {
+        if (cell.getField() !== 'requested_qty') return;
+        var row = cell.getRow();
+        row.update({line_value: computeLineValue(row.getData())});
+    });
+
+    function getCookie(name) {
+        var match = document.cookie.match('(?:^|; )' + name + '=([^;]*)');
+        return match ? decodeURIComponent(match[1]) : '';
+    }
+
+    // "+ Add product" -- opens orderProductPickerModal, searches the whole
+    // catalog (not scoped to this order's supplier) via the same
+    // ingredient_search endpoint the Deliveries grid uses, and adds a row
+    // with requested_qty defaulted to 1 -- sold_qty/sale_count stay 0 since
+    // this product never went through the period-based sales search.
+    // Clicking a product already on the grid just bumps its qty by 1
+    // instead of adding a duplicate row (same "scan it again" convention
+    // used everywhere else in the app).
+    (function () {
+        var modalEl = document.getElementById('orderProductPickerModal');
+        var searchInput = document.getElementById('order-product-picker-search');
+        var resultsBox = document.getElementById('order-product-picker-results');
+        var debounceTimer = null;
+        var currentController = null;
+
+        function renderResults(products) {
+            resultsBox.innerHTML = '';
+            if (!products.length) {
+                resultsBox.innerHTML = '<div class="list-group-item text-muted">No products found.</div>';
+                return;
+            }
+            products.forEach(function (product) {
+                var item = document.createElement('button');
+                item.type = 'button';
+                item.className = 'list-group-item list-group-item-action';
+                item.textContent = product.internal_code + ' -- ' + product.name;
+                item.addEventListener('click', function () { addProduct(product); });
+                resultsBox.appendChild(item);
+            });
+        }
+
+        function runSearch() {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(function () {
+                if (currentController) currentController.abort();
+                currentController = new AbortController();
+                var params = new URLSearchParams();
+                var q = searchInput.value.trim();
+                if (q) params.set('q', q);
+                fetch('{% url "ingredient_search" %}?' + params.toString(), {signal: currentController.signal})
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) { renderResults(data.results || []); })
+                    .catch(function (e) { if (e.name !== 'AbortError') { /* ignore */ } });
+            }, 200);
+        }
+
+        function addProduct(product) {
+            var existing = table.getRows().find(function (r) { return String(r.getData().product_id) === String(product.id); });
+            if (existing) {
+                var newQty = Number(existing.getData().requested_qty) + 1;
+                existing.update({requested_qty: newQty, line_value: newQty * Number(existing.getData().delivery_price || 0)});
+            } else {
+                var deliveryPrice = product.delivery_price || 0;
+                table.addRow({
+                    product_id: product.id,
+                    internal_code: product.internal_code,
+                    name: product.name,
+                    barcode: '',
+                    unit_type: product.unit_type,
+                    in_stock: product.quantity || 0,
+                    sold_qty: 0,
+                    sale_count: 0,
+                    requested_qty: 1,
+                    delivery_price: deliveryPrice,
+                    line_value: deliveryPrice,
+                });
+            }
+        }
+
+        modalEl.addEventListener('show.bs.modal', function () {
+            searchInput.value = '';
+            resultsBox.innerHTML = '';
+            runSearch();
+        });
+        searchInput.addEventListener('input', runSearch);
+    })();
+
+    var addProductBtn = document.createElement('button');
+    addProductBtn.type = 'button';
+    addProductBtn.className = 'icon-btn icon-btn--add icon-btn--sm';
+    addProductBtn.setAttribute('data-bs-toggle', 'modal');
+    addProductBtn.setAttribute('data-bs-target', '#orderProductPickerModal');
+    addProductBtn.innerHTML = '<span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--add"></span></span><span class="icon-btn__label">Add product</span>';
+
+    {% if ai_available %}
+    var aiBtn = document.createElement('button');
+    aiBtn.type = 'button';
+    aiBtn.className = 'icon-btn icon-btn--outline icon-btn--sm';
+    aiBtn.innerHTML = '<span class="icon-btn__label">AI Suggest Quantities</span>';
+    aiBtn.addEventListener('click', function () {
+        aiBtn.disabled = true;
+        aiBtn.querySelector('.icon-btn__label').textContent = 'Thinking…';
+        var body = new URLSearchParams();
+        body.set('supplier_id', document.querySelector('#order-form input[name="supplier"]').value);
+        document.querySelectorAll('#order-form input[name="supplier_position"]').forEach(function (el) {
+            body.append('supplier_position', el.value);
+        });
+        body.set('start_date', document.querySelector('#order-form input[name="start_date"]').value);
+        body.set('end_date', document.querySelector('#order-form input[name="end_date"]').value);
+        fetch('{% url "order_ai_suggest" %}', {
+            method: 'POST', body: body,
+            headers: {'X-CSRFToken': getCookie('csrftoken'), 'Content-Type': 'application/x-www-form-urlencoded'},
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (data.error) { alert(data.error); return; }
+                var byId = {};
+                (data.suggestions || []).forEach(function (s) { byId[s.product_id] = s.quantity; });
+                table.getRows().forEach(function (row) {
+                    var pid = row.getData().product_id;
+                    if (pid in byId) row.update({requested_qty: byId[pid]});
+                });
+            })
+            .catch(function () { alert('AI request failed (network error).'); })
+            .finally(function () {
+                aiBtn.disabled = false;
+                aiBtn.querySelector('.icon-btn__label').textContent = 'AI Suggest Quantities';
+            });
+    });
+    attachTableExportToToolbar(table, '#order-items-table-card', 'order_items.xlsx', 'Order Items', [addProductBtn, aiBtn]);
+    {% else %}
+    attachTableExportToToolbar(table, '#order-items-table-card', 'order_items.xlsx', 'Order Items', [addProductBtn]);
+    {% endif %}
+
+    document.getElementById('order-form').addEventListener('submit', function () {
+        var container = document.getElementById('order-hidden-inputs');
+        container.innerHTML = '';
+        table.getData().forEach(function (row) {
+            var input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'qty_' + row.product_id;
+            input.value = row.requested_qty;
+            container.appendChild(input);
+        });
+    });
+});
+</script>

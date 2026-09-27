@@ -31,13 +31,47 @@ uses, independent of whether this delivery gets submitted at all.
                placeholder="Search product by name or code, or scan a barcode..." autocomplete="off">
         <div id="delivery-item-search-results" class="global-search-results"></div>
     </div>
+    <div class="pill-search-wrapper pill-search-wrapper--with-browse" style="max-width: 260px;">
+        <span class="pill-search-wrapper__icon"></span>
+        <input type="text" id="delivery-item-category-input" class="pill-input"
+               placeholder="Filter by category..." autocomplete="off">
+        <button type="button" id="delivery-item-category-tree-btn" class="pill-search-wrapper__browse-btn" title="Browse categories as a tree">Browse</button>
+        <div id="delivery-item-category-results" class="global-search-results"></div>
+    </div>
     {% if movement_type == 'DELIVERY' %}
     <a href="{% url 'product_create' %}?popup=1" target="_blank" class="icon-btn icon-btn--add icon-btn--sm">
         <span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--add"></span></span>
         <span class="icon-btn__label">New product</span>
     </a>
+    <button type="button" class="pill-btn pill-btn--outline" data-bs-toggle="modal" data-bs-target="#orderPickerModal">
+        Delivery from Order
+    </button>
     {% endif %}
 </div>
+
+{% if movement_type == 'DELIVERY' %}
+<!-- "Delivery from Order" -- picks one of the orders app's saved
+     "заявки" and loads its whole product/quantity list into this grid in
+     one go, plus sets the Supplier field to match (a delivery from an
+     order is, definitionally, from that order's supplier). Short list
+     (last 50 orders, see order_picker_json), filtered client-side --
+     reasonable at this shop's scale, see that view's own docstring. -->
+<div class="modal fade" id="orderPickerModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Load a Delivery from an Order</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <input type="text" id="order-picker-search" class="form-control mb-2"
+                       placeholder="Search order number or supplier..." autocomplete="off">
+                <div id="order-picker-results" class="list-group" style="max-height: 340px; overflow-y: auto;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 
 <!-- Discount tool -- pure price-adjustment convenience (rewrites Unit
      Price/Line Total on the affected rows, same as typing new values by
@@ -121,6 +155,7 @@ uses, independent of whether this delivery gets submitted at all.
 <script src="{% static 'vendor/sheetjs/xlsx.full.min.js' %}"></script>
 <script src="{% static 'vendor/tabulator/tabulator.min.js' %}"></script>
 <script src="{% static_v 'js/data-table.js' %}"></script>
+<script src="{% static_v 'js/category-tree-picker.js' %}"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     // The whole items section (search box + grid) lives inside the
@@ -766,6 +801,172 @@ document.addEventListener('DOMContentLoaded', function () {
         history.replaceState(null, '', window.location.pathname + (newQuery ? '?' + newQuery : ''));
     });
 
+    {% if movement_type == 'DELIVERY' %}
+    // -- "Delivery from Order" modal -- fetches the short recent-orders
+    // list once the modal opens, filters it client-side as you type, and
+    // on picking one fetches that order's own items and loads them straight
+    // into this same grid via the existing buildRow/addRow path (same one
+    // Search-to-add and the barcode scanner use) -- unlike preload above,
+    // this sets a real quantity per row (the order's requested amount),
+    // not 0, and it also sets the Supplier field to match.
+    (function () {
+        var modalEl = document.getElementById('orderPickerModal');
+        var searchInput = document.getElementById('order-picker-search');
+        var resultsBox = document.getElementById('order-picker-results');
+        var allOrders = [];
+
+        function renderResults(orders) {
+            resultsBox.innerHTML = '';
+            if (!orders.length) {
+                resultsBox.innerHTML = '<div class="list-group-item text-muted">No orders found.</div>';
+                return;
+            }
+            orders.forEach(function (order) {
+                var item = document.createElement('button');
+                item.type = 'button';
+                item.className = 'list-group-item list-group-item-action';
+                item.textContent = order.order_number + ' -- ' + order.supplier + ' (' + order.order_date + ', ' + order.item_count + ' items)';
+                item.addEventListener('click', function () { loadOrder(order.id); });
+                resultsBox.appendChild(item);
+            });
+        }
+
+        function filterResults() {
+            var q = searchInput.value.trim().toLowerCase();
+            if (!q) { renderResults(allOrders); return; }
+            renderResults(allOrders.filter(function (o) {
+                return o.order_number.toLowerCase().indexOf(q) > -1 || o.supplier.toLowerCase().indexOf(q) > -1;
+            }));
+        }
+
+        function loadOrder(orderId) {
+            fetch('{% url "order_items_json" 0 %}'.replace('/0/', '/' + orderId + '/'))
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    var supplierInput = document.getElementById('id_supplier');
+                    var supplierSearchInput = document.getElementById('supplier-search-input');
+                    if (supplierInput) supplierInput.value = data.supplier_id;
+                    if (supplierSearchInput) supplierSearchInput.value = data.supplier_name;
+
+                    data.items.forEach(function (item) {
+                        var product = productsById[String(item.product_id)];
+                        if (!product) return;
+                        var existing = table.getRows().find(function (r) { return String(r.getData().delivery_item) === String(product.id); });
+                        if (existing) {
+                            existing.update({delivery_quantity: item.quantity});
+                            recalcRow(existing, 'price_at_delivery');
+                        } else {
+                            table.addRow(buildRow(product, {delivery_quantity: item.quantity}));
+                        }
+                    });
+
+                    var modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+                    modal.hide();
+                })
+                .catch(function () { alert('Could not load that order (network error).'); });
+        }
+
+        modalEl.addEventListener('show.bs.modal', function () {
+            searchInput.value = '';
+            resultsBox.innerHTML = '<div class="list-group-item text-muted">Loading…</div>';
+            fetch('{% url "order_picker_json" %}')
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    allOrders = data.results || [];
+                    renderResults(allOrders);
+                })
+                .catch(function () {
+                    resultsBox.innerHTML = '<div class="list-group-item text-danger">Could not load orders (network error).</div>';
+                });
+        });
+        searchInput.addEventListener('input', filterResults);
+    })();
+    {% endif %}
+
+    // -- Category filter for the product search above -- narrows the same
+    // ingredient_search results to one category (see IngredientSearchView's
+    // own `category` param, already there for the recipe-ingredient picker,
+    // just unused here until now). Same search-box + "Browse" tree modal
+    // pattern as the Product form's own Category field/the Products grid's
+    // bulk-category picker (products_list.html) -- reuses the shared
+    // category-tree-picker.js component rather than a flat <select>
+    // (Category.parent nests arbitrarily deep). `selectedCategoryId` (read
+    // by runSearch below) is what actually scopes the product search --
+    // the picker only ever tracks id, not name, since ingredient_search
+    // filters by id, not name. --
+    var selectedCategoryId = '';
+    (function () {
+        var categoryInput = document.getElementById('delivery-item-category-input');
+        var categoryResultsBox = document.getElementById('delivery-item-category-results');
+        var categoryDebounceTimer = null;
+        var categorySearchController = null;
+
+        function setSelectedCategory(id, name) {
+            selectedCategoryId = id || '';
+            if (name !== undefined) categoryInput.value = name;
+            runSearch();
+        }
+
+        function renderCategoryResults(data) {
+            categoryResultsBox.innerHTML = '';
+            if (!data.results.length) {
+                var empty = document.createElement('div');
+                empty.className = 'global-search-empty';
+                empty.textContent = 'No matches';
+                categoryResultsBox.appendChild(empty);
+                categoryResultsBox.classList.add('is-open');
+                return;
+            }
+            data.results.forEach(function (category) {
+                var row = document.createElement('div');
+                row.className = 'global-search-result';
+                row.textContent = category.name;
+                row.addEventListener('click', function () {
+                    setSelectedCategory(category.id, category.name);
+                    categoryResultsBox.classList.remove('is-open');
+                });
+                categoryResultsBox.appendChild(row);
+            });
+            categoryResultsBox.classList.add('is-open');
+        }
+
+        function runCategorySearch() {
+            clearTimeout(categoryDebounceTimer);
+            categoryDebounceTimer = setTimeout(function () {
+                if (categorySearchController) categorySearchController.abort();
+                categorySearchController = new AbortController();
+                var params = new URLSearchParams();
+                var q = categoryInput.value.trim();
+                if (q) params.set('q', q);
+                fetch('{% url "category_search" %}?' + params.toString(), {signal: categorySearchController.signal})
+                    .then(function (r) { return r.json(); })
+                    .then(renderCategoryResults)
+                    .catch(function (e) { if (e.name !== 'AbortError') { /* transient network error -- ignore */ } });
+            }, 200);
+        }
+
+        categoryInput.addEventListener('input', function () {
+            // Just invalidates the old selection while retyping -- doesn't
+            // call runSearch() here (unlike an actual pick below), so the
+            // PRODUCT search dropdown doesn't pop open while the clerk is
+            // still typing into this, unrelated, field.
+            selectedCategoryId = '';
+            runCategorySearch();
+        });
+        categoryInput.addEventListener('focus', runCategorySearch);
+        document.addEventListener('click', function (e) {
+            if (!e.target.closest('#delivery-item-category-input') && !e.target.closest('#delivery-item-category-results')) {
+                categoryResultsBox.classList.remove('is-open');
+            }
+        });
+
+        document.getElementById('delivery-item-category-tree-btn').addEventListener('click', function () {
+            openCategoryTreePicker(function (category) {
+                setSelectedCategory(category.id, category.name);
+            });
+        });
+    })();
+
     // -- Search-to-add, same debounced trigram-search pattern as the recipe
     // ingredient picker (_recipe_formset.html) --
     var searchInput = document.getElementById('delivery-item-search-input');
@@ -884,6 +1085,7 @@ document.addEventListener('DOMContentLoaded', function () {
             var params = new URLSearchParams();
             var q = searchInput.value.trim();
             if (q) params.set('q', q);
+            if (selectedCategoryId) params.set('category', selectedCategoryId);
             fetch('{% url "ingredient_search" %}?' + params.toString(), {signal: currentController.signal})
                 .then(function (r) { return r.json(); })
                 .then(renderResults)

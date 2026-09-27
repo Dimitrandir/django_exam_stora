@@ -99,6 +99,24 @@
                 </div>
             </section>
         </div>
+
+        {% if perms.orders.view_orderattributes %}
+        <div class="col-md-4">
+            <section class="report-section card shadow-sm border-0 rounded-4 h-100">
+                <div class="card-body">
+                    <header class="section-header mb-3">
+                        <h2 class="h4 mb-0">Orders</h2>
+                    </header>
+                    <ul class="list-unstyled d-flex flex-column gap-2 mb-0">
+                        <li><a href="{% url 'order_list' %}" class="btn btn-outline-primary w-100 text-start">All orders</a></li>
+                        {% if perms.orders.add_orderattributes %}
+                        <li><a href="{% url 'order_new' %}" class="btn btn-primary w-100 text-start">New order</a></li>
+                        {% endif %}
+                    </ul>
+                </div>
+            </section>
+        </div>
+        {% endif %}
     </div>
 </section>
 {% endblock %}
