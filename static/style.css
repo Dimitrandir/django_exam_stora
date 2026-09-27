@@ -244,6 +244,71 @@ button, .btn-primary { background-color: var(--accent-color); color: white; }
     opacity: 0.6;
 }
 
+/* Supplier-position picker (Orders "New Order" filter panel) -- Django's
+   default CheckboxSelectMultiple renders plain <input type="checkbox">
+   elements, which `.report-filter__field input` (width:100%, padding,
+   border) inflates into a full-width box -- a huge native checkbox
+   instead of a compact control (flagged live from a screenshot). The
+   checkboxes stay real and keep submitting normally; only their box is
+   hidden (0-size, not display:none, so they stay focusable/tabbable) and
+   the sibling <span> is styled as the visible pill, selected state
+   picking up the brand cyan->blue gradient reserved for primary/active
+   state (see STYLES.md) -- same stadium-pill language as .pos-toggle-btn
+   above, just a multi-select variant of it. */
+.position-chip-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.position-chip {
+    display: inline-flex;
+    align-items: center;
+    position: relative;
+    cursor: pointer;
+}
+
+.position-chip input[type="checkbox"] {
+    position: absolute;
+    width: 0;
+    height: 0;
+    padding: 0;
+    border: 0;
+    opacity: 0;
+}
+
+.position-chip__label {
+    display: inline-flex;
+    align-items: center;
+    height: 48px;
+    padding: 0 1.1rem;
+    border-radius: 999px;
+    border: 1.5px solid #d7dee5;
+    background: #ffffff;
+    color: var(--primary-color);
+    font-size: 0.875rem;
+    font-weight: 600;
+    white-space: nowrap;
+    user-select: none;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.position-chip:hover .position-chip__label {
+    border-color: var(--brand-cyan-mid);
+}
+
+.position-chip input:checked ~ .position-chip__label {
+    background: linear-gradient(135deg, var(--brand-cyan-mid), var(--brand-blue-deep));
+    border-color: var(--brand-blue-deep);
+    color: #ffffff;
+    box-shadow: 0 4px 10px rgba(43, 111, 209, 0.28);
+}
+
+.position-chip input:focus-visible ~ .position-chip__label {
+    outline: 2px solid var(--brand-blue-deep);
+    outline-offset: 2px;
+}
+
 
 th:last-child {
     text-align: center;
@@ -472,7 +537,7 @@ input[type="text"], input[type="number"], input[type="email"], select, textarea 
 }
 
 .delivery-form__row > .delivery-form__field--supplier {
-    flex-basis: 280px;
+    flex: 1.3 1 320px;
 }
 
 .delivery-form__field label {
@@ -487,6 +552,17 @@ input[type="text"], input[type="number"], input[type="email"], select, textarea 
     display: flex;
     align-items: center;
     gap: 0.6rem;
+}
+
+/* The "+ New supplier" bubble must never shrink -- .icon-btn expands on
+   hover/focus to show its full label (see .icon-btn__label's max-width
+   transition), and a flex-shrink default of 1 let this row squeeze it
+   back down as it tried to grow, clipping the label mid-word ("New
+   supplie") since .icon-btn itself has overflow:hidden -- flagged live
+   from a screenshot. The search pill (flex-grow-1 already) is the one
+   meant to give up space here, never this button. */
+.delivery-form__supplier-row .icon-btn {
+    flex-shrink: 0;
 }
 
 /* Document Number's live digit counter -- invoice numbers are always 10
@@ -2568,6 +2644,54 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
     color: var(--brand-blue-deep);
 }
 
+/* "x" clear button -- attached by static/js/search-clear.js to every
+   live-search input across the app (any input right before a
+   .global-search-results dropdown), asked for live so a typed query is
+   always one tap to clear instead of holding backspace. Only shown once
+   the field actually has something typed (.is-visible, toggled by that
+   script) -- an empty field has nothing to clear. Extra right padding on
+   the input itself (.has-clear-btn/--browse, also added by that script)
+   keeps typed text from running under the button. */
+.search-clear-btn {
+    position: absolute;
+    top: 50%;
+    right: 0.6rem;
+    transform: translateY(-50%);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 1.15rem;
+    height: 1.15rem;
+    border: none;
+    border-radius: 50%;
+    background: #c7ced6;
+    color: #ffffff;
+    font-size: 0.85rem;
+    line-height: 1;
+    padding: 0;
+    cursor: pointer;
+}
+
+.search-clear-btn:hover {
+    background: #99a3ad;
+}
+
+.search-clear-btn.is-visible {
+    display: flex;
+}
+
+.has-clear-btn {
+    padding-right: 2rem !important;
+}
+
+/* Category pickers (.pill-search-wrapper--with-browse) already reserve
+   4.4rem of right padding for the "Browse" pill -- widen it a touch more
+   so typed text doesn't run under the clear button sitting just left of
+   Browse. */
+.has-clear-btn--browse {
+    padding-right: 5.4rem !important;
+}
+
 /* Plain pill-shaped button for a handful of textual (non icon-btn) actions
    -- e.g. the Delivery items grid's Delete Line/Discount buttons, moved
    below the table (flagged live) -- same stadium shape as .pill-input/
@@ -2672,4 +2796,56 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
 
 .icon-btn--sm .icon-btn__label {
     font-size: 0.8rem;
+}
+
+/* Orders "заявка" print blank (order_details.html) -- two versions of the
+   same page share one URL: the on-screen review (full Tabulator grid,
+   period/position used to build it) and the printed form (just the two
+   companies/order number/date header + a plain name/barcode/qty table,
+   per the user's own spec -- the sales-analytics columns are a compose-
+   time aid, not something a supplier needs to see on the actual order).
+   Toggled with a plain print-only/screen-only pair instead of trying to
+   make the Tabulator grid itself print well -- a virtualized/JS-built
+   grid is a bad bet for print layout (page breaks, no guarantee every
+   row has a real DOM node at print time), a plain <table> is not. */
+.order-print__print-only {
+    display: none;
+}
+
+@media print {
+    .order-print__screen-only {
+        display: none !important;
+    }
+    .order-print__print-only {
+        display: block;
+    }
+    nav.navbar, footer, .btn {
+        display: none !important;
+    }
+}
+
+.order-print__header {
+    display: flex;
+    justify-content: space-between;
+    gap: 2rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+}
+
+.order-print__parties {
+    display: flex;
+    gap: 3rem;
+    flex-wrap: wrap;
+}
+
+.order-print__table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.order-print__table th,
+.order-print__table td {
+    border: 1px solid #ddd;
+    padding: 6px 10px;
+    text-align: left;
 }
