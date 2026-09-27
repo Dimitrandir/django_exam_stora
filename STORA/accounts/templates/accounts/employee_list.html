@@ -5,6 +5,10 @@
 
 <h1>Employees List</h1>
 
+{% if perms.accounts.change_companyprofile %}
+<p><a href="{% url 'company_profile_edit' %}">My Company</a></p>
+{% endif %}
+
 <table>
     <thead>
     <tr>

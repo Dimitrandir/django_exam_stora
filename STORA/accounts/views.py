@@ -2,8 +2,8 @@ from django.contrib.auth.views import LoginView, LogoutView
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.urls import reverse_lazy
 from django.views.generic import CreateView, ListView, DetailView, UpdateView, DeleteView
-from STORA.accounts.forms import CustomUserCreationForm
-from STORA.accounts.models import Employee
+from STORA.accounts.forms import CustomUserCreationForm, CompanyProfileForm
+from STORA.accounts.models import Employee, CompanyProfile
 from STORA.core.mixins import StaffPermissionRequiredMixin
 
 
@@ -55,3 +55,20 @@ class EmployeeDeleteView(LoginRequiredMixin, StaffPermissionRequiredMixin, Delet
     template_name = 'accounts/employee_confirm_delete.html'
     success_url = reverse_lazy('employee_list')
     context_object_name = 'employee'
+
+
+class CompanyProfileUpdateView(LoginRequiredMixin, StaffPermissionRequiredMixin, UpdateView):
+    """Single-row "My Company" settings screen (name/BULSTAT/VAT/address),
+    printed on the Orders "заявка" blank (see STORA.orders) -- Manager-only,
+    same tier as editing an employee's role. No separate create/list view:
+    get_object() always resolves to the one CompanyProfile.get_solo() row,
+    creating it on first visit."""
+
+    permission_required = 'accounts.change_companyprofile'
+    model = CompanyProfile
+    form_class = CompanyProfileForm
+    template_name = 'accounts/company_profile_edit.html'
+    success_url = reverse_lazy('employee_list')
+
+    def get_object(self, queryset=None):
+        return CompanyProfile.get_solo()

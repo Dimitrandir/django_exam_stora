@@ -2,6 +2,8 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.forms import UserCreationForm
 from django import forms
 
+from STORA.accounts.models import CompanyProfile
+
 User = get_user_model()
 
 class CustomUserCreationForm(UserCreationForm):
@@ -24,3 +26,9 @@ class CustomUserCreationForm(UserCreationForm):
             'last_name': forms.TextInput(attrs={'placeholder': 'Last name'}),
             'phone': forms.TextInput(attrs={'placeholder': '+359'}),
         }
+
+
+class CompanyProfileForm(forms.ModelForm):
+    class Meta:
+        model = CompanyProfile
+        fields = ['name', 'bulstat', 'vat_n', 'address']
