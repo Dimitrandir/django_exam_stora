@@ -114,7 +114,8 @@
 
         <footer class="page-actions">
             <button type="submit" class="button-save">{% if is_write_off %}Complete Write-off{% elif is_scrap %}Complete Scrap{% else %}Complete Delivery{% endif %}</button>
-            <a href="{% url 'clear_cashier_operation' %}" class="button-cancel">Cancel</a>
+            <a href="{% url 'clear_cashier_operation' %}" class="button-cancel"
+               onclick="return confirm('Cancel this delivery? Everything entered so far will be discarded.');">Cancel</a>
         </footer>
     </form>
 
