@@ -1068,7 +1068,11 @@ class FiscalPrintReceiptTests(TestCase):
 
         barcode_call = next(call for call in mock_post.call_args_list if call.args[0] == 'FDPrintBarcode')
         self.assertEqual(barcode_call.args[1]['Data'], str(self.sale.pk))
-        self.assertEqual(barcode_call.args[1]['Type'], 'Code128')
+        # The device's own numeric barcode-type code, not the readable name
+        # "Code128" -- confirmed live (2026-09-28) that the name string
+        # made the real device reject the command outright.
+        self.assertEqual(barcode_call.args[1]['Type'], '3')
+        self.assertIs(barcode_call.args[1]['PrnText'], True)
 
     @override_settings(**FISCAL_SETTINGS)
     @patch('STORA.sales.fiscal._post_command')

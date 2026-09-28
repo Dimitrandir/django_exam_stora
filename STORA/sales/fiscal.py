@@ -185,7 +185,25 @@ def _run_receipt(start_cmd_data, items, sale_type, amount_in, barcode_data=None)
 
         if barcode_data:
             _post_command('FDPrintBarcode', {
-                'Type': 'Code128', 'Data': barcode_data, 'Pos': 'C', 'Scale': 0, 'High': 0, 'PrnText': '1',
+                # Type is the device's own NUMERIC barcode-type code, not
+                # the readable name -- confirmed live (2026-09-28): sending
+                # the string "Code128" here made FDPrintBarcode fail
+                # outright with a service-level error, on a receipt that
+                # had already opened and sold an item fine. The guide's own
+                # worked example uses Type "1" with 7-digit data, matching
+                # EAN8's documented "7 bytes" spec exactly, so "3" for
+                # Code128 here is inferred from that table's row order
+                # (1=EAN8, 2=EAN13, 3=Code128, ...), not from an explicit
+                # numbered table in the doc (none exists) -- confirm via
+                # ECRWebApp's own FDPrintBarcode dropdown before trusting
+                # it blindly, same way Refund="R" and Reason 0/1/2 were
+                # confirmed rather than guessed.
+                'Type': '3', 'Data': barcode_data, 'Pos': 'C', 'Scale': 0, 'High': 0,
+                # PrnText is a JSON bool here, not the string '0'/'1' the
+                # doc's own field description implies -- the worked example
+                # sends `"PrnText": true` literally; also confirmed live
+                # that the string form was part of what failed.
+                'PrnText': True,
             })
 
         _post_command('FDTotalSum', {
@@ -198,10 +216,15 @@ def _run_receipt(start_cmd_data, items, sale_type, amount_in, barcode_data=None)
         receipt_open = False
     except FiscalPrintError:
         if receipt_open:
-            # Best-effort only -- FDCancelRcp's exact parameters were never
-            # exercised live (unlike every other command here), so this may
-            # itself fail; that's logged, not raised, since we're already
-            # inside a failure path and must not mask the original error.
+            # Best-effort only -- may itself fail, which is logged rather
+            # than raised, since we're already inside a failure path and
+            # must not mask the original error. Confirmed live (2026-09-28,
+            # a FDPrintBarcode failure mid-receipt): this genuinely prints
+            # a real fiscal "АНУЛИРАН БОН" (voided receipt) with its own
+            # valid signature/QR code -- the device won't just silently
+            # drop a half-open fiscal receipt, it formally voids it on
+            # paper. That receipt is the correct, expected outcome of a
+            # failure here, not a sign that something is stuck/corrupted.
             try:
                 _post_command('FDCancelRcp', {})
             except FiscalPrintError:
