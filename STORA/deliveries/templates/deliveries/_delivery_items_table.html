@@ -46,6 +46,9 @@ uses, independent of whether this delivery gets submitted at all.
     <button type="button" class="pill-btn pill-btn--outline" data-bs-toggle="modal" data-bs-target="#orderPickerModal">
         Delivery from Order
     </button>
+    <button type="button" class="pill-btn pill-btn--outline" data-bs-toggle="modal" data-bs-target="#importExcelModal">
+        Import from Excel
+    </button>
     {% endif %}
 </div>
 
@@ -67,6 +70,41 @@ uses, independent of whether this delivery gets submitted at all.
                 <input type="text" id="order-picker-search" class="form-control mb-2"
                        placeholder="Search order number or supplier..." autocomplete="off">
                 <div id="order-picker-results" class="list-group" style="max-height: 340px; overflow-y: auto;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- "Import from Excel" -- loads a batch of goods from a spreadsheet
+     instead of adding products one at a time. Parsing/matching happens
+     server-side (excel_import.parse_delivery_import) and comes back as
+     plain JSON; nothing about it touches the database yet -- rows just
+     land in this same grid via addNewProductRow/buildRow below, exactly
+     like a normal search-to-add pick, for the clerk to review/edit before
+     Save actually creates anything (see _materialize_pending_products in
+     deliveries/views.py). -->
+<div class="modal fade" id="importExcelModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Import from Excel</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small mb-2">
+                    Columns: Code, Name, Quantity, Category, Subcategory, Delivery Price, Sell Price,
+                    Main Supplier, Barcode 1, Barcode 2, Barcode 3 -- only Name is required, everything
+                    else may be left blank.
+                </p>
+                <p class="mb-3">
+                    <a href="{% url 'delivery_import_template' %}">Download a blank template</a>
+                </p>
+                <input type="file" id="import-excel-file-input" class="form-control" accept=".xlsx">
+                <div id="import-excel-status" class="text-muted small mt-2"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" id="import-excel-submit-btn" class="btn btn-primary">Import</button>
             </div>
         </div>
     </div>
@@ -259,6 +297,56 @@ document.addEventListener('DOMContentLoaded', function () {
         };
     }
 
+    // Excel import (see importExcelModal below) can hand back rows for
+    // products that don't exist yet -- no real `product` object to build
+    // from like buildRow above, just whatever the spreadsheet said.
+    // is_new_product=true is what everything downstream (the Import
+    // column, the submit-time hidden-input rebuild, the Sell Price edit
+    // guard above) checks for to treat this row differently from a normal
+    // one. delivery_item stays '' -- there's no real id until Save
+    // actually creates the product (_materialize_pending_products).
+    function buildNewProductRow(imported) {
+        var qty = imported.quantity || 0;
+        var deliveryPrice = imported.delivery_price != null ? imported.delivery_price : 0;
+        var sellPrice = imported.sell_price != null ? imported.sell_price : 0;
+        var markup = deliveryPrice ? (sellPrice - deliveryPrice) / deliveryPrice * 100 : 0;
+        return {
+            seq: nextSeq++,
+            id: '',
+            delivery_item: '',
+            is_new_product: true,
+            internal_code: imported.internal_code,
+            name: imported.name,
+            // Comes straight from the Excel file's Unit Type column (see
+            // excel_import.py) -- used to be hardcoded 'piece' regardless
+            // of what the row actually was, silently turning any imported
+            // weight product (produce, deli) into a piece-counted one.
+            // Still editable via the Unit Type column's click-to-switch
+            // below, in case the file got it wrong or left it blank.
+            unit_type: imported.unit_type || 'piece',
+            tax_rate: 0,
+            original_delivery_price: deliveryPrice,
+            delivery_quantity: qty,
+            price_at_delivery: round2(deliveryPrice),
+            price_without_vat: round2(deliveryPrice),
+            total_price_row: round2(qty * deliveryPrice),
+            total_without_vat: round2(qty * deliveryPrice),
+            sell_price: round2(sellPrice),
+            markup_percent: round1(markup),
+            expiry_date: '',
+            source_item: '',
+            scrap_reason: '',
+            // Not real DeliveryItems fields -- carried along only so the
+            // submit-time hidden-input rebuild (rebuildHiddenInputs below)
+            // can hand them to _materialize_pending_products as
+            // new_product_category/new_product_supplier/etc.
+            new_product_category: imported.category_id || '',
+            new_product_supplier: imported.supplier_id || '',
+            new_product_barcodes: imported.barcodes || [],
+            duplicate_candidate: imported.duplicate_candidate || null,
+        };
+    }
+
     var seedRows = initialRows.map(function (raw) {
         var product = productsById[String(raw.delivery_item)];
         return product ? buildRow(product, raw) : null;
@@ -321,6 +409,77 @@ document.addEventListener('DOMContentLoaded', function () {
             return '<span style="color:' + color + '; font-weight:600;">' + text + '</span>';
         }
         return text;
+    }
+
+    // "Import" column (only present for movement_type=DELIVERY, see the
+    // columns array below) -- blank for a normal row, otherwise reports
+    // what Excel import decided about it (see buildNewProductRow above /
+    // excel_import.py's own matching rules). A flagged possible duplicate
+    // is clickable: converts the row into a normal existing-product one
+    // referencing that candidate instead of creating a second copy at
+    // Save -- the fuzzy match is only ever a SUGGESTION, never applied on
+    // its own (same "never auto-merge" rule as everywhere else this app
+    // does fuzzy matching).
+    function importStatusFormatter(cell) {
+        var data = cell.getData();
+        if (!data.is_new_product) return '';
+        if (data.duplicate_candidate) {
+            return '<span style="color:#9a5b1f;text-decoration:underline;cursor:pointer;">' +
+                'Possible duplicate: ' + data.duplicate_candidate.name + ' (click to link)</span>';
+        }
+        return '<span style="color:#2f6f4f;font-weight:600;">New product</span>';
+    }
+
+    function importStatusCellClick(e, cell) {
+        var data = cell.getData();
+        if (!data.is_new_product || !data.duplicate_candidate) return;
+        var product = productsById[String(data.duplicate_candidate.id)];
+        if (!product) return;
+        var row = cell.getRow();
+        var qty = data.delivery_quantity;
+        var existing = table.getRows().find(function (r) {
+            return r !== row && String(r.getData().delivery_item) === String(product.id);
+        });
+        if (existing) {
+            existing.update({delivery_quantity: Number(existing.getData().delivery_quantity) + Number(qty)});
+            recalcRow(existing, 'price_at_delivery');
+            row.delete();
+        } else {
+            var updated = buildRow(product, {delivery_quantity: qty});
+            updated.seq = data.seq;
+            // row.update() MERGES fields, it doesn't replace the row
+            // wholesale -- without explicitly clearing these, the row
+            // would still carry is_new_product:true (buildRow's return
+            // value has no such key at all, so it'd just survive
+            // untouched) and keep showing/behaving as a pending row.
+            updated.is_new_product = false;
+            updated.duplicate_candidate = null;
+            row.update(updated);
+        }
+    }
+
+    // "Unit Type" column -- shown for every row (existing products carry
+    // it from buildRow's product.unit_type, already fixed in the catalog),
+    // but only a still-pending Excel-import row (is_new_product) can
+    // actually change it here: no editor is set (an existing product's
+    // unit_type isn't something this screen edits at all, only the
+    // product form does), just a plain click-to-switch on the one column
+    // where getting it wrong before Save would matter -- see
+    // buildNewProductRow above for why this exists.
+    function unitTypeFormatter(cell) {
+        var data = cell.getData();
+        var label = data.unit_type === 'weight' ? 'kg' : 'pcs';
+        if (data.is_new_product) {
+            return '<span style="text-decoration:underline;cursor:pointer;" title="Click to switch pcs/kg">' + label + '</span>';
+        }
+        return label;
+    }
+
+    function unitTypeCellClick(e, cell) {
+        var data = cell.getData();
+        if (!data.is_new_product) return;
+        var next = data.unit_type === 'weight' ? 'piece' : 'weight';
+        cell.getRow().update({unit_type: next});
     }
 
     function quantityStep(row) {
@@ -519,6 +678,16 @@ document.addEventListener('DOMContentLoaded', function () {
         },
         {title: 'Code', field: 'internal_code', width: 110},
         {title: 'Name', field: 'name', width: 220},
+        {
+            title: 'Unit Type', field: 'unit_type', width: 90, hozAlign: 'center',
+            formatter: unitTypeFormatter, cellClick: unitTypeCellClick,
+        },
+        {% if movement_type == 'DELIVERY' %}
+        {
+            title: 'Import', field: 'import_status', width: 260,
+            formatter: importStatusFormatter, cellClick: importStatusCellClick,
+        },
+        {% endif %}
         {
             title: 'Qty', field: 'delivery_quantity', width: 100, hozAlign: 'right',
             editor: numberEditor,
@@ -749,7 +918,13 @@ document.addEventListener('DOMContentLoaded', function () {
         } else if (field === 'sell_price' || field === 'markup_percent') {
             var previousSellPrice = field === 'sell_price' ? cell.getOldValue() : row.getData().sell_price;
             recalcRow(row, field);
-            persistSellPrice(row, previousSellPrice);
+            // A pending Excel-imported row (see importExcelModal below) has
+            // no real product yet -- persistSellPrice would POST to
+            // /products//inline-update/ (empty id). Its sell_price just
+            // gets created with the product at Save time instead (see
+            // _materialize_pending_products), same as delivery_price/
+            // category/etc. on that same row already do.
+            if (!row.getData().is_new_product) persistSellPrice(row, previousSellPrice);
         }
     });
     function addProductRow(product) {
@@ -880,6 +1055,91 @@ document.addEventListener('DOMContentLoaded', function () {
                 });
         });
         searchInput.addEventListener('input', filterResults);
+    })();
+    {% endif %}
+
+    {% if movement_type == 'DELIVERY' %}
+    // -- "Import from Excel" modal -- uploads the file, gets back parsed/
+    // matched rows (see excel_import.parse_delivery_import), and adds each
+    // one to the grid exactly like a manual search-to-add or "Delivery
+    // from Order" pick: an existing-product match merges into an already-
+    // present row (or adds a normal one via buildRow); a genuinely new
+    // product becomes a pending row (buildNewProductRow) that only turns
+    // into a real Product at Save (_materialize_pending_products in
+    // deliveries/views.py) -- nothing here touches the database.
+    (function () {
+        var modalEl = document.getElementById('importExcelModal');
+        var fileInput = document.getElementById('import-excel-file-input');
+        var statusBox = document.getElementById('import-excel-status');
+        var submitBtn = document.getElementById('import-excel-submit-btn');
+
+        modalEl.addEventListener('show.bs.modal', function () {
+            fileInput.value = '';
+            statusBox.textContent = '';
+        });
+
+        submitBtn.addEventListener('click', function () {
+            var file = fileInput.files[0];
+            if (!file) {
+                statusBox.textContent = 'Choose a file first.';
+                return;
+            }
+            submitBtn.disabled = true;
+            statusBox.textContent = 'Importing…';
+
+            var body = new FormData();
+            body.append('file', file);
+
+            fetch('{% url "delivery_import_excel" %}', {
+                method: 'POST',
+                headers: {'X-CSRFToken': getCookie('csrftoken')},
+                body: body,
+            })
+                .then(function (r) { return r.json().then(function (data) { return {ok: r.ok, data: data}; }); })
+                .then(function (result) {
+                    if (!result.ok) {
+                        statusBox.textContent = result.data.error || 'Import failed.';
+                        return;
+                    }
+                    var data = result.data;
+                    (data.rows || []).forEach(function (imported) {
+                        if (!imported.is_new) {
+                            var product = productsById[String(imported.product_id)];
+                            if (!product) return;
+                            var existing = table.getRows().find(function (r) {
+                                return String(r.getData().delivery_item) === String(product.id);
+                            });
+                            if (existing) {
+                                existing.update({
+                                    delivery_quantity: Number(existing.getData().delivery_quantity) + Number(imported.quantity),
+                                });
+                                recalcRow(existing, 'price_at_delivery');
+                            } else {
+                                table.addRow(buildRow(product, {delivery_quantity: imported.quantity}));
+                            }
+                        } else {
+                            table.addRow(buildNewProductRow(imported));
+                        }
+                    });
+
+                    var messages = [];
+                    if (data.rows && data.rows.length) messages.push(data.rows.length + ' row(s) loaded into the grid.');
+                    if (data.skipped && data.skipped.length) messages.push(data.skipped.length + ' skipped (already exist): ' + data.skipped.join(' '));
+                    if (data.errors && data.errors.length) messages.push(data.errors.join(' '));
+                    statusBox.textContent = messages.join(' ') || 'Nothing to import.';
+
+                    if (!data.errors || !data.errors.length) {
+                        var modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+                        modal.hide();
+                    }
+                })
+                .catch(function () {
+                    statusBox.textContent = 'Import failed (network error).';
+                })
+                .finally(function () {
+                    submitBtn.disabled = false;
+                });
+        });
     })();
     {% endif %}
 
@@ -1277,6 +1537,27 @@ document.addEventListener('DOMContentLoaded', function () {
                 scrap_reason: data.scrap_reason || '',
                 DELETE: isDeleted ? 'on' : '',
             };
+            // Excel-imported rows still waiting to become a real product
+            // (see buildNewProductRow/importExcelModal) carry these extra
+            // fields alongside the normal ones -- deliveries.views'
+            // _materialize_pending_products reads them to actually create
+            // the product right before this formset gets validated, then
+            // rewrites `delivery_item` above to point at it (or blanks the
+            // whole row out, for a quantity-0 "just create it" row).
+            if (data.is_new_product) {
+                fields.new_product = '1';
+                fields.new_product_name = data.name || '';
+                fields.new_product_code = data.internal_code || '';
+                fields.new_product_unit_type = data.unit_type || 'piece';
+                fields.new_product_delivery_price = data.price_at_delivery || '';
+                fields.new_product_sell_price = data.sell_price || '';
+                fields.new_product_category = data.new_product_category || '';
+                fields.new_product_supplier = data.new_product_supplier || '';
+                var barcodes = data.new_product_barcodes || [];
+                fields.new_product_barcode_1 = barcodes[0] || '';
+                fields.new_product_barcode_2 = barcodes[1] || '';
+                fields.new_product_barcode_3 = barcodes[2] || '';
+            }
             Object.keys(fields).forEach(function (name) {
                 var input = document.createElement('input');
                 input.type = 'hidden';

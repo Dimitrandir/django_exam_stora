@@ -1,9 +1,10 @@
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.postgres.search import TrigramSimilarity
-from django.http import JsonResponse
+from django.db import transaction
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse_lazy
 from django.views import View
@@ -25,11 +26,13 @@ from STORA.core.utils import (
     get_cashier_operation_type,
     multi_token_icontains_q,
 )
+from STORA.deliveries.excel_import import build_template_workbook, parse_delivery_import
 from STORA.deliveries.forms import (
     DeliveryForms, DeliveryItemFormSet, DocumentTypeForm, WriteOffForm, ScrapForm, ScrapReasonForm,
 )
 from STORA.deliveries.models import DeliveryAttributes, DeliveryItems, DocumentType, ScrapReason
-from STORA.products.models import Product, Barcode, Suppliers
+from STORA.products.models import Barcode, Product, ProductSupplier, Suppliers
+from STORA.products.views import get_free_internal_codes
 
 
 def _items_initial_from_rows(rows):
@@ -71,6 +74,155 @@ def _items_initial_from_instance(delivery):
     ])
 
 
+def _materialize_pending_products(post_data):
+    """Excel import (see excel_import.parse_delivery_import) adds rows to
+    the delivery grid for products that don't exist YET -- the grid marks
+    each with a `new_product` hidden field instead of a real `delivery_item`
+    id, carrying the raw imported values alongside (new_product_name,
+    new_product_category, ...). Nothing about that touches the database
+    while the clerk is still reviewing/editing the delivery on screen --
+    this is where it finally happens, called right before the normal
+    DeliveryItemFormSet is built, so by the time that formset runs every
+    row looks like an ordinary "existing product" row to it.
+
+    `post_data` is a mutable copy of request.POST -- mutated in place and
+    returned. Runs inside the same transaction as the delivery save
+    (deliveries_add wraps this), so a failed save can't leave orphan
+    products behind.
+
+    Quantity decides what happens to each pending row, worked out with the
+    shop owner up front:
+      - 0 (or blank) -- create the product, nothing else. The row is
+        dropped from post_data entirely and every row after it shifted
+        down to fill the gap (see the re-indexing below) -- leaving it in
+        place as an all-blank row was tried first and does NOT get
+        silently skipped by Django's formset the way a genuinely absent
+        row does: DeliveryItemForm.__init__ forces delivery_item/
+        delivery_quantity to required=True, which turned out to survive
+        the formset's own empty-extra-form short-circuit (confirmed
+        live -- "This field is required" on a row that was supposed to be
+        invisible to the formset entirely).
+      - >0 -- create the product AND deliver it: `new_product` is swapped
+        for a real `delivery_item` id, so the rest of this row flows
+        through the SAME formset/DeliveryItems.save() path (stock delta,
+        auto ProductSupplier link off the delivery's own supplier, etc.)
+        as a normal manually-added row -- nothing about that logic is
+        duplicated here.
+
+    The imported "Main Supplier" is a property of the PRODUCT (its primary
+    catalog supplier, same as ProductSupplier position=1 on the product
+    form), not of this particular delivery -- linked explicitly here,
+    regardless of quantity, independent of whatever DeliveryItems.save()'s
+    own auto-link off the delivery's own supplier field does."""
+    total_forms_key = 'items-TOTAL_FORMS'
+    try:
+        total_forms = int(post_data.get(total_forms_key, 0))
+    except ValueError:
+        return post_data
+
+    item_suffixes = (
+        'id', 'delivery_item', 'delivery_quantity', 'price_at_delivery',
+        'total_price_row', 'expiry_date', 'source_item', 'scrap_reason', 'DELETE',
+    )
+    next_code_counter = None
+    kept_rows = []
+
+    for index in range(total_forms):
+        prefix = f'items-{index}-'
+
+        if post_data.get(prefix + 'new_product') != '1':
+            kept_rows.append({suffix: post_data.get(prefix + suffix, '') for suffix in item_suffixes})
+            continue
+
+        name = (post_data.get(prefix + 'new_product_name') or '').strip()
+        if not name:
+            continue  # Nothing usable to create -- drop the row outright.
+
+        code = (post_data.get(prefix + 'new_product_code') or '').strip()
+        # A code collision (blank to begin with, or someone else just took
+        # this number) falls back to the next free one rather than hitting
+        # a hard IntegrityError mid-save.
+        while not code or Product.objects.filter(internal_code=code).exists():
+            if next_code_counter is None:
+                next_code_counter = get_free_internal_codes()[1]
+            code = str(next_code_counter)
+            next_code_counter += 1
+
+        try:
+            delivery_price = Decimal(post_data.get(prefix + 'new_product_delivery_price') or '0')
+        except InvalidOperation:
+            delivery_price = Decimal('0')
+        try:
+            sell_price = Decimal(post_data.get(prefix + 'new_product_sell_price') or '0')
+        except InvalidOperation:
+            sell_price = Decimal('0')
+        # Product.sell_price is required (MinValueValidator(0.01)) -- the
+        # Excel column is optional, so a blank one falls back to the
+        # delivery price, and only if THAT is also blank to a placeholder
+        # minimum a person fixes later via the normal product edit screen.
+        if sell_price <= 0:
+            sell_price = delivery_price if delivery_price > 0 else Decimal('0.01')
+
+        category_id = post_data.get(prefix + 'new_product_category') or None
+        supplier_id = post_data.get(prefix + 'new_product_supplier') or None
+        unit_type = post_data.get(prefix + 'new_product_unit_type') or Product.PIECE
+        if unit_type not in (Product.PIECE, Product.WEIGHT):
+            unit_type = Product.PIECE
+
+        product = Product.objects.create(
+            internal_code=code,
+            name=name,
+            unit_type=unit_type,
+            delivery_price=delivery_price if delivery_price > 0 else None,
+            sell_price=sell_price,
+            category_id=category_id,
+        )
+
+        for position, barcode_code in enumerate(
+            [b for b in (
+                post_data.get(prefix + 'new_product_barcode_1'),
+                post_data.get(prefix + 'new_product_barcode_2'),
+                post_data.get(prefix + 'new_product_barcode_3'),
+            ) if b],
+            start=1,
+        ):
+            Barcode.objects.create(product=product, code=barcode_code, position=position)
+
+        if supplier_id:
+            ProductSupplier.objects.get_or_create(product=product, supplier_id=supplier_id, defaults={'position': 1})
+
+        raw_qty = post_data.get(prefix + 'delivery_quantity') or '0'
+        try:
+            quantity = Decimal(raw_qty)
+        except InvalidOperation:
+            quantity = Decimal('0')
+
+        if quantity > 0:
+            row = {suffix: post_data.get(prefix + suffix, '') for suffix in item_suffixes}
+            row['delivery_item'] = str(product.pk)
+            kept_rows.append(row)
+        # else: product-only row -- created above, nothing added to
+        # kept_rows, so it never reaches the formset at all.
+
+    # Every items-<i>-* key gets rewritten from kept_rows below, at
+    # whatever new (possibly different) index it lands on -- clear the
+    # old ones first so a dropped row's stale keys can't linger under an
+    # index that now belongs to a different, kept row.
+    for index in range(total_forms):
+        prefix = f'items-{index}-'
+        for key in list(post_data.keys()):
+            if key.startswith(prefix):
+                del post_data[key]
+
+    for new_index, row in enumerate(kept_rows):
+        prefix = f'items-{new_index}-'
+        for suffix, value in row.items():
+            post_data[prefix + suffix] = value
+
+    post_data[total_forms_key] = str(len(kept_rows))
+    return post_data
+
+
 @login_required
 @permission_required('deliveries.add_deliveryattributes', raise_exception=True)
 def deliveries_add(request, movement_type=DeliveryAttributes.MOVEMENT_DELIVERY):
@@ -96,18 +248,39 @@ def deliveries_add(request, movement_type=DeliveryAttributes.MOVEMENT_DELIVERY):
     selected_supplier_name = ''
 
     if request.method == "POST":
-        form = form_class(request.POST, current_user=request.user)
-        formset = DeliveryItemFormSet(request.POST, prefix=formset_prefix)
+        # A mutated COPY of request.POST -- _materialize_pending_products
+        # creates real Products for any Excel-imported "new_product" rows
+        # and rewrites them to look like normal existing-product rows (see
+        # that function's own docstring). Done inside the same atomic
+        # block as the actual save, rolled back together if form/formset
+        # validation fails for any OTHER reason (a missing Document Date,
+        # say) -- nothing pending ever gets left behind by a save that
+        # didn't actually go through. The original, unmutated request.POST
+        # is what the error-redisplay branch below still uses -- a pending
+        # row that never got created has no real delivery_item id to
+        # rebuild the grid from, so it's dropped from the redisplayed grid
+        # on a validation failure (a known Phase 1 gap: re-import if that
+        # happens, rather than the larger work of round-tripping pending-
+        # product data through the session draft too).
+        post_data = request.POST.copy()
+        delivery = None
+        with transaction.atomic():
+            _materialize_pending_products(post_data)
+            form = form_class(post_data, current_user=request.user)
+            formset = DeliveryItemFormSet(post_data, prefix=formset_prefix)
 
-        if form.is_valid() and formset.is_valid():
-            delivery = form.save(commit=False)
-            delivery.receiver = request.user
-            delivery.movement_type = movement_type
-            delivery.save()
+            if form.is_valid() and formset.is_valid():
+                delivery = form.save(commit=False)
+                delivery.receiver = request.user
+                delivery.movement_type = movement_type
+                delivery.save()
 
-            formset.instance = delivery
-            formset.save()
+                formset.instance = delivery
+                formset.save()
+            else:
+                transaction.set_rollback(True)
 
+        if delivery is not None:
             clear_cashier_operation_state(request)
             if movement_type != DeliveryAttributes.MOVEMENT_DELIVERY:
                 return redirect('delivery_details', pk=delivery.pk)
@@ -181,6 +354,37 @@ def deliveries_add(request, movement_type=DeliveryAttributes.MOVEMENT_DELIVERY):
         'scrap_reasons_data': scrap_reasons_data,
     }
     return render(request, 'deliveries/delivery_add.html', context)
+
+
+@login_required
+@permission_required('deliveries.add_deliveryattributes', raise_exception=True)
+def delivery_import_template(request):
+    """"Download template" on the New Delivery screen's Import from Excel
+    modal -- a blank .xlsx with just the expected header row, generated on
+    the fly (not a static file) so it can never drift out of sync with
+    excel_import.COLUMN_HEADERS."""
+    wb = build_template_workbook()
+    response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = 'attachment; filename="stora_delivery_import_template.xlsx"'
+    wb.save(response)
+    return response
+
+
+@login_required
+@permission_required('deliveries.add_deliveryattributes', raise_exception=True)
+@require_POST
+def delivery_import_excel(request):
+    """"Import from Excel" on the New Delivery screen -- parses/matches the
+    uploaded file (see excel_import.parse_delivery_import) and hands the
+    result back as JSON; the grid's own JS adds each row exactly like a
+    normal search-to-add or "Delivery from Order" pick. Nothing here
+    touches the database -- see _materialize_pending_products for where a
+    "new product" row actually becomes one, at Save time."""
+    uploaded = request.FILES.get('file')
+    if not uploaded:
+        return JsonResponse({'error': 'No file was uploaded.'}, status=400)
+    result = parse_delivery_import(uploaded)
+    return JsonResponse(result)
 
 
 @login_required

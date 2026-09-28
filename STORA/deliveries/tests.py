@@ -1,13 +1,17 @@
+import io
 from decimal import Decimal
 
+import openpyxl
 from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.urls import reverse
 
+from STORA.deliveries.excel_import import parse_delivery_import
 from STORA.deliveries.models import (
     DeliveryAttributes, DeliveryItems, DeliveryItemRemoval, DocumentType, ScrapReason, Suppliers,
 )
-from STORA.products.models import Product, ProductSupplier, TaxGroup
+from STORA.products.models import Barcode, Category, Product, ProductSupplier, TaxGroup
 
 
 User = get_user_model()
@@ -208,6 +212,27 @@ class DeliveryStockAdjustmentTests(TestCase):
         self.assertEqual(self.product.quantity, Decimal('10.000'))
         self.assertEqual(other_product.quantity, Decimal('4.000'))
 
+    def test_deleting_whole_delivery_does_not_create_removal_records(self):
+        # Regression test: Django's CASCADE deletes the child DeliveryItems
+        # rows BEFORE the parent DeliveryAttributes row, so a naive
+        # `except DeliveryAttributes.DoesNotExist` inside the post_delete
+        # signal never actually fires for this case -- confirmed live, this
+        # used to write a DeliveryItemRemoval for every item in a deleted
+        # delivery, which permanently PROTECTs those products from ever
+        # being hard-deleted again (DeliveryItemRemoval.product is
+        # on_delete=PROTECT). A whole-delivery delete should leave no trace
+        # at all, same as if the delivery had never been entered.
+        DeliveryItems.objects.create(
+            delivery=self.delivery, delivery_item=self.product,
+            delivery_quantity=Decimal('5.000'), price_at_delivery=Decimal('1.00'),
+        )
+        self.delivery.delete()
+        self.assertEqual(DeliveryItemRemoval.objects.filter(product=self.product).count(), 0)
+        # And the product must still be hard-deletable -- nothing left
+        # behind that would PROTECT it.
+        self.product.delete()
+        self.assertFalse(Product.objects.filter(pk=self.product.pk).exists())
+
     def test_delivery_total_amount_recalculates_automatically(self):
         DeliveryItems.objects.create(
             delivery=self.delivery, delivery_item=self.product,
@@ -318,6 +343,20 @@ class DeliverySupplierLinkTests(TestCase):
 
         item.delete()
         self.assertFalse(ProductSupplier.objects.filter(product=self.product, supplier=self.supplier).exists())
+
+    def test_deleting_the_whole_delivery_does_not_retract_the_auto_link(self):
+        # Deleting the WHOLE delivery (not just correcting one line) is a
+        # bigger, deliberate "undo this entire delivery" action -- the
+        # product/supplier relationship it established shouldn't be
+        # retroactively erased just because the paperwork got deleted.
+        DeliveryItems.objects.create(
+            delivery=self.delivery, delivery_item=self.product,
+            delivery_quantity=Decimal('5.000'), price_at_delivery=Decimal('3.00'),
+        )
+        self.assertTrue(ProductSupplier.objects.filter(product=self.product, supplier=self.supplier).exists())
+
+        self.delivery.delete()
+        self.assertTrue(ProductSupplier.objects.filter(product=self.product, supplier=self.supplier).exists())
 
     def test_deleting_one_of_two_deliveries_from_the_same_supplier_keeps_the_link(self):
         item1 = DeliveryItems.objects.create(
@@ -1144,3 +1183,315 @@ class ScrapViewTests(TestCase):
         self.assertIsNone(scrap_item.source_item)
         self.product.refresh_from_db()
         self.assertEqual(self.product.quantity, Decimal('8.000'))
+
+
+def _build_import_xlsx(rows):
+    """rows: list of tuples matching excel_import.COLUMN_HEADERS order."""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(['Code', 'Name', 'Unit Type', 'Quantity', 'Category', 'Subcategory', 'Delivery Price',
+               'Sell Price', 'Main Supplier', 'Barcode 1', 'Barcode 2', 'Barcode 3'])
+    for row in rows:
+        ws.append(row)
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf
+
+
+class ExcelImportParsingTests(TestCase):
+    """Unit tests for excel_import.parse_delivery_import -- pure parsing/
+    matching, no view/formset/database-write involved."""
+
+    def setUp(self):
+        self.product = Product.objects.create(
+            internal_code='EXIST01', name='Existing Import Product',
+            delivery_price=Decimal('1.00'), sell_price=Decimal('2.00'), quantity=Decimal('5.000'),
+        )
+        Barcode.objects.create(product=self.product, code='9990001112223', position=1)
+        self.category = Category.objects.create(name='Import Top Category')
+        self.subcategory = Category.objects.create(name='Import Sub Category', parent=self.category)
+        self.supplier = Suppliers.objects.create(name='Import Test Supplier', bulstat='444555666')
+
+    def test_code_match_with_positive_quantity_delivers(self):
+        buf = _build_import_xlsx([('EXIST01', self.product.name, '', 3, '', '', '', '', '', '', '', '')])
+        result = parse_delivery_import(buf)
+        self.assertEqual(result['errors'], [])
+        self.assertEqual(len(result['rows']), 1)
+        row = result['rows'][0]
+        self.assertFalse(row['is_new'])
+        self.assertEqual(row['product_id'], self.product.pk)
+        self.assertEqual(row['quantity'], 3.0)
+
+    def test_barcode_match_with_zero_quantity_is_skipped(self):
+        buf = _build_import_xlsx([('', 'Whatever Name', '', 0, '', '', '', '', '', '9990001112223', '', '')])
+        result = parse_delivery_import(buf)
+        self.assertEqual(result['rows'], [])
+        self.assertEqual(len(result['skipped']), 1)
+        self.assertIn(self.product.name, result['skipped'][0])
+
+    def test_new_product_resolves_category_subcategory_and_supplier(self):
+        buf = _build_import_xlsx([(
+            '', 'Brand New Import Item', '', 4, self.category.name, self.subcategory.name,
+            '1.20', '2.40', self.supplier.name, '', '', '',
+        )])
+        result = parse_delivery_import(buf)
+        self.assertEqual(result['errors'], [])
+        row = result['rows'][0]
+        self.assertTrue(row['is_new'])
+        self.assertEqual(row['category_id'], self.subcategory.pk)
+        self.assertEqual(row['supplier_id'], self.supplier.pk)
+        self.assertEqual(row['delivery_price'], 1.2)
+        self.assertEqual(row['sell_price'], 2.4)
+        self.assertTrue(row['internal_code'])
+
+    def test_new_product_flags_fuzzy_name_duplicate(self):
+        # Reordered words -- same trigram-similarity idea already used
+        # elsewhere in the app (category/supplier search).
+        buf = _build_import_xlsx([('', 'Import Product Existing', '', 1, '', '', '', '', '', '', '', '')])
+        result = parse_delivery_import(buf)
+        row = result['rows'][0]
+        self.assertTrue(row['is_new'])
+        self.assertIsNotNone(row['duplicate_candidate'])
+        self.assertEqual(row['duplicate_candidate']['id'], self.product.pk)
+
+    def test_unmatched_category_and_supplier_are_left_blank(self):
+        buf = _build_import_xlsx([(
+            '', 'Totally Unrelated New Product Zzz', '', 1, 'Nonexistent Category Xyz', '',
+            '', '', 'Nonexistent Supplier Xyz', '', '', '',
+        )])
+        result = parse_delivery_import(buf)
+        row = result['rows'][0]
+        self.assertIsNone(row['category_id'])
+        self.assertIsNone(row['supplier_id'])
+
+    def test_missing_name_is_an_error_not_a_row(self):
+        buf = _build_import_xlsx([('', '', '', 1, '', '', '', '', '', '', '', '')])
+        result = parse_delivery_import(buf)
+        self.assertEqual(result['rows'], [])
+        self.assertEqual(len(result['errors']), 1)
+
+    def test_blank_rows_are_silently_ignored(self):
+        buf = _build_import_xlsx([tuple([None] * 12)])
+        result = parse_delivery_import(buf)
+        self.assertEqual(result['rows'], [])
+        self.assertEqual(result['errors'], [])
+
+    def test_new_product_unit_type_kg_is_recognised(self):
+        # Bulgarian spelling accepted too, case-insensitive.
+        buf = _build_import_xlsx([('', 'Weight Sold Import Item', 'КГ', 2, '', '', '', '', '', '', '', '')])
+        result = parse_delivery_import(buf)
+        row = result['rows'][0]
+        self.assertEqual(row['unit_type'], Product.WEIGHT)
+
+    def test_new_product_unit_type_defaults_to_piece_when_blank(self):
+        buf = _build_import_xlsx([('', 'Piece Sold Import Item', '', 2, '', '', '', '', '', '', '', '')])
+        result = parse_delivery_import(buf)
+        row = result['rows'][0]
+        self.assertEqual(row['unit_type'], Product.PIECE)
+
+
+class ExcelImportViewTests(TestCase):
+    def setUp(self):
+        self.warehouse = User.objects.create_user(username='wh_import', password='pass12345', role=User.WAREHOUSE)
+        self.cashier = User.objects.create_user(username='cash_import', password='pass12345', role=User.CASHIER)
+        self.product = Product.objects.create(
+            internal_code='VIEWIMP1', name='View Import Product',
+            delivery_price=Decimal('1.00'), sell_price=Decimal('2.00'), quantity=Decimal('0.000'),
+        )
+
+    def test_template_download_requires_permission(self):
+        self.client.force_login(self.cashier)
+        response = self.client.get(reverse('delivery_import_template'))
+        self.assertEqual(response.status_code, 403)
+
+    def test_template_download_returns_correct_headers(self):
+        self.client.force_login(self.warehouse)
+        response = self.client.get(reverse('delivery_import_template'))
+        self.assertEqual(response.status_code, 200)
+        wb = openpyxl.load_workbook(io.BytesIO(response.content))
+        headers = [c.value for c in wb.active[1]]
+        self.assertEqual(headers, ['Code', 'Name', 'Unit Type', 'Quantity', 'Category', 'Subcategory',
+                                    'Delivery Price', 'Sell Price', 'Main Supplier',
+                                    'Barcode 1', 'Barcode 2', 'Barcode 3'])
+
+    def test_import_endpoint_requires_permission(self):
+        self.client.force_login(self.cashier)
+        buf = _build_import_xlsx([('VIEWIMP1', self.product.name, '', 2, '', '', '', '', '', '', '', '')])
+        response = self.client.post(
+            reverse('delivery_import_excel'),
+            {'file': SimpleUploadedFile('import.xlsx', buf.read())},
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_import_endpoint_returns_parsed_rows(self):
+        self.client.force_login(self.warehouse)
+        buf = _build_import_xlsx([('VIEWIMP1', self.product.name, '', 2, '', '', '', '', '', '', '', '')])
+        response = self.client.post(
+            reverse('delivery_import_excel'),
+            {'file': SimpleUploadedFile('import.xlsx', buf.read())},
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(len(data['rows']), 1)
+        self.assertEqual(data['rows'][0]['product_id'], self.product.pk)
+
+    def test_import_endpoint_without_file_returns_400(self):
+        self.client.force_login(self.warehouse)
+        response = self.client.post(reverse('delivery_import_excel'), {})
+        self.assertEqual(response.status_code, 400)
+
+
+class DeliveryAddWithNewProductRowsTests(TestCase):
+    """End-to-end POST tests for deliveries_add's handling of Excel-import
+    "pending new product" rows -- posts the exact hidden-input shape
+    rebuildHiddenInputs() produces for a buildNewProductRow (see
+    _delivery_items_table.html), standing in for the JS the same way
+    DeliveryFormSubmissionTests does for normal rows."""
+
+    def setUp(self):
+        self.warehouse = User.objects.create_user(username='wh_newprod', password='pass12345', role=User.WAREHOUSE)
+        self.supplier = Suppliers.objects.create(name='New Product Row Supplier', bulstat='777888999')
+        self.category = Category.objects.create(name='New Product Row Category')
+        self.invoice_type, _ = DocumentType.objects.get_or_create(name='Invoice')
+        self.client.force_login(self.warehouse)
+
+    def _general_info(self, **overrides):
+        data = {
+            'supplier': self.supplier.pk,
+            'time_of_delivery': '2026-04-20 10:00:00',
+            'document_type': self.invoice_type.pk,
+            'document_number': 'IMP-100',
+            'document_date': '2026-04-20',
+        }
+        data.update(overrides)
+        return data
+
+    def test_positive_quantity_creates_product_and_delivers_it(self):
+        data = self._general_info(document_number='IMP-101')
+        data.update({
+            'items-TOTAL_FORMS': '1',
+            'items-INITIAL_FORMS': '0',
+            'items-MIN_NUM_FORMS': '0',
+            'items-MAX_NUM_FORMS': '1000',
+            'items-0-id': '',
+            'items-0-delivery_item': '',
+            'items-0-delivery_quantity': '6.000',
+            'items-0-price_at_delivery': '3.00',
+            'items-0-total_price_row': '18.00',
+            'items-0-DELETE': '',
+            'items-0-new_product': '1',
+            'items-0-new_product_name': 'Imported New Product One',
+            'items-0-new_product_code': '',
+            'items-0-new_product_unit_type': 'weight',
+            'items-0-new_product_delivery_price': '3.00',
+            'items-0-new_product_sell_price': '5.00',
+            'items-0-new_product_category': str(self.category.pk),
+            'items-0-new_product_supplier': str(self.supplier.pk),
+            'items-0-new_product_barcode_1': '1231231231234',
+            'items-0-new_product_barcode_2': '',
+            'items-0-new_product_barcode_3': '',
+        })
+        response = self.client.post(reverse('delivery_add'), data)
+        self.assertRedirects(response, reverse('delivery_add'))
+
+        product = Product.objects.get(name='Imported New Product One')
+        self.assertEqual(product.quantity, Decimal('6.000'))
+        self.assertEqual(product.category_id, self.category.pk)
+        self.assertEqual(product.sell_price, Decimal('5.00'))
+        self.assertEqual(product.unit_type, Product.WEIGHT)
+        self.assertTrue(Barcode.objects.filter(product=product, code='1231231231234').exists())
+        self.assertTrue(ProductSupplier.objects.filter(product=product, supplier=self.supplier).exists())
+
+        delivery = DeliveryAttributes.objects.get(document_number='IMP-101')
+        self.assertEqual(delivery.items.get().delivery_item, product)
+
+    def test_zero_quantity_creates_product_only_no_delivery_item(self):
+        # Paired with a normal qty>0 row -- a delivery consisting of ONLY a
+        # qty=0 "just catalog it" row has nothing left at all for the
+        # items formset once that row is stripped (see
+        # _materialize_pending_products), and the pre-existing "must add
+        # at least one delivery item" formset rule (unrelated to this
+        # feature, not something to special-case around) correctly refuses
+        # to save a delivery with zero real items -- exactly what a real
+        # Excel batch that's ENTIRELY zero-quantity rows would also hit.
+        # This test covers the realistic mixed case instead.
+        other_product = Product.objects.create(
+            internal_code='IMPCOMP1', name='Companion Delivered Product',
+            delivery_price=Decimal('1.00'), sell_price=Decimal('2.00'), quantity=Decimal('0.000'),
+        )
+        data = self._general_info(document_number='IMP-102')
+        data.update({
+            'items-TOTAL_FORMS': '2',
+            'items-INITIAL_FORMS': '0',
+            'items-MIN_NUM_FORMS': '0',
+            'items-MAX_NUM_FORMS': '1000',
+            'items-0-id': '',
+            'items-0-delivery_item': other_product.pk,
+            'items-0-delivery_quantity': '1.000',
+            'items-0-price_at_delivery': '1.00',
+            'items-0-total_price_row': '1.00',
+            'items-0-DELETE': '',
+            'items-1-id': '',
+            'items-1-delivery_item': '',
+            'items-1-delivery_quantity': '0',
+            'items-1-price_at_delivery': '',
+            'items-1-total_price_row': '',
+            'items-1-DELETE': '',
+            'items-1-new_product': '1',
+            'items-1-new_product_name': 'Imported New Product Zero Qty',
+            'items-1-new_product_code': '',
+            'items-1-new_product_delivery_price': '',
+            'items-1-new_product_sell_price': '',
+            'items-1-new_product_category': '',
+            'items-1-new_product_supplier': '',
+            'items-1-new_product_barcode_1': '',
+            'items-1-new_product_barcode_2': '',
+            'items-1-new_product_barcode_3': '',
+        })
+        response = self.client.post(reverse('delivery_add'), data)
+        self.assertRedirects(response, reverse('delivery_add'))
+
+        product = Product.objects.get(name='Imported New Product Zero Qty')
+        self.assertEqual(product.quantity, Decimal('0.000'))
+        # No new_product_unit_type field posted at all -- falls back to the
+        # default (Product.PIECE), same as Product's own model default.
+        self.assertEqual(product.unit_type, Product.PIECE)
+        # sell_price required by the model (min 0.01) -- falls back to a
+        # placeholder since neither delivery nor sell price was given.
+        self.assertEqual(product.sell_price, Decimal('0.01'))
+        self.assertFalse(DeliveryItems.objects.filter(delivery_item=product).exists())
+
+        other_product.refresh_from_db()
+        self.assertEqual(other_product.quantity, Decimal('1.000'))
+
+    def test_validation_failure_rolls_back_pending_product_creation(self):
+        # Missing document_date -- form.is_valid() fails, the whole atomic
+        # block (including the product this row would have created) must
+        # roll back, not leave an orphan product behind.
+        data = self._general_info(document_number='IMP-103', document_date='')
+        data.update({
+            'items-TOTAL_FORMS': '1',
+            'items-INITIAL_FORMS': '0',
+            'items-MIN_NUM_FORMS': '0',
+            'items-MAX_NUM_FORMS': '1000',
+            'items-0-id': '',
+            'items-0-delivery_item': '',
+            'items-0-delivery_quantity': '2.000',
+            'items-0-price_at_delivery': '1.00',
+            'items-0-total_price_row': '2.00',
+            'items-0-DELETE': '',
+            'items-0-new_product': '1',
+            'items-0-new_product_name': 'Should Not Be Created',
+            'items-0-new_product_code': '',
+            'items-0-new_product_delivery_price': '1.00',
+            'items-0-new_product_sell_price': '',
+            'items-0-new_product_category': '',
+            'items-0-new_product_supplier': '',
+            'items-0-new_product_barcode_1': '',
+            'items-0-new_product_barcode_2': '',
+            'items-0-new_product_barcode_3': '',
+        })
+        response = self.client.post(reverse('delivery_add'), data)
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Product.objects.filter(name='Should Not Be Created').exists())
