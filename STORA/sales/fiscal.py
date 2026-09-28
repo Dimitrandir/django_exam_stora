@@ -350,7 +350,7 @@ def print_fiscal_refund(refund):
         'Operator': int(settings.FISCAL_OPERATOR_NUM),
         'Password': int(settings.FISCAL_OPERATOR_PASSWORD),
         'UnicSaleNum': unic_sale_num,
-        'Invoice': '', 'Refund': 'R', 'Credit': '',
+        'Invoice': '', 'Refund': 'R',
         'Reason': reason_map[refund.reason],
         'DocLink': original_sale.fiscal_receipt_number,
         # Guide's format spec (and its worked example, "26-06-19 13:41:00")
@@ -358,7 +358,15 @@ def print_fiscal_refund(refund):
         # them off ("28-09-26 09:13") made FDStartFiscRcp fail outright.
         'DocLinkDT': original_sale.fiscal_printed_at.strftime('%d-%m-%y %H:%M:%S'),
         'FiskMem': settings.FISCAL_DEVICE_FM_NUMBER,
-        'InvLink': '',
+        # Credit/InvLink deliberately NOT sent at all -- they're for a
+        # credit-note document, a different operation from a plain storno
+        # (see the guide's separate Credit-only field table). The guide's
+        # one full worked Refund="R" example doesn't include either key,
+        # even blank. A normal sale tolerates them present-but-empty fine
+        # (see print_fiscal_receipt's start_data), so the two together
+        # alongside Refund="R" -- still service error 7 even after fixing
+        # Reason/DocLinkDT above -- is the remaining suspect, not yet
+        # confirmed live either way.
     }
     _run_receipt(start_data, items, 'Refund', refund.total_amount)
     return unic_sale_num
