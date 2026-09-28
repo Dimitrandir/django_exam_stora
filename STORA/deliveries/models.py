@@ -1,7 +1,7 @@
 from decimal import Decimal
 
 from django.db import models, transaction
-from django.db.models.signals import post_delete, post_save
+from django.db.models.signals import post_delete, post_save, pre_delete
 from django.dispatch import receiver
 from django.core.validators import MinValueValidator
 from django.utils import timezone
@@ -272,17 +272,47 @@ def _update_delivery_total(sender, instance, **kwargs):
     instance.delivery.recalculate_total()
 
 
+# pks of DeliveryAttributes rows currently being deleted AS A WHOLE (not a
+# single line correction) -- see _restore_stock_on_delete below for why this
+# exists: Django's cascade collector deletes the CHILDREN (DeliveryItems)
+# before the PARENT row (DeliveryAttributes), to avoid violating the FK
+# while the children still point at it. That means `instance.delivery`
+# resolves just fine for every item deleted as part of a whole-delivery
+# CASCADE -- the `except DeliveryAttributes.DoesNotExist` this code used to
+# rely on to detect that case never actually fires, confirmed live (deleting
+# a whole delivery left every one of its products permanently PROTECTED via
+# a DeliveryItemRemoval row, exactly the outcome the code below says it's
+# supposed to skip for this case). This module-level set is the only
+# reliable way to tell the two cases apart -- marked in pre_delete (before
+# any cascading starts), read here, cleared in post_delete once the parent
+# row is actually gone.
+_deliveries_being_deleted = set()
+
+
+@receiver(pre_delete, sender=DeliveryAttributes)
+def _mark_delivery_being_deleted(sender, instance, **kwargs):
+    _deliveries_being_deleted.add(instance.pk)
+
+
+@receiver(post_delete, sender=DeliveryAttributes)
+def _unmark_delivery_being_deleted(sender, instance, **kwargs):
+    _deliveries_being_deleted.discard(instance.pk)
+
+
 @receiver(post_delete, sender=DeliveryItems)
 def _restore_stock_on_delete(sender, instance, **kwargs):
     # If a delivery item is removed (mistake on the receiver's part, or the
     # whole delivery gets deleted -- CASCADE triggers this per item), undo
     # whatever effect it had on stock and refresh the parent delivery's
-    # total. Falls back to the DELIVERY (add) sign if the parent is already
-    # gone -- matches the pre-write-off behavior for that edge case.
+    # total.
+    whole_delivery_being_deleted = instance.delivery_id in _deliveries_being_deleted
     try:
         delivery = instance.delivery
         movement_type = delivery.movement_type
     except DeliveryAttributes.DoesNotExist:
+        # Kept as a defensive fallback (e.g. raw/bulk deletes that skip
+        # pre_delete) -- normal CASCADE from the admin/views is now caught
+        # by the flag above instead, not by this.
         delivery = None
         movement_type = DeliveryAttributes.MOVEMENT_DELIVERY
     sign = -1 if movement_type in DeliveryAttributes.OUTGOING_MOVEMENT_TYPES else 1
@@ -295,14 +325,15 @@ def _restore_stock_on_delete(sender, instance, **kwargs):
         # Retract the auto-link DeliveryItems.save() may have created for
         # this product+supplier -- but only if it really WAS auto-created
         # (linked_from_delivery=True; a person adding a supplier by hand on
-        # the product form is never touched here) and no OTHER delivery of
+        # the product form is never touched here), no OTHER delivery of
         # this product from the same supplier still exists (this deleted
-        # item might not have been the only one). `delivery` is None when
-        # the whole delivery got deleted too (CASCADE) -- there's no
-        # supplier left to look up at that point, so this is skipped
-        # entirely in that edge case, same as the movement_type fallback
-        # above already approximates.
-        if delivery is not None and movement_type == DeliveryAttributes.MOVEMENT_DELIVERY and delivery.supplier_id:
+        # item might not have been the only one), AND this is a real single-
+        # line correction, not the whole delivery being deleted (that's a
+        # bigger, deliberate "undo this entire delivery" action -- the
+        # product/supplier relationship this delivery established shouldn't
+        # be retroactively erased just because the paperwork got deleted).
+        if (not whole_delivery_being_deleted and delivery is not None
+                and movement_type == DeliveryAttributes.MOVEMENT_DELIVERY and delivery.supplier_id):
             other_deliveries_remain = DeliveryItems.objects.filter(
                 delivery_item_id=instance.delivery_item_id,
                 delivery__movement_type=DeliveryAttributes.MOVEMENT_DELIVERY,
@@ -322,10 +353,14 @@ def _restore_stock_on_delete(sender, instance, **kwargs):
         # view right before formset.save() calls .delete() on this instance
         # (see delivery_edit) -- the signal itself has no access to
         # request.user. Skipped for write-off/scrap (see the class
-        # docstring) and for a whole-delivery CASCADE delete (delivery is
-        # None then -- that's a bigger, deliberate action, not a line
-        # correction).
-        if delivery is not None and movement_type == DeliveryAttributes.MOVEMENT_DELIVERY:
+        # docstring) and for a whole-delivery CASCADE delete -- that's a
+        # bigger, deliberate action, not a line correction, and (this is
+        # the part that was actually broken) DeliveryItemRemoval.product is
+        # PROTECT, so writing one of these for every item in a deleted
+        # delivery permanently blocks those products from ever being hard-
+        # deleted again, for no behavioral benefit (nothing survives to
+        # show that history against).
+        if not whole_delivery_being_deleted and delivery is not None and movement_type == DeliveryAttributes.MOVEMENT_DELIVERY:
             DeliveryItemRemoval.objects.create(
                 product_id=instance.delivery_item_id,
                 supplier_id=delivery.supplier_id,
@@ -335,7 +370,8 @@ def _restore_stock_on_delete(sender, instance, **kwargs):
                 removed_by=getattr(instance, '_removed_by', None),
             )
 
-    try:
-        instance.delivery.recalculate_total()
-    except DeliveryAttributes.DoesNotExist:
-        pass  # whole delivery was deleted -- nothing left to recalculate
+    if not whole_delivery_being_deleted:
+        try:
+            instance.delivery.recalculate_total()
+        except DeliveryAttributes.DoesNotExist:
+            pass
