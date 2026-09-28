@@ -297,13 +297,16 @@ def attempt_print(sale):
 # own order 1:1 by design (see that model's docstring), spelled out
 # explicitly here anyway rather than relying on list position, so a future
 # reordering of REASON_CHOICES can't silently send the wrong Reason to the
-# device.
+# device. Values are STRINGS ("0"/"1"/"2"), not ints -- confirmed live
+# (2026-09-28) against the guide's own worked FDStartFiscRcp storno example,
+# which sends "Reason": "0" -- an int here made the whole request fail at
+# the outer service level before ever reaching the device's own error table.
 def _storno_reason_map():
     from .models import RefundAttributes
     return {
-        RefundAttributes.RETURN_COMPLAINT: 0,
-        RefundAttributes.OPERATOR_ERROR: 1,
-        RefundAttributes.TAX_BASE_REDUCTION: 2,
+        RefundAttributes.RETURN_COMPLAINT: '0',
+        RefundAttributes.OPERATOR_ERROR: '1',
+        RefundAttributes.TAX_BASE_REDUCTION: '2',
     }
 
 
@@ -350,7 +353,10 @@ def print_fiscal_refund(refund):
         'Invoice': '', 'Refund': 'R', 'Credit': '',
         'Reason': reason_map[refund.reason],
         'DocLink': original_sale.fiscal_receipt_number,
-        'DocLinkDT': original_sale.fiscal_printed_at.strftime('%d-%m-%y %H:%M'),
+        # Guide's format spec (and its worked example, "26-06-19 13:41:00")
+        # both include seconds -- confirmed live (2026-09-28) that leaving
+        # them off ("28-09-26 09:13") made FDStartFiscRcp fail outright.
+        'DocLinkDT': original_sale.fiscal_printed_at.strftime('%d-%m-%y %H:%M:%S'),
         'FiskMem': settings.FISCAL_DEVICE_FM_NUMBER,
         'InvLink': '',
     }

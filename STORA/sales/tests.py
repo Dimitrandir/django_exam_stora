@@ -1390,9 +1390,9 @@ class FiscalRefundTests(TestCase):
         start_call = mock_post.call_args_list[0]
         start_data = start_call.args[1]
         self.assertEqual(start_data['Refund'], 'R')
-        self.assertEqual(start_data['Reason'], 0)  # RETURN_COMPLAINT -> 0
+        self.assertEqual(start_data['Reason'], '0')  # RETURN_COMPLAINT -> "0" (string, not int)
         self.assertEqual(start_data['DocLink'], 3)
-        self.assertEqual(start_data['DocLinkDT'], '14-03-26 12:30')
+        self.assertEqual(start_data['DocLinkDT'], '14-03-26 12:30:00')
 
         item_call = mock_post.call_args_list[1]
         item_data = item_call.args[1]
@@ -1414,7 +1414,7 @@ class FiscalRefundTests(TestCase):
         fiscal.print_fiscal_refund(self.refund)
 
         start_data = mock_post.call_args_list[0].args[1]
-        self.assertEqual(start_data['Reason'], 1)
+        self.assertEqual(start_data['Reason'], '1')
 
     @override_settings(**FISCAL_SETTINGS)
     @patch('STORA.sales.fiscal._post_command')
