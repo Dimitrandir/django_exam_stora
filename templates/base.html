@@ -70,11 +70,42 @@
                 </li>
 
                 <li class="nav-item">
-                    <a class="nav-link" href="{% url 'reports_dashboard' %}">Reports dashboard</a>
+                    <a class="nav-link" href="{% url 'reports_dashboard' %}">Reports</a>
                 </li>
             </ul>
 
             {% if user.is_authenticated %}
+            {% comment %}
+            Moved to sit left of the search box (was floating between the
+            search box and Employees, in a cluster of unrelated
+            account-y links, which read as unclear/lost -- flagged live
+            from a real screenshot: "не се разбира какво е"). Persisted
+            per browser/device (localStorage, see static/js/onscreen-
+            keyboard.js), not a per-page or per-user setting -- a
+            touchscreen till stays in Touch Mode permanently, a desktop
+            with a real keyboard just never turns it on. When on, tapping
+            ANY text field anywhere in the app pops this keyboard up
+            automatically, no per-field toggle button needed (a few
+            fields that already have their own dedicated keyboard/keypad
+            opt out explicitly, see that file's own comments).
+            {% endcomment %}
+            <button type="button" class="touch-mode-toggle-btn me-lg-2" title="Touch Mode: auto-show an on-screen keyboard for any text field" aria-label="Touch Mode">
+                {% comment %}
+                Simplified hard, twice -- the first version (a full hand
+                with curled fingers + ripple) was unreadable at this size
+                ("хич не изглежда добре... изобщо не се разбира какво е",
+                flagged live from a real screenshot). Just a device
+                outline + one tap point + two ripple arcs reads clearly
+                even this small, same idea every real "tap to interact"
+                icon uses instead of drawing an actual hand.
+                {% endcomment %}
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="2.5" y="4" width="19" height="14" rx="2.5"/>
+                    <circle cx="11" cy="14" r="1.3" fill="currentColor" stroke="none"/>
+                    <path d="M13.8 11.5c1.1.6 1.8 1.7 1.8 2.9"/>
+                    <path d="M16.2 9.3c1.9 1 3 3 3 5.3"/>
+                </svg>
+            </button>
             <div class="pill-search-wrapper position-relative mx-lg-3 my-2 my-lg-0" style="min-width: 280px;">
                 <span class="pill-search-wrapper__icon"></span>
                 <input type="search" id="global-search-input" class="pill-input"
@@ -85,21 +116,6 @@
 
             <ul class="navbar-nav ms-auto align-items-lg-center">
                 {% if user.is_authenticated %}
-                    <li class="nav-item me-lg-2">
-                        {% comment %}
-                        Persisted per browser/device (localStorage, see
-                        static/js/onscreen-keyboard.js), not a per-page or
-                        per-user setting -- a touchscreen till stays in
-                        Touch Mode permanently, a desktop with a real
-                        keyboard just never turns it on. When on, tapping
-                        ANY text field anywhere in the app pops this
-                        keyboard up automatically, no per-field toggle
-                        button needed (a few fields that already have their
-                        own dedicated keyboard/keypad opt out explicitly,
-                        see that file's own comments).
-                        {% endcomment %}
-                        <button type="button" class="touch-mode-toggle-btn" title="Touch Mode: auto-show an on-screen keyboard for any text field">⌨ Touch Mode</button>
-                    </li>
                     <li class="nav-item">
                         <a class="nav-link" href="{% url 'employee_list' %}">Employees</a>
                     </li>
