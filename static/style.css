@@ -176,7 +176,7 @@ td { padding: 10px; border-bottom: 1px solid #eee; }
 tr:hover { background-color: #f9f9f9; }
 
 /* Buttons */
-.btn, button, .button_edit, .button_delete {
+.btn, button, .button_edit, .button_delete, .button-save {
     padding: 8px 15px;
     border-radius: 4px;
     text-decoration: none;
@@ -184,11 +184,54 @@ tr:hover { background-color: #f9f9f9; }
     cursor: pointer;
     border: none;
     font-weight: 600;
+    /* Flagged live: pressing a plain button (Confirm Refund, Complete
+       Sale, ...) gave no visible feedback at all -- no hover/active state
+       existed anywhere for this base rule, just the flat resting color,
+       so on a touchscreen (no mouse cursor/hover to hint at it either)
+       there was genuinely no way to tell a tap registered before the page
+       actually navigated/reloaded. filter:brightness works for every
+       variant below (edit/delete/cancel/etc.) without hardcoding a
+       darker hex per color; transition keeps it snappy, not sluggish. */
+    transition: filter 0.08s ease-out, transform 0.05s ease-out;
 }
 
 button, .btn-primary { background-color: var(--accent-color); color: white; }
 .button_edit { background-color: var(--success-color); color: white; margin-right: 5px; }
 .button_delete, .delete_button { background-color: var(--danger-color); color: white; }
+
+/* .button-save is used all over the app (Confirm Refund, Complete Sale,
+   Save Order, Complete Delivery, ...) -- sometimes alone on a <button>
+   (which the bare `button` tag selector above already colors correctly),
+   sometimes as `class="btn button-save"` or on an `<a role="button"
+   class="btn button-save">`. Bootstrap's own .btn (loaded before this
+   file, see base.html <head> order) sets its OWN transparent background,
+   same specificity (one class) as button-save, and Bootstrap's copy
+   loses the cascade tie only because this file comes later in <head> --
+   confirmed live (2026-09-29): every `.btn button-save` instance rendered
+   with NO background at all, just text, effectively invisible as a
+   "primary action" button (Confirm Refund/Save Order/Start New
+   Revision/Retry Fiscal Print/X Report/Period Report/Edit price list all
+   affected). Giving button-save its own explicit background here fixes
+   every one of those at once, .btn present or not, button or <a>, without
+   touching any of the ~10 templates that use it. */
+.button-save {
+    background-color: var(--accent-color);
+    color: white;
+}
+
+.btn:hover:not(:disabled), button:hover:not(:disabled), .button-save:hover:not(:disabled),
+.button_edit:hover:not(:disabled), .button_delete:hover:not(:disabled) {
+    filter: brightness(0.93);
+}
+
+.btn:active:not(:disabled), button:active:not(:disabled), .button-save:active:not(:disabled),
+.button_edit:active:not(:disabled), .button_delete:active:not(:disabled) {
+    filter: brightness(0.82);
+    /* The actual "tactile" part -- a real physical button visibly moves
+       when pressed. 1px is enough to register on a touchscreen without
+       looking like a layout jump. */
+    transform: translateY(1px);
+}
 .button_cancel { background-color: #95a5a6; color: white; }
 
 
