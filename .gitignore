@@ -46,3 +46,14 @@ Thumbs.db
 
 # Database secrets
 .env
+*.env
+
+# ECRCommApp (fiscal printer helper) -- external third-party tool, extracted
+# on the deployment machine (see kasov_aparat.md/DEPLOYMENT.md section 9),
+# not vendored in this repo. Its own runtime files (local SSL cert/key for
+# its HTTPS listener, local db.json state, serial port config) must never
+# be committed -- confirmed live (2026-09-28) that these were about to be
+# staged/pushed from the Windows deployment machine, including a private
+# key.
+ecrcommapp/
+/db.json
