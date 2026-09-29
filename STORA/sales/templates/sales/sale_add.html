@@ -915,7 +915,22 @@
         // vendored tabulator.min.js, not this code) -- the table hasn't
         // finished its own internal first render yet at that point.
         // 'tableBuilt' is Tabulator's own "I'm actually ready" event.
-        saleItemsTable.on('tableBuilt', syncCartHeight);
+        //
+        // redraw(true) after syncCartHeight() -- confirmed live: without
+        // it, the Sum column's right edge sat a consistent ~15-19px past
+        // the visible container on every single page load/reload (not
+        // just an occasional resize), silently clipped instead of just
+        // narrow. setHeight() (inside syncCartHeight) changes the table's
+        // real height right after fitColumns already computed column
+        // widths against the placeholder height above -- exactly the same
+        // "fitColumns doesn't recalculate on its own" issue the resize
+        // handler below already works around with this identical
+        // syncCartHeight()+redraw(true) pairing, just missing here on the
+        // very first layout pass.
+        saleItemsTable.on('tableBuilt', function () {
+            syncCartHeight();
+            saleItemsTable.redraw(true);
+        });
 
         // Cart text size +/- -- persisted per browser/device, same pattern
         // as the shortcuts panel width/hidden state (localStorage, not a
