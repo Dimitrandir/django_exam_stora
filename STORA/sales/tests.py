@@ -869,6 +869,29 @@ class RefundViewTests(TestCase):
         response = self.client.get(reverse('refund_find'), {'amount': '999.99'})
         self.assertNotIn(self.sale, response.context['results'])
 
+    def test_refund_find_marks_refund_status_per_sale(self):
+        def status_for(sale_id, response):
+            row = next(r for r in response.context['results_data'] if r['id'] == sale_id)
+            return row['refunded']
+
+        response = self.client.get(reverse('refund_find'))
+        self.assertEqual(status_for(self.sale.pk, response), 'None')
+
+        refund = RefundAttributes.objects.create(
+            original_sale=self.sale, cashier=self.user, reason=RefundAttributes.RETURN_COMPLAINT,
+        )
+        RefundItems.objects.create(
+            refund=refund, original_item=self.item, refund_quantity=Decimal('1.000'), price_at_refund=Decimal('4.00'),
+        )
+        response = self.client.get(reverse('refund_find'))
+        self.assertEqual(status_for(self.sale.pk, response), 'Partial')
+
+        RefundItems.objects.create(
+            refund=refund, original_item=self.item, refund_quantity=Decimal('2.000'), price_at_refund=Decimal('4.00'),
+        )
+        response = self.client.get(reverse('refund_find'))
+        self.assertEqual(status_for(self.sale.pk, response), 'Full')
+
     def test_refund_new_page_loads(self):
         response = self.client.get(reverse('refund_new', kwargs={'pk': self.sale.pk}))
         self.assertEqual(response.status_code, 200)

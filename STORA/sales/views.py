@@ -476,6 +476,30 @@ def refund_find(request):
         qs = qs.filter(total_amount=amount)
 
     results = qs.order_by('-time_of_sale')[:RECENT_RECEIPTS_COUNT if not any_filter else 50]
+    results = list(results)
+
+    # Two bulk lookups (not one query per sale) to classify each row as
+    # None/Partial/Full refunded -- {sale_id: total} dicts built once,
+    # looked up per row below. sold_qty comes from SaleItems directly
+    # (not sale.total_amount) so a mixed-unit sale still compares
+    # quantity to quantity, not money to money.
+    sale_ids = [sale.id for sale in results]
+    sold_qty_by_sale = dict(
+        SaleItems.objects.filter(sale_id__in=sale_ids)
+        .values('sale_id').annotate(total=Sum('sale_quantity')).values_list('sale_id', 'total')
+    )
+    refunded_qty_by_sale = dict(
+        RefundItems.objects.filter(original_item__sale_id__in=sale_ids)
+        .values('original_item__sale_id').annotate(total=Sum('refund_quantity'))
+        .values_list('original_item__sale_id', 'total')
+    )
+
+    def _refund_status(sale_id):
+        sold = sold_qty_by_sale.get(sale_id) or Decimal('0')
+        refunded = refunded_qty_by_sale.get(sale_id) or Decimal('0')
+        if refunded <= 0:
+            return 'None'
+        return 'Full' if refunded >= sold else 'Partial'
 
     # Plain-dict serialization for the Tabulator grid (see CLAUDE.md table
     # convention) -- date/time split into separate strftime'd strings, same
@@ -488,6 +512,7 @@ def refund_find(request):
             'time': timezone.localtime(sale.time_of_sale).strftime('%H:%M'),
             'cashier': str(sale.cashier),
             'amount': float(sale.total_amount),
+            'refunded': _refund_status(sale.id),
             'refund_url': reverse('refund_new', args=[sale.id]),
         }
         for sale in results

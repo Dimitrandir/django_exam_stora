@@ -2,8 +2,6 @@
 
 {% block title %}STORA - Refund Sale #{{ sale.id }}{% endblock %}
 {% load static cache_bust %}
-{% block main_class %}main-wide{% endblock %}
-{% block container_class %}container-fluid{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
@@ -22,8 +20,8 @@
     <div id="refund-hidden-inputs"></div>
 
     {{ lines_data|json_script:"refund-lines-data" }}
-    <div id="refund-items-table-card" class="data-table-card">
-        <div id="refund-items-table" class="table-sm"></div>
+    <div id="refund-items-table-card" class="data-table-card tabulator-classic">
+        <div id="refund-items-table" class="tabulator-classic"></div>
     </div>
 
     <p>

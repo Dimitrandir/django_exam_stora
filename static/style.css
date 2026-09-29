@@ -2750,6 +2750,35 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
     max-width: 130px;
 }
 
+/* Now docked inside the results table's own "Columns ▾" toolbar bar
+   (see refund_find.html's attachTableExportToToolbar call, titleElement
+   param) instead of a separate block above the table -- the bar itself is
+   flex/space-between, this keeps the form's own controls from stretching
+   to fill whatever room that leaves. */
+#refund-results-table-card .refund-search-form {
+    margin-bottom: 0;
+    flex: 1 1 auto;
+}
+
+/* "Refunded" column badges (refund_find.html's results table) -- same
+   traffic-light meaning as the Unit Price red/green highlight elsewhere
+   in the app (danger/success vars), not a new color story. "None" stays
+   plain text -- most rows are unrefunded, a colored pill on every single
+   row would be noisier than informative. */
+.refund-status--full {
+    color: var(--success-color);
+    font-weight: 600;
+}
+
+.refund-status--partial {
+    color: var(--accent-color);
+    font-weight: 600;
+}
+
+.refund-status--none {
+    color: #888;
+}
+
 /* Bulk-actions bar (Products/Categories grids) -- appears once a row is
    selected via the checkbox column. Pill-shaped rather than Bootstrap's
    square-cornered .alert, matching the rest of the icon-btn/pill-input
