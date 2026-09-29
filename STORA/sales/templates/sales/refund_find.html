@@ -31,7 +31,6 @@
         <span class="popup-tip__bubble">Pick from the recent receipts below, or narrow the search by sale ID/cashier, date, or amount -- scanning a sale's own receipt barcode also works here (it just types the sale ID into the search box).</span>
     </span>
 </form>
-<div id="refund-search-keyboard" class="sale-keyboard" style="display:none;"></div>
 
 {{ results_data|json_script:"refund-results-data" }}
 <div id="refund-results-table-card" class="data-table-card tabulator-classic">
@@ -84,143 +83,28 @@ document.addEventListener('DOMContentLoaded', function () {
         window.location = row.getData().refund_url;
     });
 
-    // On-screen keyboard, same component/CSS classes as sale_add.html's
-    // (.sale-keyboard*, already global in style.css -- no new CSS needed
-    // here) -- touch-friendly typing for a cashier who taps the search
-    // field with no physical keyboard attached. Scanning a receipt
-    // barcode still works exactly as before regardless (it just types
-    // digits into #refund-search-q fast and the form submits on its own
-    // scanner-appended Enter -- nothing here changes that path). Targets
-    // whichever of Sale ID/Amount was last focused, since both can want
-    // manual touch input; Date keeps the native picker, no keyboard
-    // needed there.
+    // On-screen keyboard -- now the shared static/js/onscreen-keyboard.js
+    // module (loaded globally in base.html) instead of a bespoke copy of
+    // sale_add.html's keyboard code. Scanning a receipt barcode still
+    // works exactly as before regardless (it just types digits into
+    // #refund-search-q fast and the form submits on its own scanner-
+    // appended Enter -- the shared module doesn't touch that path).
+    // toggleFor() forces the keyboard open for whichever of Sale ID/Amount
+    // was last focused, independent of whether Touch Mode is globally on
+    // -- this button stays available either way. Date keeps the native
+    // picker, no keyboard needed there.
     (function () {
         var qInput = document.getElementById('refund-search-q');
         var amountInput = document.getElementById('refund-search-amount');
         var toggleBtn = document.getElementById('refund-keyboard-toggle-btn');
-        var keyboardEl = document.getElementById('refund-search-keyboard');
-        var activeInput = qInput;
+        var lastFocused = qInput;
 
         [qInput, amountInput].forEach(function (input) {
-            input.addEventListener('focus', function () { activeInput = input; });
+            input.addEventListener('focus', function () { lastFocused = input; });
         });
-
-        var KEYBOARD_LAYOUTS = {
-            bg: [
-                ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'],
-                ['я', 'в', 'е', 'р', 'т', 'ъ', 'у', 'и', 'о', 'п'],
-                ['а', 'с', 'д', 'ф', 'г', 'х', 'й', 'к', 'л'],
-                ['з', 'ь', 'ц', 'ж', 'б', 'н', 'м'],
-                ['ч', 'ш', 'щ', 'ю'],
-            ],
-            en: [
-                ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'],
-                ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
-                ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l'],
-                ['z', 'x', 'c', 'v', 'b', 'n', 'm'],
-            ],
-        };
-        var keyboardLanguage = 'bg';
-
-        function insertAtCursor(text) {
-            var input = activeInput;
-            var start = input.selectionStart ?? input.value.length;
-            var end = input.selectionEnd ?? input.value.length;
-            input.value = input.value.slice(0, start) + text + input.value.slice(end);
-            input.setSelectionRange(start + text.length, start + text.length);
-            input.focus();
-        }
-
-        function renderKeyboard() {
-            keyboardEl.innerHTML = '';
-
-            KEYBOARD_LAYOUTS[keyboardLanguage].forEach(function (rowKeys) {
-                var rowEl = document.createElement('div');
-                rowEl.className = 'sale-keyboard-row';
-                rowKeys.forEach(function (key) {
-                    var keyBtn = document.createElement('button');
-                    keyBtn.type = 'button';
-                    keyBtn.className = 'sale-keyboard-key';
-                    keyBtn.textContent = key;
-                    keyBtn.addEventListener('click', function () { insertAtCursor(key); });
-                    rowEl.appendChild(keyBtn);
-                });
-                keyboardEl.appendChild(rowEl);
-            });
-
-            var controlsRow = document.createElement('div');
-            controlsRow.className = 'sale-keyboard-row';
-
-            var langBtn = document.createElement('button');
-            langBtn.type = 'button';
-            langBtn.className = 'sale-keyboard-key sale-keyboard-key--lang';
-            langBtn.textContent = keyboardLanguage === 'bg' ? 'EN' : 'BG';
-            langBtn.title = 'Switch keyboard language';
-            langBtn.addEventListener('click', function () {
-                keyboardLanguage = keyboardLanguage === 'bg' ? 'en' : 'bg';
-                renderKeyboard();
-                activeInput.focus();
-            });
-            controlsRow.appendChild(langBtn);
-
-            var spaceBtn = document.createElement('button');
-            spaceBtn.type = 'button';
-            spaceBtn.className = 'sale-keyboard-key sale-keyboard-key--space';
-            spaceBtn.textContent = 'Space';
-            spaceBtn.addEventListener('click', function () { insertAtCursor(' '); });
-            controlsRow.appendChild(spaceBtn);
-
-            var backspaceBtn = document.createElement('button');
-            backspaceBtn.type = 'button';
-            backspaceBtn.className = 'sale-keyboard-key sale-keyboard-key--backspace';
-            backspaceBtn.textContent = '←';
-            backspaceBtn.addEventListener('click', function () {
-                var input = activeInput;
-                var start = input.selectionStart ?? input.value.length;
-                var end = input.selectionEnd ?? input.value.length;
-                if (start === end && start > 0) {
-                    input.value = input.value.slice(0, start - 1) + input.value.slice(end);
-                    input.setSelectionRange(start - 1, start - 1);
-                } else {
-                    input.value = input.value.slice(0, start) + input.value.slice(end);
-                    input.setSelectionRange(start, start);
-                }
-                input.focus();
-            });
-            controlsRow.appendChild(backspaceBtn);
-
-            var enterBtn = document.createElement('button');
-            enterBtn.type = 'button';
-            enterBtn.className = 'sale-keyboard-key sale-keyboard-key--enter';
-            enterBtn.textContent = '↵';
-            enterBtn.addEventListener('click', function () {
-                document.getElementById('refund-search-form').requestSubmit();
-            });
-            controlsRow.appendChild(enterBtn);
-
-            keyboardEl.appendChild(controlsRow);
-        }
-
-        renderKeyboard();
 
         toggleBtn.addEventListener('click', function () {
-            var isHidden = keyboardEl.style.display === 'none';
-            keyboardEl.style.display = isHidden ? '' : 'none';
-            toggleBtn.classList.toggle('is-active', isHidden);
-            activeInput.focus();
-        });
-
-        // Same "click outside closes it" convention as the product search
-        // dropdowns elsewhere -- the keyboard sits below the form, not
-        // inside it structurally in the DOM tree once it's moved into the
-        // toolbar, so both the form and the keyboard itself count as
-        // "inside" for this purpose.
-        document.addEventListener('click', function (e) {
-            if (keyboardEl.style.display === 'none') return;
-            if (!e.target.closest('#refund-search-form') && !e.target.closest('#refund-search-keyboard')) {
-                keyboardEl.style.display = 'none';
-                toggleBtn.classList.remove('is-active');
-            }
+            OnscreenKeyboard.toggleFor(lastFocused);
         });
     })();
 });

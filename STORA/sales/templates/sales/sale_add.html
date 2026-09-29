@@ -121,13 +121,24 @@
             {% endcomment %}
             <div class="sale-item-search-row">
                 <div class="position-relative sale-item-search-wrapper">
-                    <input type="search" id="sale-item-search-input" class="form-control"
+                    <input type="search" id="sale-item-search-input" class="form-control" data-osk-skip
                            placeholder="Search PRODUCTS..." autocomplete="off">
                     {% comment %}
                     Shows/hides the on-screen keyboard below -- for a touch-
                     screen till with no physical keyboard attached, typing a
                     product name by hand still has to be possible somehow.
                     Docked inside the search box itself, at its right edge.
+                    This field's own data-osk-skip (above) opts it out of
+                    the GLOBAL touch-mode keyboard (static/js/onscreen-
+                    keyboard.js) -- this page already has its own dedicated
+                    toggle + BG/EN layout, tuned specifically for scanning
+                    (focus always returns here after each add); letting the
+                    global system also grab focus-in on this same field
+                    would just stack a second keyboard under this one
+                    whenever touch mode is on. checkout-paid-input/
+                    checkout-card-input below carry the same attribute for
+                    the same reason -- they already have the always-visible
+                    .checkout-keypad next to them.
                     {% endcomment %}
                     <button type="button" id="sale-keyboard-toggle-btn" class="sale-keyboard-toggle-btn" title="Show keyboard">⌨</button>
                     <div id="sale-item-search-results" class="global-search-results"></div>
@@ -273,12 +284,12 @@
                             still brings up a numeric keyboard on touch
                             devices if the tile is ever tapped directly.
                             {% endcomment %}
-                            <input type="text" inputmode="decimal" id="checkout-paid-input" class="checkout-tile__input">
+                            <input type="text" inputmode="decimal" id="checkout-paid-input" class="checkout-tile__input" data-osk-skip>
                         </div>
 
                         <div class="checkout-tile checkout-tile--input" id="checkout-card-row" style="display: none;">
                             <label class="checkout-tile__label" for="checkout-card-input">Card amount</label>
-                            <input type="text" inputmode="decimal" id="checkout-card-input" class="checkout-tile__input">
+                            <input type="text" inputmode="decimal" id="checkout-card-input" class="checkout-tile__input" data-osk-skip>
                         </div>
 
                         <div class="checkout-tile checkout-tile--change" id="checkout-cash-remainder-row" style="display: none;">

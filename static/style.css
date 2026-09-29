@@ -1035,6 +1035,47 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
     color: #1e4d35;
 }
 
+/* The GLOBAL on-screen keyboard (static/js/onscreen-keyboard.js) -- reuses
+   every .sale-keyboard* rule above as-is (same look), just docked fixed to
+   the bottom of the viewport instead of sitting inline in one page's own
+   layout, since it can be triggered by ANY text field on ANY page. z-index
+   above the POS compact-nav overlay (2000, the highest already in this
+   file) and Bootstrap's own modals -- needs to stay usable even with a
+   modal open (e.g. typing into a field inside one). */
+.sale-keyboard--floating {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 2100;
+    margin: 0 auto;
+    max-width: 720px;
+    border-radius: 0.5rem 0.5rem 0 0;
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.2);
+}
+
+/* Navbar "Touch Mode" toggle -- persisted per browser/device (localStorage,
+   see onscreen-keyboard.js), not a per-page setting. Same visual language
+   as .sale-keyboard-toggle-btn's is-active state (dark blue when on) but
+   its own class -- this one lives in the navbar next to Logout, always the
+   same plain button chrome regardless of which page it's on, not docked
+   inside a search field. */
+.touch-mode-toggle-btn {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    color: #ffffff;
+    border-radius: 999px;
+    font-size: 1.1rem;
+    line-height: 1;
+    padding: 0.35rem 0.6rem;
+    cursor: pointer;
+}
+
+.touch-mode-toggle-btn.is-active {
+    background: var(--brand-blue-deep);
+    border-color: var(--brand-blue-deep);
+}
+
 /* Fixed-height box so the page itself doesn't grow with the cart -- the
    grid's own height option (see sale_add.html) keeps its header pinned and
    scrolls just the rows once there are more than fit on screen. */

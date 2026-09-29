@@ -83,8 +83,23 @@
             </div>
             {% endif %}
 
-            <ul class="navbar-nav ms-auto">
+            <ul class="navbar-nav ms-auto align-items-lg-center">
                 {% if user.is_authenticated %}
+                    <li class="nav-item me-lg-2">
+                        {% comment %}
+                        Persisted per browser/device (localStorage, see
+                        static/js/onscreen-keyboard.js), not a per-page or
+                        per-user setting -- a touchscreen till stays in
+                        Touch Mode permanently, a desktop with a real
+                        keyboard just never turns it on. When on, tapping
+                        ANY text field anywhere in the app pops this
+                        keyboard up automatically, no per-field toggle
+                        button needed (a few fields that already have their
+                        own dedicated keyboard/keypad opt out explicitly,
+                        see that file's own comments).
+                        {% endcomment %}
+                        <button type="button" class="touch-mode-toggle-btn" title="Touch Mode: auto-show an on-screen keyboard for any text field">⌨ Touch Mode</button>
+                    </li>
                     <li class="nav-item">
                         <a class="nav-link" href="{% url 'employee_list' %}">Employees</a>
                     </li>
@@ -239,6 +254,7 @@
 </script>
 <script src="{% static_v 'js/popup-tip.js' %}"></script>
 <script src="{% static_v 'js/search-clear.js' %}"></script>
+<script src="{% static_v 'js/onscreen-keyboard.js' %}"></script>
 {% block extra_js %}{% endblock %}
 </body>
 </html>
