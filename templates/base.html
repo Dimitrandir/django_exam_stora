@@ -91,20 +91,17 @@
             {% endcomment %}
             <button type="button" class="touch-mode-toggle-btn me-lg-2" title="Touch Mode: auto-show an on-screen keyboard for any text field" aria-label="Touch Mode">
                 {% comment %}
-                Simplified hard, twice -- the first version (a full hand
-                with curled fingers + ripple) was unreadable at this size
-                ("хич не изглежда добре... изобщо не се разбира какво е",
-                flagged live from a real screenshot). Just a device
-                outline + one tap point + two ripple arcs reads clearly
-                even this small, same idea every real "tap to interact"
-                icon uses instead of drawing an actual hand.
+                Two custom icons the user dropped into static/ themselves --
+                replaces the earlier hand-drawn SVG attempts, which read as
+                unclear at this size even after simplifying twice. Both
+                images stay in the DOM at all times; CSS shows exactly one
+                based on the button's own .is-active class (toggled by
+                onscreen-keyboard.js's setTouchMode()), so no JS change was
+                needed here -- mouse.png = Touch Mode off (pointer input),
+                press-button.png = Touch Mode on (tap input).
                 {% endcomment %}
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
-                    <rect x="2.5" y="4" width="19" height="14" rx="2.5"/>
-                    <circle cx="11" cy="14" r="1.3" fill="currentColor" stroke="none"/>
-                    <path d="M13.8 11.5c1.1.6 1.8 1.7 1.8 2.9"/>
-                    <path d="M16.2 9.3c1.9 1 3 3 3 5.3"/>
-                </svg>
+                <img src="{% static 'mouse.png' %}" class="touch-mode-toggle-btn__icon touch-mode-toggle-btn__icon--off" alt="">
+                <img src="{% static 'press-button.png' %}" class="touch-mode-toggle-btn__icon touch-mode-toggle-btn__icon--on" alt="">
             </button>
             <div class="pill-search-wrapper position-relative mx-lg-3 my-2 my-lg-0" style="min-width: 280px;">
                 <span class="pill-search-wrapper__icon"></span>

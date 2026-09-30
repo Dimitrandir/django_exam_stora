@@ -1061,14 +1061,40 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
    same plain button chrome regardless of which page it's on, not docked
    inside a search field. */
 .touch-mode-toggle-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     background: transparent;
     border: 1px solid rgba(255, 255, 255, 0.4);
     color: #ffffff;
     border-radius: 999px;
-    font-size: 1.1rem;
-    line-height: 1;
-    padding: 0.35rem 0.6rem;
+    width: 2.25rem;
+    height: 2.25rem;
+    padding: 0;
     cursor: pointer;
+}
+
+/* Both icons are black line art -- invert to white so they read against the
+   dark navbar (transparent) and the blue active background alike, instead
+   of disappearing against either. Only one of the two is ever visible at
+   once, swapped by the .is-active class that onscreen-keyboard.js already
+   toggles on click -- no extra JS needed for the icon swap itself. */
+.touch-mode-toggle-btn__icon {
+    width: 1.3rem;
+    height: 1.3rem;
+    filter: invert(1);
+}
+
+.touch-mode-toggle-btn__icon--on {
+    display: none;
+}
+
+.touch-mode-toggle-btn.is-active .touch-mode-toggle-btn__icon--off {
+    display: none;
+}
+
+.touch-mode-toggle-btn.is-active .touch-mode-toggle-btn__icon--on {
+    display: inline-block;
 }
 
 .touch-mode-toggle-btn.is-active {
