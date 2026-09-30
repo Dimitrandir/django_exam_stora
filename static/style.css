@@ -1055,21 +1055,22 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
 }
 
 /* Navbar "Touch Mode" toggle -- persisted per browser/device (localStorage,
-   see onscreen-keyboard.js), not a per-page setting. Same visual language
-   as .sale-keyboard-toggle-btn's is-active state (dark blue when on) but
-   its own class -- this one lives in the navbar next to Logout, always the
-   same plain button chrome regardless of which page it's on, not docked
-   inside a search field. */
-/* No button chrome (no circle/background/border) by request -- only the
-   icon itself should be visible, and only the icon swap (see below) shows
-   which state is active, not a colored pill around it. */
+   see onscreen-keyboard.js), not a per-page setting. Lives with the other
+   account-level controls (Employees/Logout) rather than beside the search
+   box -- a rare, per-device setting doesn't belong in the same always-
+   visible tier as core navigation/search (Material 3 / Apple HIG top-bar
+   guidance, see STYLES.md). No button chrome (no circle/background/border)
+   by request -- only the icon itself shows, and the icon swap (see below)
+   is what communicates which state is active, not a colored pill around
+   it. Horizontal padding matches the plain-text nav-links either side of
+   it (Employees), so it doesn't sit flush against them. */
 .touch-mode-toggle-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     background: transparent;
     border: none;
-    padding: 0;
+    padding: 0.5rem 1rem;
     cursor: pointer;
 }
 

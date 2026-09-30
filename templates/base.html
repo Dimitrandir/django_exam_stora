@@ -75,34 +75,6 @@
             </ul>
 
             {% if user.is_authenticated %}
-            {% comment %}
-            Moved to sit left of the search box (was floating between the
-            search box and Employees, in a cluster of unrelated
-            account-y links, which read as unclear/lost -- flagged live
-            from a real screenshot: "не се разбира какво е"). Persisted
-            per browser/device (localStorage, see static/js/onscreen-
-            keyboard.js), not a per-page or per-user setting -- a
-            touchscreen till stays in Touch Mode permanently, a desktop
-            with a real keyboard just never turns it on. When on, tapping
-            ANY text field anywhere in the app pops this keyboard up
-            automatically, no per-field toggle button needed (a few
-            fields that already have their own dedicated keyboard/keypad
-            opt out explicitly, see that file's own comments).
-            {% endcomment %}
-            <button type="button" class="touch-mode-toggle-btn me-lg-2" title="Touch Mode: auto-show an on-screen keyboard for any text field" aria-label="Touch Mode">
-                {% comment %}
-                Two custom icons the user dropped into static/ themselves --
-                replaces the earlier hand-drawn SVG attempts, which read as
-                unclear at this size even after simplifying twice. Both
-                images stay in the DOM at all times; CSS shows exactly one
-                based on the button's own .is-active class (toggled by
-                onscreen-keyboard.js's setTouchMode()), so no JS change was
-                needed here -- mouse.png = Touch Mode off (pointer input),
-                press-button.png = Touch Mode on (tap input).
-                {% endcomment %}
-                <img src="{% static 'mouse.png' %}" class="touch-mode-toggle-btn__icon touch-mode-toggle-btn__icon--off" alt="">
-                <img src="{% static 'press-button.png' %}" class="touch-mode-toggle-btn__icon touch-mode-toggle-btn__icon--on" alt="">
-            </button>
             <div class="pill-search-wrapper position-relative mx-lg-3 my-2 my-lg-0" style="min-width: 280px;">
                 <span class="pill-search-wrapper__icon"></span>
                 <input type="search" id="global-search-input" class="pill-input"
@@ -121,6 +93,37 @@
                             {% csrf_token %}
                             <button type="submit" class="btn btn-outline-light btn-sm">Logout {{ user.username }}</button>
                         </form>
+                    </li>
+                    <li class="nav-item">
+                        {% comment %}
+                        Sits after Logout, per Material 3 / Apple HIG
+                        guidance (see STYLES.md): a top bar should hold only
+                        the most-used actions, and Touch Mode is a rare,
+                        per-device setting (set once on a till and left
+                        alone), not something reached for often -- it
+                        belongs with the other account-level controls
+                        (Employees/Logout), not competing for attention with
+                        core navigation and search. Persisted per browser/
+                        device (localStorage, see static/js/onscreen-
+                        keyboard.js), not a per-page or per-user setting.
+                        When on, tapping ANY text field anywhere in the app
+                        pops a keyboard up automatically, no per-field
+                        toggle needed (a few fields with their own dedicated
+                        keyboard/keypad opt out explicitly, see that file's
+                        own comments).
+                        {% endcomment %}
+                        <button type="button" class="touch-mode-toggle-btn nav-link" title="Touch Mode: auto-show an on-screen keyboard for any text field" aria-label="Touch Mode">
+                            {% comment %}
+                            Two custom icons the user dropped into static/
+                            themselves -- mouse.png = Touch Mode off (pointer
+                            input), press-button.png = Touch Mode on (tap
+                            input). Both stay in the DOM; CSS shows exactly
+                            one based on the button's own .is-active class
+                            (toggled by onscreen-keyboard.js's setTouchMode()).
+                            {% endcomment %}
+                            <img src="{% static 'mouse.png' %}" class="touch-mode-toggle-btn__icon touch-mode-toggle-btn__icon--off" alt="">
+                            <img src="{% static 'press-button.png' %}" class="touch-mode-toggle-btn__icon touch-mode-toggle-btn__icon--on" alt="">
+                        </button>
                     </li>
                 {% else %}
                     <li class="nav-item me-2">
