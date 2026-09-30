@@ -157,19 +157,18 @@ document.addEventListener('DOMContentLoaded', function () {
         },
     ], {placeholder: 'No stock movement in the selected period.'});
 
-    // fitColumns computes widths once, against whatever the container's
-    // width measures as at that exact moment -- with this many columns
-    // (several hidden by default via visible:false, which can throw off
-    // that first measurement vs. after layout settles), the flexible Name
-    // column ends up computed far too narrow on the very first paint and
-    // never gets re-measured on its own. Confirmed live from a real
-    // screenshot: "QA Order Product 1" wrapping letter-by-letter down the
-    // row on every page load. Same fix already used for this exact
-    // symptom elsewhere in the app (sale_add.html's cart Sum column) --
-    // force one recalculation right after Tabulator's own "I'm actually
-    // built" event, not synchronously (redraw(true) inside the same tick
-    // as `new Tabulator(...)` hits a null ref inside Tabulator's own
-    // adjustTableSize(), confirmed live there too).
+    // fitColumns only fits column widths to the container once, at
+    // initial render -- doesn't recalculate on its own if something else
+    // changes how much room is available afterwards (e.g. toggling a
+    // column's visibility via Columns ▾). One recalculation right after
+    // Tabulator's own "I'm actually built" event, not synchronously
+    // (redraw(true) inside the same tick as `new Tabulator(...)` hits a
+    // null ref inside Tabulator's own adjustTableSize() -- confirmed live
+    // elsewhere in the app, e.g. sale_add.html's cart). NOTE: this does
+    // NOT fix the Name column collapsing on load (see its own minWidth
+    // above for that) -- tried, confirmed it doesn't help; that symptom
+    // was the container genuinely not having room for every fixed-width
+    // column at once, not a stale measurement.
     table.on('tableBuilt', function () {
         table.redraw(true);
     });
