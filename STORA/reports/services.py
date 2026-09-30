@@ -1,10 +1,10 @@
 from datetime import timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from django.db.models import F, Sum
 
 from STORA.deliveries.models import DeliveryAttributes, DeliveryItems
-from STORA.products.models import Product, RecipeIngredient
+from STORA.products.models import Product, ProductChangeLog, RecipeIngredient
 from STORA.revisions.models import RevisionAttributes, RevisionItems
 from STORA.sales.models import RefundItems, SaleItems
 
@@ -144,6 +144,63 @@ def stock_as_of(as_of_date):
     ]
 
 
+def _average_delivery_price_by_id(end_date):
+    """{product_id: weighted-average price_at_delivery} across real
+    deliveries (movement_type=DELIVERY -- write-off/scrap have no cost
+    paid, nothing to average) with document_date <= end_date. Unlike
+    sell_price, this never needs reconstructing: every DeliveryItems row
+    already carries its own historically-accurate price, so filtering by
+    date and weighting by quantity is all "as of end_date" cost needs.
+    Missing entirely for a product with no delivery by that date."""
+    rows = (
+        DeliveryItems.objects
+        .filter(
+            delivery__movement_type=DeliveryAttributes.MOVEMENT_DELIVERY,
+            delivery__document_date__lte=end_date,
+        )
+        .values('delivery_item_id')
+        .annotate(
+            weighted_total=Sum(F('delivery_quantity') * F('price_at_delivery')),
+            total_qty=Sum('delivery_quantity'),
+        )
+    )
+    return {
+        row['delivery_item_id']: row['weighted_total'] / row['total_qty']
+        for row in rows if row['total_qty']
+    }
+
+
+def _sell_price_as_of(product, end_date, changes_by_product):
+    """Reconstructs what `product.sell_price` was at the end of `end_date`
+    -- sell_price is just a live field with no dated ledger of its own, so
+    this walks ProductChangeLog (the only history it has) backward from
+    the CURRENT value, undoing every logged change that happened strictly
+    after end_date, same idea as stock_as_of but for a scalar instead of a
+    running total. `changes_by_product`: {product_id: [ProductChangeLog,
+    ...]} for field_name='sell_price', ascending by changed_at (batched by
+    the caller -- see stock_movement_totals -- so this doesn't run its own
+    query per product).
+
+    Known gap, accepted rather than worked around: bulk "Apply Price"
+    edits in the Products grid use QuerySet.update(), which bypasses
+    ProductChangeLog entirely (see that model's own docstring) -- a price
+    changed only that way won't be reflected here. Same pre-existing
+    limitation ProductHistoryView already lives with.
+    """
+    changes = changes_by_product.get(product.pk)
+    if not changes:
+        return product.sell_price
+    value = product.sell_price
+    for change in reversed(changes):
+        if change.changed_at.date() <= end_date:
+            break
+        try:
+            value = Decimal(change.old_value)
+        except (InvalidOperation, TypeError):
+            break
+    return value
+
+
 def _sum_by_product(queryset, product_field, quantity_field):
     """{product_id: total} from a queryset grouped/summed by the given
     fields -- the same `.values(...).annotate(Sum(...))` shape used
@@ -179,6 +236,18 @@ def stock_movement_totals(start_date, end_date):
     Only products with at least one nonzero movement in the period are
     returned -- an all-zero row for every untouched product in the catalog
     would swamp the table on a quiet week.
+
+    Also values the CLOSING balance (only -- not every movement column,
+    scope confirmed with the shop owner): 'closing_sell_value'/
+    'closing_purchase_value' (+ their '..._no_vat' counterparts), both
+    `None` for purchase value if the product was never delivered by
+    end_date (nothing to average). Crucially, end_date isn't always
+    "today" -- an accountant can ask for "наличност към 31.12.2025", so
+    both use the price that was ACTUALLY in effect as of end_date, not
+    today's: purchase value averages real historical price_at_delivery up
+    to that date (see _average_delivery_price_by_id), sell value
+    reconstructs the catalog price as of that date from ProductChangeLog
+    (see _sell_price_as_of) since sell_price itself has no dated ledger.
     """
     opening_by_id = {row['product'].pk: row['quantity_as_of'] for row in stock_as_of(start_date - timedelta(days=1))}
     closing_rows = stock_as_of(end_date)
@@ -251,6 +320,21 @@ def stock_movement_totals(start_date, end_date):
         | set(scrapped) | set(revised) | set(recipe_consumed)
     )
 
+    # Closing-stock valuation -- purchase side reuses actual historical
+    # delivery prices (see _average_delivery_price_by_id), sell side
+    # reconstructs the catalog price as of end_date (see _sell_price_as_of).
+    # Both batched up front (one query each, or one query + a grouped
+    # in-memory walk) rather than per product, even though only the
+    # products that end up in `rows` actually get read from them.
+    avg_delivery_price_by_id = _average_delivery_price_by_id(end_date)
+    sell_price_changes_by_id = {}
+    for change in (
+        ProductChangeLog.objects
+        .filter(product_id__in=moved_product_ids, field_name='sell_price')
+        .order_by('changed_at')
+    ):
+        sell_price_changes_by_id.setdefault(change.product_id, []).append(change)
+
     rows = []
     for product_id in moved_product_ids:
         product = product_by_id.get(product_id)
@@ -260,6 +344,14 @@ def stock_movement_totals(start_date, end_date):
             # there silently breaking this instead of raising somewhere
             # confusing.
             continue
+        closing_qty = closing_by_id.get(product_id, Decimal('0'))
+        vat_divisor = Decimal('1') + product.tax_group.rate / Decimal('100') if product.tax_group else Decimal('1')
+
+        sell_price = _sell_price_as_of(product, end_date, sell_price_changes_by_id)
+        sell_value = closing_qty * sell_price
+        avg_delivery_price = avg_delivery_price_by_id.get(product_id)
+        purchase_value = closing_qty * avg_delivery_price if avg_delivery_price is not None else None
+
         rows.append({
             'product': product,
             'opening': opening_by_id.get(product_id, Decimal('0')),
@@ -270,7 +362,11 @@ def stock_movement_totals(start_date, end_date):
             'written_off': written_off.get(product_id, Decimal('0')),
             'revised': revised.get(product_id, Decimal('0')),
             'recipe_consumed': recipe_consumed.get(product_id, Decimal('0')),
-            'closing': closing_by_id.get(product_id, Decimal('0')),
+            'closing': closing_qty,
+            'closing_sell_value': sell_value,
+            'closing_sell_value_no_vat': sell_value / vat_divisor,
+            'closing_purchase_value': purchase_value,
+            'closing_purchase_value_no_vat': purchase_value / vat_divisor if purchase_value is not None else None,
         })
     rows.sort(key=lambda row: row['product'].name)
     return rows

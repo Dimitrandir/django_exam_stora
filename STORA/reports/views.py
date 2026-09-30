@@ -271,18 +271,20 @@ class StockAsOfDateReportView(LoginRequiredMixin, StaffPermissionRequiredMixin, 
 class StockBalanceReportView(StaffPermissionRequiredMixin, ReportsBaseView):
     """"Stock Balance Report" -- opening balance, a column per kind of
     movement, closing balance, one row per product that actually moved in
-    the chosen period. See reports/services.py::stock_movement_totals for
+    the chosen period, plus closing-stock VALUE at sell and purchase price
+    (with/without VAT). See reports/services.py::stock_movement_totals for
     how each column is computed (opening/closing reuse stock_as_of; the
     movement columns are fresh range-scoped aggregates using the same
-    signed conventions).
+    signed conventions; the value columns use the price actually in effect
+    as of end_date, not today's -- an accountant can ask for a past date).
 
-    Same permission as "Stock as of date" (products.view_product, not the
-    narrower deliveries.add_deliveryattributes DeliveriesReportView uses)
-    -- this report never shows supplier names or prices/costs, only
-    quantities, so there's nothing here worth hiding from a Cashier that
-    Stock as of date doesn't already show them."""
+    permission_required matches DeliveriesReportView's, NOT the broader
+    products.view_product "Stock as of date" uses -- this report shows
+    purchase-price (cost) data now that the value columns exist, same
+    reason DeliveriesReportView itself is Manager/Warehouse-only rather
+    than open to every Cashier."""
 
-    permission_required = 'products.view_product'
+    permission_required = 'deliveries.add_deliveryattributes'
     template_name = 'reports/stock_balance_report.html'
 
     def get(self, request, *args, **kwargs):
@@ -303,6 +305,15 @@ class StockBalanceReportView(StaffPermissionRequiredMixin, ReportsBaseView):
                 'revised': float(row['revised']),
                 'recipe_consumed': float(row['recipe_consumed']),
                 'closing': float(row['closing']),
+                'closing_sell_value': float(row['closing_sell_value']),
+                'closing_sell_value_no_vat': float(row['closing_sell_value_no_vat']),
+                'closing_purchase_value': (
+                    float(row['closing_purchase_value']) if row['closing_purchase_value'] is not None else None
+                ),
+                'closing_purchase_value_no_vat': (
+                    float(row['closing_purchase_value_no_vat'])
+                    if row['closing_purchase_value_no_vat'] is not None else None
+                ),
             }
             for row in rows
         ]

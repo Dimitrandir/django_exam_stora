@@ -7,7 +7,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from STORA.deliveries.models import DeliveryAttributes, DeliveryItems, DocumentType
-from STORA.products.models import Category, Product, RecipeIngredient, Suppliers, TaxGroup
+from STORA.products.models import Category, Product, ProductChangeLog, RecipeIngredient, Suppliers, TaxGroup
 from STORA.reports.ai_service import AIReportsNotConfigured
 from STORA.reports.models import AIReport
 from STORA.revisions.models import RevisionAttributes, RevisionItems
@@ -678,20 +678,180 @@ class StockMovementTotalsTests(TestCase):
 class StockBalanceReportViewTests(TestCase):
     def setUp(self):
         self.manager = User.objects.create_user(username='balance-view-mgr', password='pass12345', role=User.MANAGER)
+        self.warehouse = User.objects.create_user(username='balance-view-wh', password='pass12345', role=User.WAREHOUSE)
+        self.cashier = User.objects.create_user(username='balance-view-cash', password='pass12345', role=User.CASHIER)
         self.today = timezone.localdate()
 
     def test_requires_login(self):
         response = self.client.get(reverse('stock_balance_report'))
         self.assertEqual(response.status_code, 302)
 
-    def test_logged_in_user_can_view(self):
-        self.client.force_login(self.manager)
-        response = self.client.get(reverse('stock_balance_report'), {
-            'start_date': (self.today - timezone.timedelta(days=7)).isoformat(),
-            'end_date': self.today.isoformat(),
-        })
-        self.assertEqual(response.status_code, 200)
-        self.assertIn('stock_data', response.context)
+    def test_manager_and_warehouse_can_view(self):
+        for user in (self.manager, self.warehouse):
+            self.client.force_login(user)
+            response = self.client.get(reverse('stock_balance_report'), {
+                'start_date': (self.today - timezone.timedelta(days=7)).isoformat(),
+                'end_date': self.today.isoformat(),
+            })
+            self.assertEqual(response.status_code, 200)
+            self.assertIn('stock_data', response.context)
+
+    def test_cashier_forbidden(self):
+        # Now that this report exposes purchase-price (cost) data via the
+        # valuation columns, it's gated the same as DeliveriesReportView
+        # (deliveries.add_deliveryattributes), not the broader
+        # products.view_product every Cashier already holds.
+        self.client.force_login(self.cashier)
+        response = self.client.get(reverse('stock_balance_report'))
+        self.assertEqual(response.status_code, 403)
+
+
+class StockMovementValuationTests(TestCase):
+    """Closing-stock valuation columns on stock_movement_totals -- sell
+    value (reconstructed catalog price as of end_date, since sell_price
+    itself has no dated ledger) and purchase value (weighted-average real
+    price_at_delivery up to end_date -- no reconstruction needed, every
+    DeliveryItems row already carries its own historical price).
+    Critically, end_date isn't always "today" (an accountant can ask for a
+    past date), so both must reflect the price that was ACTUALLY in effect
+    then, not today's -- that's what every test here actually checks."""
+
+    def setUp(self):
+        self.manager = User.objects.create_user(username='valuation-mgr', password='pass12345', role=User.MANAGER)
+        self.invoice_type, _ = DocumentType.objects.get_or_create(name='Invoice')
+        self.tax_group = TaxGroup.objects.create(name='Valuation VAT', rate=Decimal('20.00'))
+        self.today = timezone.localdate()
+        self.period_start = self.today - timezone.timedelta(days=20)
+        self.period_end = self.today - timezone.timedelta(days=2)
+
+    @staticmethod
+    def _row(rows, product):
+        return next((r for r in rows if r['product'].pk == product.pk), None)
+
+    def test_purchase_value_is_weighted_average_up_to_end_date_only(self):
+        from STORA.reports.services import stock_movement_totals
+
+        product = Product.objects.create(
+            internal_code='VAL001', name='Valuation Weighted', sell_price=Decimal('10.00'),
+            tax_group=self.tax_group, quantity=Decimal('0'),
+        )
+        mid = self.today - timezone.timedelta(days=15)
+        later = self.today - timezone.timedelta(days=10)
+        after_end = self.today - timezone.timedelta(days=1)  # after period_end, must not count
+
+        d1 = DeliveryAttributes.objects.create(
+            receiver=self.manager, document_type=self.invoice_type, document_number='V-1', document_date=mid,
+        )
+        DeliveryItems.objects.create(
+            delivery=d1, delivery_item=product, delivery_quantity=Decimal('6.000'), price_at_delivery=Decimal('2.00'),
+        )
+        d2 = DeliveryAttributes.objects.create(
+            receiver=self.manager, document_type=self.invoice_type, document_number='V-2', document_date=later,
+        )
+        DeliveryItems.objects.create(
+            delivery=d2, delivery_item=product, delivery_quantity=Decimal('4.000'), price_at_delivery=Decimal('3.00'),
+        )
+        d3 = DeliveryAttributes.objects.create(
+            receiver=self.manager, document_type=self.invoice_type, document_number='V-3', document_date=after_end,
+        )
+        DeliveryItems.objects.create(
+            delivery=d3, delivery_item=product, delivery_quantity=Decimal('100.000'), price_at_delivery=Decimal('999.00'),
+        )
+
+        rows = stock_movement_totals(self.period_start, self.period_end)
+        row = self._row(rows, product)
+        self.assertIsNotNone(row)
+        self.assertEqual(row['closing'], Decimal('10.000'))
+        # Weighted average of the first two deliveries only: (6*2 + 4*3) / 10 = 2.40
+        self.assertEqual(row['closing_purchase_value'], Decimal('24.00'))
+        self.assertEqual(
+            row['closing_purchase_value_no_vat'].quantize(Decimal('0.01')),
+            (Decimal('24.00') / Decimal('1.20')).quantize(Decimal('0.01')),
+        )
+
+    def test_purchase_value_is_none_when_never_delivered(self):
+        from STORA.reports.services import stock_movement_totals
+
+        product = Product.objects.create(
+            internal_code='VAL002', name='Valuation Never Delivered', sell_price=Decimal('10.00'), quantity=Decimal('5'),
+        )
+        scrap = DeliveryAttributes.objects.create(
+            receiver=self.manager, movement_type=DeliveryAttributes.MOVEMENT_SCRAP,
+            document_date=self.today - timezone.timedelta(days=15),
+        )
+        DeliveryItems.objects.create(delivery=scrap, delivery_item=product, delivery_quantity=Decimal('1.000'))
+
+        rows = stock_movement_totals(self.period_start, self.period_end)
+        row = self._row(rows, product)
+        self.assertIsNotNone(row)
+        self.assertIsNone(row['closing_purchase_value'])
+        self.assertIsNone(row['closing_purchase_value_no_vat'])
+
+    def test_sell_value_uses_the_price_in_effect_as_of_end_date_not_today(self):
+        from STORA.reports.services import stock_movement_totals
+
+        product = Product.objects.create(
+            internal_code='VAL003', name='Valuation Historical Price', sell_price=Decimal('12.00'),
+            tax_group=self.tax_group, quantity=Decimal('5'),
+        )
+        mid = self.today - timezone.timedelta(days=15)
+        delivery = DeliveryAttributes.objects.create(
+            receiver=self.manager, document_type=self.invoice_type, document_number='V-4', document_date=mid,
+        )
+        DeliveryItems.objects.create(
+            delivery=delivery, delivery_item=product, delivery_quantity=Decimal('5.000'), price_at_delivery=Decimal('5.00'),
+        )
+
+        # Creating the product above also logs its initial sell_price via
+        # ProductChangeLog (see products/tests.py for that behavior) --
+        # with changed_at=now, which would sit AFTER both change1/change2
+        # below once backdated and confuse the reconstruction walk. Same
+        # "start from a clean slate" clear used throughout products/tests.py.
+        ProductChangeLog.objects.filter(product=product).delete()
+
+        # Price history: 5.00 -> 8.00 (before period_end) -> 12.00/current (after period_end).
+        change1 = ProductChangeLog.objects.create(
+            product=product, field_name='sell_price', old_value='5.00', new_value='8.00',
+        )
+        ProductChangeLog.objects.filter(pk=change1.pk).update(
+            changed_at=timezone.now() - timezone.timedelta(days=18)
+        )
+        change2 = ProductChangeLog.objects.create(
+            product=product, field_name='sell_price', old_value='8.00', new_value='12.00',
+        )
+        ProductChangeLog.objects.filter(pk=change2.pk).update(
+            changed_at=timezone.now() - timezone.timedelta(days=1)
+        )
+
+        rows = stock_movement_totals(self.period_start, self.period_end)
+        row = self._row(rows, product)
+        self.assertIsNotNone(row)
+        self.assertEqual(row['closing'], Decimal('10.000'))
+        # As of period_end, the price was 8.00 (change1 had happened,
+        # change2 hadn't yet) -- neither the original 5.00 nor today's
+        # current 12.00.
+        self.assertEqual(row['closing_sell_value'], Decimal('80.00'))
+        self.assertEqual(
+            row['closing_sell_value_no_vat'].quantize(Decimal('0.01')),
+            (Decimal('80.00') / Decimal('1.20')).quantize(Decimal('0.01')),
+        )
+
+    def test_sell_value_falls_back_to_current_price_when_never_changed(self):
+        from STORA.reports.services import stock_movement_totals
+
+        product = Product.objects.create(
+            internal_code='VAL004', name='Valuation Unchanged Price', sell_price=Decimal('7.50'), quantity=Decimal('0'),
+        )
+        delivery = DeliveryAttributes.objects.create(
+            receiver=self.manager, document_type=self.invoice_type, document_number='V-5',
+            document_date=self.today - timezone.timedelta(days=15),
+        )
+        DeliveryItems.objects.create(delivery=delivery, delivery_item=product, delivery_quantity=Decimal('2.000'))
+
+        rows = stock_movement_totals(self.period_start, self.period_end)
+        row = self._row(rows, product)
+        self.assertIsNotNone(row)
+        self.assertEqual(row['closing_sell_value'], Decimal('15.00'))  # 2 * 7.50
 
 
 class ExpiringProductsReportViewTests(TestCase):
