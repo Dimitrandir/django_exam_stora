@@ -149,6 +149,21 @@
         btn.type = 'button';
         btn.className = 'sale-keyboard-key' + (extraClass ? ' ' + extraClass : '');
         btn.textContent = label;
+        // Tapping a button moves focus to the button itself by default
+        // (browser default on mousedown), blurring whatever was focused
+        // before -- for a plain text field that's harmless (the field
+        // just loses focus for an instant, insertAtCursor's own .focus()
+        // call at the end brings it right back with its value intact).
+        // For a Tabulator cell editor it's destructive: Tabulator commits
+        // and TEARS DOWN the <input> on blur, replacing it with static
+        // cell content -- confirmed live, this is why every Refund/
+        // Deliveries/Sales/Revision numeric cell (see CLAUDE.md) went
+        // completely unresponsive to the keyboard the instant a key was
+        // tapped, even after fixing the type="number" selection-API crash
+        // separately. preventDefault() on mousedown keeps the browser from
+        // shifting focus away from the field at all, so the editor never
+        // sees a blur in the first place.
+        btn.addEventListener('mousedown', function (e) { e.preventDefault(); });
         btn.addEventListener('click', onClick);
         return btn;
     }
