@@ -295,6 +295,7 @@ class StockBalanceReportView(StaffPermissionRequiredMixin, ReportsBaseView):
             {
                 'code': row['product'].internal_code,
                 'name': row['product'].name,
+                'category': row['product'].category.name if row['product'].category else '',
                 'unit_type': row['product'].get_unit_type_display(),
                 'opening': float(row['opening']),
                 'delivered': float(row['delivered']),
@@ -305,6 +306,15 @@ class StockBalanceReportView(StaffPermissionRequiredMixin, ReportsBaseView):
                 'revised': float(row['revised']),
                 'recipe_consumed': float(row['recipe_consumed']),
                 'closing': float(row['closing']),
+                'opening_sell_value': float(row['opening_sell_value']),
+                'opening_sell_value_no_vat': float(row['opening_sell_value_no_vat']),
+                'opening_purchase_value': (
+                    float(row['opening_purchase_value']) if row['opening_purchase_value'] is not None else None
+                ),
+                'opening_purchase_value_no_vat': (
+                    float(row['opening_purchase_value_no_vat'])
+                    if row['opening_purchase_value_no_vat'] is not None else None
+                ),
                 'closing_sell_value': float(row['closing_sell_value']),
                 'closing_sell_value_no_vat': float(row['closing_sell_value_no_vat']),
                 'closing_purchase_value': (

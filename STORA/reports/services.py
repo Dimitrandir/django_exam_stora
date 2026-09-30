@@ -237,19 +237,23 @@ def stock_movement_totals(start_date, end_date):
     returned -- an all-zero row for every untouched product in the catalog
     would swamp the table on a quiet week.
 
-    Also values the CLOSING balance (only -- not every movement column,
-    scope confirmed with the shop owner): 'closing_sell_value'/
-    'closing_purchase_value' (+ their '..._no_vat' counterparts), both
-    `None` for purchase value if the product was never delivered by
-    end_date (nothing to average). Crucially, end_date isn't always
-    "today" -- an accountant can ask for "наличност към 31.12.2025", so
-    both use the price that was ACTUALLY in effect as of end_date, not
-    today's: purchase value averages real historical price_at_delivery up
-    to that date (see _average_delivery_price_by_id), sell value
-    reconstructs the catalog price as of that date from ProductChangeLog
-    (see _sell_price_as_of) since sell_price itself has no dated ledger.
+    Also values both the OPENING and CLOSING balance (not every movement
+    column -- scope confirmed with the shop owner): 'opening_sell_value'/
+    'opening_purchase_value'/'closing_sell_value'/'closing_purchase_value'
+    (+ their '..._no_vat' counterparts), purchase value `None` if the
+    product was never delivered by the relevant date (nothing to average).
+    Crucially, neither date is always "today" -- an accountant can ask for
+    "наличност към 31.12.2025" -- so every value uses the price that was
+    ACTUALLY in effect as of ITS OWN date (opening values as of the day
+    before start_date, closing as of end_date), not today's: purchase
+    value averages real historical price_at_delivery up to that date (see
+    _average_delivery_price_by_id), sell value reconstructs the catalog
+    price as of that date from ProductChangeLog (see _sell_price_as_of)
+    since sell_price itself has no dated ledger.
     """
-    opening_by_id = {row['product'].pk: row['quantity_as_of'] for row in stock_as_of(start_date - timedelta(days=1))}
+    opening_date = start_date - timedelta(days=1)
+    opening_rows = stock_as_of(opening_date)
+    opening_by_id = {row['product'].pk: row['quantity_as_of'] for row in opening_rows}
     closing_rows = stock_as_of(end_date)
     closing_by_id = {row['product'].pk: row['quantity_as_of'] for row in closing_rows}
     product_by_id = {row['product'].pk: row['product'] for row in closing_rows}
@@ -320,13 +324,17 @@ def stock_movement_totals(start_date, end_date):
         | set(scrapped) | set(revised) | set(recipe_consumed)
     )
 
-    # Closing-stock valuation -- purchase side reuses actual historical
-    # delivery prices (see _average_delivery_price_by_id), sell side
-    # reconstructs the catalog price as of end_date (see _sell_price_as_of).
-    # Both batched up front (one query each, or one query + a grouped
-    # in-memory walk) rather than per product, even though only the
-    # products that end up in `rows` actually get read from them.
-    avg_delivery_price_by_id = _average_delivery_price_by_id(end_date)
+    # Valuation -- purchase side reuses actual historical delivery prices
+    # (see _average_delivery_price_by_id), sell side reconstructs the
+    # catalog price as of the relevant date (see _sell_price_as_of). Two
+    # separate averages (opening_date vs end_date) since "as of" moves the
+    # cutoff -- a delivery between the two dates counts toward closing's
+    # average but must NOT count toward opening's. All batched up front
+    # (one query each per date, or one query + a grouped in-memory walk)
+    # rather than per product, even though only the products that end up
+    # in `rows` actually get read from them.
+    avg_delivery_price_opening_by_id = _average_delivery_price_by_id(opening_date)
+    avg_delivery_price_closing_by_id = _average_delivery_price_by_id(end_date)
     sell_price_changes_by_id = {}
     for change in (
         ProductChangeLog.objects
@@ -344,17 +352,27 @@ def stock_movement_totals(start_date, end_date):
             # there silently breaking this instead of raising somewhere
             # confusing.
             continue
+        opening_qty = opening_by_id.get(product_id, Decimal('0'))
         closing_qty = closing_by_id.get(product_id, Decimal('0'))
         vat_divisor = Decimal('1') + product.tax_group.rate / Decimal('100') if product.tax_group else Decimal('1')
 
-        sell_price = _sell_price_as_of(product, end_date, sell_price_changes_by_id)
-        sell_value = closing_qty * sell_price
-        avg_delivery_price = avg_delivery_price_by_id.get(product_id)
-        purchase_value = closing_qty * avg_delivery_price if avg_delivery_price is not None else None
+        opening_sell_price = _sell_price_as_of(product, opening_date, sell_price_changes_by_id)
+        opening_sell_value = opening_qty * opening_sell_price
+        avg_delivery_price_opening = avg_delivery_price_opening_by_id.get(product_id)
+        opening_purchase_value = (
+            opening_qty * avg_delivery_price_opening if avg_delivery_price_opening is not None else None
+        )
+
+        closing_sell_price = _sell_price_as_of(product, end_date, sell_price_changes_by_id)
+        closing_sell_value = closing_qty * closing_sell_price
+        avg_delivery_price_closing = avg_delivery_price_closing_by_id.get(product_id)
+        closing_purchase_value = (
+            closing_qty * avg_delivery_price_closing if avg_delivery_price_closing is not None else None
+        )
 
         rows.append({
             'product': product,
-            'opening': opening_by_id.get(product_id, Decimal('0')),
+            'opening': opening_qty,
             'delivered': delivered.get(product_id, Decimal('0')),
             'sold': sold.get(product_id, Decimal('0')),
             'refunded': refunded.get(product_id, Decimal('0')),
@@ -363,10 +381,18 @@ def stock_movement_totals(start_date, end_date):
             'revised': revised.get(product_id, Decimal('0')),
             'recipe_consumed': recipe_consumed.get(product_id, Decimal('0')),
             'closing': closing_qty,
-            'closing_sell_value': sell_value,
-            'closing_sell_value_no_vat': sell_value / vat_divisor,
-            'closing_purchase_value': purchase_value,
-            'closing_purchase_value_no_vat': purchase_value / vat_divisor if purchase_value is not None else None,
+            'opening_sell_value': opening_sell_value,
+            'opening_sell_value_no_vat': opening_sell_value / vat_divisor,
+            'opening_purchase_value': opening_purchase_value,
+            'opening_purchase_value_no_vat': (
+                opening_purchase_value / vat_divisor if opening_purchase_value is not None else None
+            ),
+            'closing_sell_value': closing_sell_value,
+            'closing_sell_value_no_vat': closing_sell_value / vat_divisor,
+            'closing_purchase_value': closing_purchase_value,
+            'closing_purchase_value_no_vat': (
+                closing_purchase_value / vat_divisor if closing_purchase_value is not None else None
+            ),
         })
     rows.sort(key=lambda row: row['product'].name)
     return rows

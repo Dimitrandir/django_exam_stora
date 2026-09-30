@@ -853,6 +853,85 @@ class StockMovementValuationTests(TestCase):
         self.assertIsNotNone(row)
         self.assertEqual(row['closing_sell_value'], Decimal('15.00'))  # 2 * 7.50
 
+    def test_opening_value_uses_price_and_deliveries_as_of_the_day_before_start_only(self):
+        from STORA.reports.services import stock_movement_totals
+
+        product = Product.objects.create(
+            internal_code='VAL006', name='Valuation Opening Value', sell_price=Decimal('20.00'),
+            tax_group=self.tax_group, quantity=Decimal('0'),
+        )
+        before_period = self.period_start - timezone.timedelta(days=5)
+        mid_period = self.period_start + timezone.timedelta(days=3)
+
+        # Delivered BEFORE the period -- counts toward the OPENING average.
+        d1 = DeliveryAttributes.objects.create(
+            receiver=self.manager, document_type=self.invoice_type, document_number='V-6', document_date=before_period,
+        )
+        DeliveryItems.objects.create(
+            delivery=d1, delivery_item=product, delivery_quantity=Decimal('10.000'), price_at_delivery=Decimal('4.00'),
+        )
+        # Delivered DURING the period -- counts toward CLOSING's average,
+        # must NOT shift opening's (it hadn't happened yet as of opening).
+        d2 = DeliveryAttributes.objects.create(
+            receiver=self.manager, document_type=self.invoice_type, document_number='V-7', document_date=mid_period,
+        )
+        DeliveryItems.objects.create(
+            delivery=d2, delivery_item=product, delivery_quantity=Decimal('10.000'), price_at_delivery=Decimal('8.00'),
+        )
+
+        # sell_price was 15.00 before the period, changed to current 20.00
+        # partway through it.
+        ProductChangeLog.objects.filter(product=product).delete()
+        change = ProductChangeLog.objects.create(
+            product=product, field_name='sell_price', old_value='15.00', new_value='20.00',
+        )
+        ProductChangeLog.objects.filter(pk=change.pk).update(
+            changed_at=timezone.now() - timezone.timedelta(days=15)
+        )
+
+        rows = stock_movement_totals(self.period_start, self.period_end)
+        row = self._row(rows, product)
+        self.assertIsNotNone(row)
+        self.assertEqual(row['opening'], Decimal('10.000'))
+        self.assertEqual(row['closing'], Decimal('20.000'))
+
+        # Opening purchase value: only d1 counts -> 10 * 4.00 = 40.00
+        self.assertEqual(row['opening_purchase_value'], Decimal('40.00'))
+        # Closing purchase value: weighted avg of d1+d2 = (10*4+10*8)/20 = 6.00 -> 20*6.00
+        self.assertEqual(row['closing_purchase_value'], Decimal('120.00'))
+        # Opening sell value: price as of the day before start_date was
+        # still 15.00 (the change hadn't happened yet) -> 10*15.00
+        self.assertEqual(row['opening_sell_value'], Decimal('150.00'))
+        # Closing sell value: the change had already happened by end_date
+        # -> today's current 20.00 -> 20*20.00
+        self.assertEqual(row['closing_sell_value'], Decimal('400.00'))
+
+
+class StockBalanceReportCategoryTests(TestCase):
+    def test_category_name_is_included_in_stock_data(self):
+        manager = User.objects.create_user(username='balance-cat-mgr', password='pass12345', role=User.MANAGER)
+        self.client.force_login(manager)
+        invoice_type, _ = DocumentType.objects.get_or_create(name='Invoice')
+        category = Category.objects.create(name='Balance Category Test')
+        product = Product.objects.create(
+            internal_code='VAL007', name='Valuation Categorised', sell_price=Decimal('5.00'),
+            category=category, quantity=Decimal('0'),
+        )
+        today = timezone.localdate()
+        delivery = DeliveryAttributes.objects.create(
+            receiver=manager, document_type=invoice_type, document_number='V-CAT',
+            document_date=today - timezone.timedelta(days=3),
+        )
+        DeliveryItems.objects.create(delivery=delivery, delivery_item=product, delivery_quantity=Decimal('1.000'))
+
+        response = self.client.get(reverse('stock_balance_report'), {
+            'start_date': (today - timezone.timedelta(days=7)).isoformat(),
+            'end_date': today.isoformat(),
+        })
+        self.assertEqual(response.status_code, 200)
+        row = next(r for r in response.context['stock_data'] if r['code'] == 'VAL007')
+        self.assertEqual(row['category'], 'Balance Category Test')
+
 
 class ExpiringProductsReportViewTests(TestCase):
     """Batch-level, matches the existing scrap "pick a batch" picker
