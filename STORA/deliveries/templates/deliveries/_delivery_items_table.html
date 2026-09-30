@@ -521,11 +521,21 @@ document.addEventListener('DOMContentLoaded', function () {
     // Tabulator's own documented commit API for a custom editor -- so it's
     // not guessing at the built-in editor's undocumented internals.
     function numberEditor(cell, onRendered, success, cancel, editorParams) {
-        var params = editorParams || {};
         var input = document.createElement('input');
-        input.type = 'number';
-        if (params.min !== undefined) input.min = params.min;
-        if (params.step !== undefined) input.step = params.step;
+        // type="text" + inputmode="decimal", not type="number" -- a
+        // number input silently clears its own .value if it's ever SET
+        // (not typed by a real keystroke) to a string that isn't yet a
+        // complete valid number, e.g. "0." mid-way through "0.350". That
+        // only bites when something writes .value programmatically, which
+        // is exactly what the on-screen keyboard does (see CLAUDE.md) --
+        // a real physical keyboard typing directly into the cell was
+        // never affected. min/step aren't set as attributes any more
+        // either (text inputs ignore them) -- this editor never clamped
+        // to them in JS either, real min/step enforcement for delivery
+        // quantity happens server-side (Product/DeliveryItems
+        // validators), same as before this change.
+        input.type = 'text';
+        input.inputMode = 'decimal';
         input.style.padding = '4px';
         input.style.width = '100%';
         input.style.boxSizing = 'border-box';
