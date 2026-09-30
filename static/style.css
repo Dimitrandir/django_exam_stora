@@ -1060,28 +1060,26 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
    its own class -- this one lives in the navbar next to Logout, always the
    same plain button chrome regardless of which page it's on, not docked
    inside a search field. */
+/* No button chrome (no circle/background/border) by request -- only the
+   icon itself should be visible, and only the icon swap (see below) shows
+   which state is active, not a colored pill around it. */
 .touch-mode-toggle-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     background: transparent;
-    border: 1px solid rgba(255, 255, 255, 0.4);
-    color: #ffffff;
-    border-radius: 999px;
-    width: 2.25rem;
-    height: 2.25rem;
+    border: none;
     padding: 0;
     cursor: pointer;
 }
 
 /* Both icons are black line art -- invert to white so they read against the
-   dark navbar (transparent) and the blue active background alike, instead
-   of disappearing against either. Only one of the two is ever visible at
-   once, swapped by the .is-active class that onscreen-keyboard.js already
-   toggles on click -- no extra JS needed for the icon swap itself. */
+   dark navbar. Only one of the two is ever visible at once, swapped by the
+   .is-active class that onscreen-keyboard.js already toggles on click -- no
+   extra JS needed for the icon swap itself. */
 .touch-mode-toggle-btn__icon {
-    width: 1.3rem;
-    height: 1.3rem;
+    width: 1.9rem;
+    height: 1.9rem;
     filter: invert(1);
 }
 
@@ -1095,11 +1093,6 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
 
 .touch-mode-toggle-btn.is-active .touch-mode-toggle-btn__icon--on {
     display: inline-block;
-}
-
-.touch-mode-toggle-btn.is-active {
-    background: var(--brand-blue-deep);
-    border-color: var(--brand-blue-deep);
 }
 
 /* Fixed-height box so the page itself doesn't grow with the cart -- the
