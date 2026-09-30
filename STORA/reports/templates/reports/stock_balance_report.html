@@ -111,7 +111,7 @@ document.addEventListener('DOMContentLoaded', function () {
     var table = initExcelStyleTable('#stock-balance-table', 'stock-balance-table-data', [
         {title: '#', field: 'code', formatter: 'rownum', width: 50, hozAlign: 'center', headerFilter: false, hideable: false},
         {title: 'Code', field: 'code', width: 110},
-        {title: 'Name', field: 'name', widthGrow: 2},
+        {title: 'Name', field: 'name', widthGrow: 2, minWidth: 160},
         {title: 'Category', field: 'category', width: 140},
         {title: 'Unit', field: 'unit_type', width: 80},
         {title: 'Opening', field: 'opening', width: 100, hozAlign: 'right', formatter: quantityFormatter},
@@ -156,6 +156,23 @@ document.addEventListener('DOMContentLoaded', function () {
             formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter, visible: false,
         },
     ], {placeholder: 'No stock movement in the selected period.'});
+
+    // fitColumns computes widths once, against whatever the container's
+    // width measures as at that exact moment -- with this many columns
+    // (several hidden by default via visible:false, which can throw off
+    // that first measurement vs. after layout settles), the flexible Name
+    // column ends up computed far too narrow on the very first paint and
+    // never gets re-measured on its own. Confirmed live from a real
+    // screenshot: "QA Order Product 1" wrapping letter-by-letter down the
+    // row on every page load. Same fix already used for this exact
+    // symptom elsewhere in the app (sale_add.html's cart Sum column) --
+    // force one recalculation right after Tabulator's own "I'm actually
+    // built" event, not synchronously (redraw(true) inside the same tick
+    // as `new Tabulator(...)` hits a null ref inside Tabulator's own
+    // adjustTableSize(), confirmed live there too).
+    table.on('tableBuilt', function () {
+        table.redraw(true);
+    });
 
     attachTableExportToToolbar(table, '#stock-balance-table-card', 'stock_balance_report.xlsx', 'Stock Balance');
 });
