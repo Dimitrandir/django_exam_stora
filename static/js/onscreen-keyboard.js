@@ -78,6 +78,22 @@
         return type === 'number' || mode === 'decimal' || mode === 'numeric';
     }
 
+    // Per spec, selectionStart/selectionEnd/setSelectionRange only work on
+    // text/search/URL/tel/password inputs (and textarea) -- calling them on
+    // type="number" (or "email") throws a synchronous InvalidStateError
+    // instead of just returning something unusable. Confirmed live: every
+    // Tabulator numeric cell editor in the app (Deliveries/Sales/Revision/
+    // Refund grids, see their own numberEditor() -- all use a real
+    // <input type="number">) hit this the instant a keypad key was tapped
+    // under Touch Mode -- the exception aborted insertAtCursor()/backspace()
+    // before activeInput.value was ever touched, so typing did visibly
+    // nothing at all, on every one of those screens at once.
+    function supportsSelection(el) {
+        if (el.tagName === 'TEXTAREA') return true;
+        var type = (el.type || 'text').toLowerCase();
+        return ['number', 'email'].indexOf(type) === -1;
+    }
+
     function buildPanel() {
         panel = document.createElement('div');
         panel.className = 'sale-keyboard sale-keyboard--floating';
@@ -91,6 +107,14 @@
     // keyboards this replaces.
     function insertAtCursor(text) {
         if (!activeInput) return;
+        if (!supportsSelection(activeInput)) {
+            // No cursor position to insert at on this type -- append is the
+            // best we can do, same as the digits already typed so far.
+            activeInput.value += text;
+            activeInput.focus();
+            activeInput.dispatchEvent(new Event('input', {bubbles: true}));
+            return;
+        }
         var start = activeInput.selectionStart ?? activeInput.value.length;
         var end = activeInput.selectionEnd ?? activeInput.value.length;
         activeInput.value = activeInput.value.slice(0, start) + text + activeInput.value.slice(end);
@@ -101,6 +125,12 @@
 
     function backspace() {
         if (!activeInput) return;
+        if (!supportsSelection(activeInput)) {
+            activeInput.value = activeInput.value.slice(0, -1);
+            activeInput.focus();
+            activeInput.dispatchEvent(new Event('input', {bubbles: true}));
+            return;
+        }
         var start = activeInput.selectionStart ?? activeInput.value.length;
         var end = activeInput.selectionEnd ?? activeInput.value.length;
         if (start === end && start > 0) {
