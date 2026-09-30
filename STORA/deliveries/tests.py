@@ -1,10 +1,12 @@
 import io
 from decimal import Decimal
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import openpyxl
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from STORA.deliveries.excel_import import parse_delivery_import
@@ -1289,6 +1291,81 @@ class ExcelImportParsingTests(TestCase):
         result = parse_delivery_import(buf)
         row = result['rows'][0]
         self.assertEqual(row['unit_type'], Product.PIECE)
+
+    # Layer 2 (AI-assisted matching for the ambiguous middle band) tests.
+    # 'Imported Existing Goods' vs self.product's name ('Existing Import
+    # Product') sits at ~0.455 trigram similarity -- confirmed via a direct
+    # `SELECT similarity(...)` against this same Postgres instance, squarely
+    # between SIMILARITY_LOW (0.30) and SIMILARITY_HIGH (0.55): too similar
+    # to ignore outright, not similar enough for Layer 1 alone to accept.
+
+    @override_settings(ANTHROPIC_API_KEY='')
+    def test_ambiguous_match_without_ai_key_defaults_to_no_match(self):
+        buf = _build_import_xlsx([('', 'Imported Existing Goods', '', 1, '', '', '', '', '', '', '', '')])
+        result = parse_delivery_import(buf)
+        row = result['rows'][0]
+        # Layer 1 on its own is conservative -- an ambiguous pair with no
+        # Layer 2 available to weigh in resolves to "not a match", same as
+        # if similarity had been below SIMILARITY_LOW entirely.
+        self.assertIsNone(row['duplicate_candidate'])
+
+    @override_settings(ANTHROPIC_API_KEY='fake-key-for-test')
+    @patch('STORA.deliveries.excel_import._ai_judge_ambiguous_matches')
+    def test_ambiguous_match_with_ai_key_accepts_when_ai_confirms(self, mock_judge):
+        mock_judge.return_value = {(2, '_duplicate'): True}
+        buf = _build_import_xlsx([('', 'Imported Existing Goods', '', 1, '', '', '', '', '', '', '', '')])
+        result = parse_delivery_import(buf)
+        row = result['rows'][0]
+        self.assertIsNotNone(row['duplicate_candidate'])
+        self.assertEqual(row['duplicate_candidate']['id'], self.product.pk)
+
+    @override_settings(ANTHROPIC_API_KEY='fake-key-for-test')
+    @patch('STORA.deliveries.excel_import._ai_judge_ambiguous_matches')
+    def test_ambiguous_match_with_ai_key_rejects_when_ai_denies(self, mock_judge):
+        mock_judge.return_value = {(2, '_duplicate'): False}
+        buf = _build_import_xlsx([('', 'Imported Existing Goods', '', 1, '', '', '', '', '', '', '', '')])
+        result = parse_delivery_import(buf)
+        row = result['rows'][0]
+        self.assertIsNone(row['duplicate_candidate'])
+
+    @override_settings(ANTHROPIC_API_KEY='fake-key-for-test')
+    def test_ai_judge_batches_every_ambiguous_pair_into_one_call(self):
+        # Two separate rows, each with one ambiguous field (category on the
+        # first, supplier on the second) -- both must be judged, but in a
+        # single API round trip, not one call per row/field.
+        from STORA.deliveries.excel_import import _ai_judge_ambiguous_matches
+
+        text_block = SimpleNamespace(type='text', text='[true, false]')
+        mock_response = SimpleNamespace(content=[text_block])
+        with patch('STORA.deliveries.excel_import.anthropic.Anthropic') as mock_anthropic_cls:
+            mock_client = mock_anthropic_cls.return_value
+            mock_client.messages.create.return_value = mock_response
+
+            buf = _build_import_xlsx([
+                ('', 'New Item One', '', 1, 'Category of Imported Goods', '', '', '', '', '', '', ''),
+                ('', 'New Item Two', '', 1, '', '', '', '', 'Imports Testing Supply', '', '', ''),
+            ])
+            result = parse_delivery_import(buf)
+
+        mock_client.messages.create.assert_called_once()
+        prompt = mock_client.messages.create.call_args.kwargs['messages'][0]['content']
+        self.assertIn('Category of Imported Goods', prompt)
+        self.assertIn('Imports Testing Supply', prompt)
+
+        row1, row2 = result['rows']
+        # First pending item (category, index 0 in the batch) -> True.
+        self.assertEqual(row1['category_id'], self.category.pk)
+        # Second pending item (supplier, index 1) -> False.
+        self.assertIsNone(row2['supplier_id'])
+
+    @override_settings(ANTHROPIC_API_KEY='fake-key-for-test')
+    def test_ai_judge_failure_degrades_to_no_match_without_crashing(self):
+        with patch('STORA.deliveries.excel_import.anthropic.Anthropic') as mock_anthropic_cls:
+            mock_anthropic_cls.return_value.messages.create.side_effect = RuntimeError('network boom')
+            buf = _build_import_xlsx([('', 'Imported Existing Goods', '', 1, '', '', '', '', '', '', '', '')])
+            result = parse_delivery_import(buf)
+        row = result['rows'][0]
+        self.assertIsNone(row['duplicate_candidate'])
 
 
 class ExcelImportViewTests(TestCase):
