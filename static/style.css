@@ -445,6 +445,22 @@ input[type="text"], input[type="number"], input[type="email"], select, textarea 
     font-size: var(--sale-table-font-size);
 }
 
+/* Stock Balance Report -- 12 columns (several short numeric ones) wrapped
+   badly with the vendor theme's default header font, even mid-word
+   ("Nam"/"Piece" broken across lines -- flagged live from a real
+   screenshot, made worse by the table being squeezed into the centered
+   container before main-wide/container-fluid were added here too).
+   Smaller font + forced single line (ellipsis if a header still doesn't
+   fit, rather than the vendor's own wrap-by-default) keeps every header
+   readable at a glance regardless of how many optional columns (Written
+   off, Used in recipes, ...) are toggled visible via Columns. */
+#stock-balance-table .tabulator-col-title {
+    font-size: 0.8rem !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+}
+
 /* Tucked into the Name column's own bottom-calc cell (nothing else uses
    that space -- Name has no sum) instead of a separate row above the
    table, per live feedback ("да не заемат от мястото"). Sized to fit the
