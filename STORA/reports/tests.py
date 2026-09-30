@@ -447,6 +447,39 @@ class StockAsOfDateReportViewTests(TestCase):
         response = self._get()
         self.assertEqual(self._row(response, product)['quantity_as_of'], 6.0)
 
+    def test_refund_after_date_is_undone(self):
+        # Regression test: stock_as_of() originally undid sales but not
+        # refunds at all -- a refund gives stock back (RefundItems.save()
+        # calls adjust_stock_for_sale with a NEGATIVE delta, i.e. literally
+        # a negative sale), so reconstructing a date before a refund has to
+        # undo that too, with the opposite sign from a sale. Caught by
+        # reports/tests.py::StockMovementTotalsTests' reconciliation check,
+        # not by this class -- the sale test above only exercised sales in
+        # isolation, never a refund.
+        product = Product.objects.create(
+            internal_code='ASF007', name='Refund Undo', sell_price=Decimal('5.00'), quantity=Decimal('10'),
+        )
+        sale = SaleAttributes.objects.create(cashier=self.manager)
+        sale_item = SaleItems.objects.create(
+            sale=sale, sale_item=product, sale_quantity=Decimal('4.000'), price_at_sale=Decimal('5.00'),
+        )
+        product.refresh_from_db()
+        self.assertEqual(product.quantity, Decimal('6.000'))
+
+        refund = RefundAttributes.objects.create(
+            original_sale=sale, cashier=self.manager, reason=RefundAttributes.RETURN_COMPLAINT,
+        )
+        RefundItems.objects.create(
+            refund=refund, original_item=sale_item, refund_quantity=Decimal('1.000'), price_at_refund=Decimal('5.00'),
+        )
+        product.refresh_from_db()
+        self.assertEqual(product.quantity, Decimal('7.000'))
+
+        # "As of yesterday" -- before both the sale and the refund -- must
+        # undo the refund too, not just the sale, to get back to 10.
+        response = self._get(as_of_date=(self.today - timezone.timedelta(days=1)).isoformat())
+        self.assertEqual(self._row(response, product)['quantity_as_of'], 10.0)
+
     def test_revision_correction_is_undone(self):
         product = Product.objects.create(
             internal_code='ASF004', name='Revised', sell_price=Decimal('5.00'), quantity=Decimal('8'),
@@ -488,6 +521,177 @@ class StockAsOfDateReportViewTests(TestCase):
 
         response = self._get(as_of_date=(self.today - timezone.timedelta(days=1)).isoformat())
         self.assertEqual(self._row(response, milk)['quantity_as_of'], 10.0)
+
+
+class StockMovementTotalsTests(TestCase):
+    """stock_movement_totals() (reports/services.py) -- the "Stock Balance
+    Report": opening balance, one column per kind of movement, closing
+    balance, per product, for a period. Opening/closing reuse stock_as_of
+    (already covered by StockAsOfDateReportViewTests above) -- these tests
+    focus on the movement columns and that they actually reconcile."""
+
+    def setUp(self):
+        self.manager = User.objects.create_user(username='balance-mgr', password='pass12345', role=User.MANAGER)
+        self.client.force_login(self.manager)
+        self.invoice_type, _ = DocumentType.objects.get_or_create(name='Invoice')
+        self.today = timezone.localdate()
+        self.period_start = self.today - timezone.timedelta(days=10)
+        self.period_end = self.today
+        # Safely inside [period_start, period_end] for every scenario below.
+        self.mid_date = self.today - timezone.timedelta(days=7)
+        self.mid_dt = timezone.now() - timezone.timedelta(days=7)
+
+    @staticmethod
+    def _row(rows, product):
+        return next((r for r in rows if r['product'].pk == product.pk), None)
+
+    def test_full_reconciliation_across_every_movement_type(self):
+        from STORA.reports.services import stock_movement_totals
+
+        product = Product.objects.create(
+            internal_code='BAL001', name='Balance Reconciled Item',
+            sell_price=Decimal('5.00'), quantity=Decimal('0'),
+        )
+
+        # Delivered BEFORE the period -- sets the opening balance, doesn't
+        # itself count as a period movement.
+        pre_delivery = DeliveryAttributes.objects.create(
+            receiver=self.manager, document_type=self.invoice_type, document_number='PRE-1',
+            document_date=self.period_start - timezone.timedelta(days=1),
+        )
+        DeliveryItems.objects.create(delivery=pre_delivery, delivery_item=product, delivery_quantity=Decimal('20.000'))
+
+        # Delivered 8, inside the period.
+        delivery = DeliveryAttributes.objects.create(
+            receiver=self.manager, document_type=self.invoice_type, document_number='IN-1',
+            document_date=self.mid_date,
+        )
+        DeliveryItems.objects.create(delivery=delivery, delivery_item=product, delivery_quantity=Decimal('8.000'))
+
+        # Sold 5 inside the period, 2 of which get refunded below.
+        sale = SaleAttributes.objects.create(cashier=self.manager)
+        sale_item = SaleItems.objects.create(
+            sale=sale, sale_item=product, sale_quantity=Decimal('5.000'), price_at_sale=Decimal('5.00'),
+        )
+        SaleAttributes.objects.filter(pk=sale.pk).update(time_of_sale=self.mid_dt)
+
+        refund = RefundAttributes.objects.create(
+            original_sale=sale, cashier=self.manager, reason=RefundAttributes.RETURN_COMPLAINT,
+        )
+        RefundItems.objects.create(
+            refund=refund, original_item=sale_item, refund_quantity=Decimal('2.000'), price_at_refund=Decimal('5.00'),
+        )
+        RefundAttributes.objects.filter(pk=refund.pk).update(time_of_refund=self.mid_dt)
+
+        # Scrapped 3, inside the period.
+        scrap = DeliveryAttributes.objects.create(
+            receiver=self.manager, movement_type=DeliveryAttributes.MOVEMENT_SCRAP, document_date=self.mid_date,
+        )
+        DeliveryItems.objects.create(delivery=scrap, delivery_item=product, delivery_quantity=Decimal('3.000'))
+
+        # Written off 1, inside the period.
+        writeoff = DeliveryAttributes.objects.create(
+            receiver=self.manager, movement_type=DeliveryAttributes.MOVEMENT_WRITE_OFF, document_date=self.mid_date,
+        )
+        DeliveryItems.objects.create(delivery=writeoff, delivery_item=product, delivery_quantity=Decimal('1.000'))
+
+        # 20 (pre-period) + 8 - 5 + 2 - 3 - 1 = 21
+        product.refresh_from_db()
+        self.assertEqual(product.quantity, Decimal('21.000'))
+
+        rows = stock_movement_totals(self.period_start, self.period_end)
+        row = self._row(rows, product)
+        self.assertIsNotNone(row)
+        self.assertEqual(row['opening'], Decimal('20.000'))
+        self.assertEqual(row['delivered'], Decimal('8.000'))
+        self.assertEqual(row['sold'], Decimal('5.000'))
+        self.assertEqual(row['refunded'], Decimal('2.000'))
+        self.assertEqual(row['scrapped'], Decimal('3.000'))
+        self.assertEqual(row['written_off'], Decimal('1.000'))
+        self.assertEqual(row['closing'], Decimal('21.000'))
+
+        # The actual point of the report: opening + everything that adds -
+        # everything that subtracts = closing, every time.
+        computed_closing = (
+            row['opening'] + row['delivered'] - row['sold'] + row['refunded']
+            - row['scrapped'] - row['written_off'] + row['revised'] - row['recipe_consumed']
+        )
+        self.assertEqual(computed_closing, row['closing'])
+
+    def test_revision_and_recipe_consumption_columns(self):
+        from STORA.reports.services import stock_movement_totals
+
+        milk = Product.objects.create(
+            internal_code='BAL002', name='Balance Milk', sell_price=Decimal('2.00'),
+            unit_type=Product.WEIGHT, quantity=Decimal('10'),
+        )
+        cappuccino = Product.objects.create(
+            internal_code='BAL003', name='Balance Cappuccino', sell_price=Decimal('3.00'),
+            is_recipe=True, quantity=Decimal('0'),
+        )
+        RecipeIngredient.objects.create(recipe=cappuccino, ingredient=milk, quantity=Decimal('0.200'))
+
+        sale = SaleAttributes.objects.create(cashier=self.manager)
+        SaleItems.objects.create(
+            sale=sale, sale_item=cappuccino, sale_quantity=Decimal('5.000'), price_at_sale=Decimal('3.00'),
+        )
+        SaleAttributes.objects.filter(pk=sale.pk).update(time_of_sale=self.mid_dt)
+        milk.refresh_from_db()
+        self.assertEqual(milk.quantity, Decimal('9.000'))  # 10 - 5*0.200
+
+        revised_product = Product.objects.create(
+            internal_code='BAL004', name='Balance Revised Item', sell_price=Decimal('4.00'), quantity=Decimal('8'),
+        )
+        revision = RevisionAttributes.objects.create(
+            started_by=self.manager, status=RevisionAttributes.STATUS_COMPLETED,
+            completed_by=self.manager, completed_at=self.mid_dt,
+        )
+        RevisionItems.objects.create(
+            revision=revision, product=revised_product,
+            found_quantity=Decimal('8.000'), system_quantity_at_start=Decimal('5.000'),
+        )
+
+        rows = stock_movement_totals(self.period_start, self.period_end)
+
+        milk_row = self._row(rows, milk)
+        self.assertIsNotNone(milk_row)
+        self.assertEqual(milk_row['recipe_consumed'], Decimal('1.000'))
+
+        revised_row = self._row(rows, revised_product)
+        self.assertIsNotNone(revised_row)
+        self.assertEqual(revised_row['revised'], Decimal('3.000'))
+
+        # The recipe product itself never appears -- its own `quantity` is
+        # never touched by selling it (see CLAUDE.md/stock_as_of).
+        self.assertIsNone(self._row(rows, cappuccino))
+
+    def test_products_with_no_movement_in_period_are_excluded(self):
+        from STORA.reports.services import stock_movement_totals
+
+        untouched = Product.objects.create(
+            internal_code='BAL005', name='Balance Untouched', sell_price=Decimal('1.00'), quantity=Decimal('5'),
+        )
+        rows = stock_movement_totals(self.period_start, self.period_end)
+        self.assertIsNone(self._row(rows, untouched))
+
+
+class StockBalanceReportViewTests(TestCase):
+    def setUp(self):
+        self.manager = User.objects.create_user(username='balance-view-mgr', password='pass12345', role=User.MANAGER)
+        self.today = timezone.localdate()
+
+    def test_requires_login(self):
+        response = self.client.get(reverse('stock_balance_report'))
+        self.assertEqual(response.status_code, 302)
+
+    def test_logged_in_user_can_view(self):
+        self.client.force_login(self.manager)
+        response = self.client.get(reverse('stock_balance_report'), {
+            'start_date': (self.today - timezone.timedelta(days=7)).isoformat(),
+            'end_date': self.today.isoformat(),
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('stock_data', response.context)
 
 
 class ExpiringProductsReportViewTests(TestCase):

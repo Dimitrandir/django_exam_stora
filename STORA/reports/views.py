@@ -17,7 +17,7 @@ from STORA.products.models import Product
 from STORA.reports.ai_service import AIReportsNotConfigured, rerun_stored_query, rows_to_dicts, run_ai_report
 from STORA.reports.forms import ExpiringPeriodForm, ReportPeriodForm, StockAsOfDateForm
 from STORA.reports.models import AIReport
-from STORA.reports.services import stock_as_of
+from STORA.reports.services import stock_as_of, stock_movement_totals
 from STORA.sales.models import SaleAttributes, SaleItems, RefundItems
 
 
@@ -263,6 +263,54 @@ class StockAsOfDateReportView(LoginRequiredMixin, StaffPermissionRequiredMixin, 
         context = {
             'form': form,
             'as_of_date': as_of_date,
+            'stock_data': stock_data,
+        }
+        return render(request, self.template_name, context)
+
+
+class StockBalanceReportView(StaffPermissionRequiredMixin, ReportsBaseView):
+    """"Stock Balance Report" -- opening balance, a column per kind of
+    movement, closing balance, one row per product that actually moved in
+    the chosen period. See reports/services.py::stock_movement_totals for
+    how each column is computed (opening/closing reuse stock_as_of; the
+    movement columns are fresh range-scoped aggregates using the same
+    signed conventions).
+
+    Same permission as "Stock as of date" (products.view_product, not the
+    narrower deliveries.add_deliveryattributes DeliveriesReportView uses)
+    -- this report never shows supplier names or prices/costs, only
+    quantities, so there's nothing here worth hiding from a Cashier that
+    Stock as of date doesn't already show them."""
+
+    permission_required = 'products.view_product'
+    template_name = 'reports/stock_balance_report.html'
+
+    def get(self, request, *args, **kwargs):
+        form, start_date, end_date = self.get_period(request)
+
+        rows = stock_movement_totals(start_date, end_date)
+        stock_data = [
+            {
+                'code': row['product'].internal_code,
+                'name': row['product'].name,
+                'unit_type': row['product'].get_unit_type_display(),
+                'opening': float(row['opening']),
+                'delivered': float(row['delivered']),
+                'sold': float(row['sold']),
+                'refunded': float(row['refunded']),
+                'scrapped': float(row['scrapped']),
+                'written_off': float(row['written_off']),
+                'revised': float(row['revised']),
+                'recipe_consumed': float(row['recipe_consumed']),
+                'closing': float(row['closing']),
+            }
+            for row in rows
+        ]
+
+        context = {
+            'form': form,
+            'start_date': start_date,
+            'end_date': end_date,
             'stock_data': stock_data,
         }
         return render(request, self.template_name, context)

@@ -1,0 +1,114 @@
+{% extends 'base.html' %}
+
+{% block title %}STORA - Stock Balance Report{% endblock %}
+{% load static cache_bust %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
+{% endblock %}
+
+{% block content %}
+<section class="reports-stock-balance">
+    <header class="page-header mb-4">
+        <h1 class="h2 mb-1">Stock Balance Report</h1>
+        <p class="text-muted mb-0">
+            Opening balance, every kind of movement, and closing balance -- one row per
+            product that actually moved in the period. Only products with at least one
+            nonzero movement are shown.
+        </p>
+    </header>
+
+    {% if form.errors %}
+    <div class="form-errors">{{ form.errors }}</div>
+    {% endif %}
+
+    <section class="report-filter card shadow-sm border-0 rounded-4 mb-4">
+        <div class="card-body">
+            <form method="get">
+                <fieldset class="report-filter__fieldset border-0 p-0 m-0">
+                    <legend class="h5 mb-3">Choose period</legend>
+
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <div class="report-filter__field">
+                                {{ form.start_date.label_tag }}
+                                {{ form.start_date }}
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <div class="report-filter__field">
+                                {{ form.end_date.label_tag }}
+                                {{ form.end_date }}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-3">
+                        <button type="submit" class="btn btn-primary">Show report</button>
+                    </div>
+                </fieldset>
+            </form>
+        </div>
+    </section>
+
+    <section class="report-section card shadow-sm border-0 rounded-4 mb-4">
+        <div class="card-body">
+            <header class="section-header mb-3">
+                <h2 class="h4 mb-0">Movement by Product</h2>
+            </header>
+
+            {{ stock_data|json_script:"stock-balance-table-data" }}
+            <div id="stock-balance-table-card" class="data-table-card">
+                <div id="stock-balance-table" class="table-sm"></div>
+            </div>
+            <p class="text-muted small mt-2 mb-0">
+                Sold/Scrapped/Written off/Used in recipes reduce stock; Delivered/Refunded add
+                to it; Revised can go either way (a stock-count correction). Opening + Delivered
+                + Refunded &minus; Sold &minus; Scrapped &minus; Written off + Revised &minus;
+                Used in recipes = Closing.
+            </p>
+        </div>
+    </section>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'vendor/sheetjs/xlsx.full.min.js' %}"></script>
+<script src="{% static 'vendor/tabulator/tabulator.min.js' %}"></script>
+<script src="{% static_v 'js/data-table.js' %}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    function quantityFormatter(cell) {
+        var v = Number(cell.getValue());
+        if (isNaN(v) || v === 0) return '';
+        return v.toFixed(3).replace(/\.?0+$/, '') || '0';
+    }
+
+    function signedQuantityFormatter(cell) {
+        var v = Number(cell.getValue());
+        if (isNaN(v) || v === 0) return '';
+        var text = Math.abs(v).toFixed(3).replace(/\.?0+$/, '') || '0';
+        return v > 0 ? '+' + text : '-' + text;
+    }
+
+    var table = initExcelStyleTable('#stock-balance-table', 'stock-balance-table-data', [
+        {title: '#', field: 'code', formatter: 'rownum', width: 50, hozAlign: 'center', headerFilter: false, hideable: false},
+        {title: 'Code', field: 'code', width: 110},
+        {title: 'Name', field: 'name', widthGrow: 2},
+        {title: 'Unit', field: 'unit_type', width: 80},
+        {title: 'Opening', field: 'opening', width: 100, hozAlign: 'right', formatter: quantityFormatter},
+        {title: 'Delivered', field: 'delivered', width: 100, hozAlign: 'right', formatter: quantityFormatter, bottomCalc: 'sum', bottomCalcFormatter: quantityFormatter},
+        {title: 'Sold', field: 'sold', width: 100, hozAlign: 'right', formatter: quantityFormatter, bottomCalc: 'sum', bottomCalcFormatter: quantityFormatter},
+        {title: 'Refunded', field: 'refunded', width: 100, hozAlign: 'right', formatter: quantityFormatter, bottomCalc: 'sum', bottomCalcFormatter: quantityFormatter},
+        {title: 'Scrapped', field: 'scrapped', width: 100, hozAlign: 'right', formatter: quantityFormatter, bottomCalc: 'sum', bottomCalcFormatter: quantityFormatter},
+        {title: 'Written off', field: 'written_off', width: 100, hozAlign: 'right', formatter: quantityFormatter, bottomCalc: 'sum', bottomCalcFormatter: quantityFormatter},
+        {title: 'Revised', field: 'revised', width: 100, hozAlign: 'right', formatter: signedQuantityFormatter},
+        {title: 'Used in recipes', field: 'recipe_consumed', width: 130, hozAlign: 'right', formatter: quantityFormatter, bottomCalc: 'sum', bottomCalcFormatter: quantityFormatter, visible: false},
+        {title: 'Closing', field: 'closing', width: 100, hozAlign: 'right', formatter: quantityFormatter},
+    ], {placeholder: 'No stock movement in the selected period.'});
+
+    attachTableExportToToolbar(table, '#stock-balance-table-card', 'stock_balance_report.xlsx', 'Stock Balance');
+});
+</script>
+{% endblock %}
