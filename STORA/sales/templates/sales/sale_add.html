@@ -149,9 +149,31 @@
             {% comment %}
             Built fresh on each BG/EN toggle (see script below) -- every key
             writes straight into the search box above and puts focus right
-            back there, same as typing on a physical keyboard would.
+            back there, same as typing on a physical keyboard would. Docked
+            fixed to the bottom of the viewport (.sale-keyboard--floating,
+            same modifier class the GLOBAL keyboard module uses) instead of
+            sitting inline in the page flow -- it used to push the cart
+            table down and force the results dropdown to flip open upward
+            just to stay clear of it (confirmed live: the in-flow gap was
+            only ~6px, no usable dropdown size fit in it). Floating instead
+            means it now overlaps whatever's underneath rather than
+            shoving it down, and the dropdown no longer needs the flip
+            hack at all -- see style.css, .global-search-results just
+            opens downward with its normal full room again.
             {% endcomment %}
-            <div id="sale-keyboard" class="sale-keyboard" style="display:none;"></div>
+            <div id="sale-keyboard" class="sale-keyboard sale-keyboard--floating" style="display:none;">
+                {% comment %}
+                Floating at the bottom of the screen (see the comment
+                above) put real distance between this panel and its own
+                toggle button, up in the search row -- confirmed live: with
+                no way to close it except finding that same small ⌨ icon
+                again, it read as "stuck open, nothing closes it". This ×
+                sits on the panel itself, right where the cashier's eyes
+                already are.
+                {% endcomment %}
+                <button type="button" id="sale-keyboard-close-btn" class="sale-keyboard-close-btn" title="Hide keyboard" aria-label="Hide keyboard">×</button>
+                <div id="sale-keyboard-keys"></div>
+            </div>
 
             {% comment %}
             Fixed-height box so the page itself doesn't grow with the cart --
@@ -900,9 +922,12 @@
         // fixed `calc(100vh - 480px)` guess above, which doesn't know
         // this page's real header/search-row/footer heights and so either
         // clips the table or (as reported live) leaves a large dead strip
-        // of empty page below the footer. Re-run on resize and whenever
-        // something else changes how much space is above the cart (the
-        // on-screen keyboard toggling shifts the table container down).
+        // of empty page below the footer. Re-run on resize and on first
+        // render. The on-screen keyboard used to also shift the table
+        // container down when toggled (it sat in-flow, above the cart) --
+        // now that it's a fixed/floating panel (.sale-keyboard--floating)
+        // it overlaps instead of pushing content, so opening/closing it no
+        // longer needs to trigger this.
         function syncCartHeight() {
             var container = document.querySelector('.sale-items-table-container');
             var footer = document.querySelector('.page-actions');
@@ -1278,21 +1303,6 @@
             highlightedIndex = index;
         }
 
-        // The results dropdown normally opens downward, right below the
-        // search input -- fine when the on-screen keyboard is hidden, but
-        // the keyboard sits only ~6px below that same input once it's
-        // open, leaving essentially no room to shrink into (confirmed
-        // live -- there's no usable "smaller max-height" that avoids the
-        // overlap, the gap is just too small). Flipping the dropdown to
-        // open UPWARD instead -- into the page content above the search
-        // row, which always has plenty of room -- is what actually keeps
-        // it off the keyboard, not a smaller size. See
-        // .sale-item-search-wrapper.keyboard-open in style.css.
-        function syncResultsDropdownDirection() {
-            const searchWrapper = searchInput.closest('.sale-item-search-wrapper');
-            searchWrapper.classList.toggle('keyboard-open', keyboardEl.style.display !== 'none');
-        }
-
         function renderResults(results) {
             resultsBox.innerHTML = '';
             currentResults = results;
@@ -1309,7 +1319,6 @@
                 resultsBox.appendChild(row);
             });
             resultsBox.classList.add('is-open');
-            syncResultsDropdownDirection();
             // First match pre-highlighted -- Enter immediately picks it
             // without needing an extra arrow-down first.
             highlightResult(0);
@@ -1531,7 +1540,17 @@
 
         const keyboardToggleBtn = document.getElementById('sale-keyboard-toggle-btn');
         const keyboardEl = document.getElementById('sale-keyboard');
+        const keyboardCloseBtn = document.getElementById('sale-keyboard-close-btn');
+        // Rows/keys are rebuilt into this inner wrapper on each BG/EN
+        // toggle, not the panel element itself -- keyboardEl.innerHTML
+        // would also wipe out the close button above.
+        const keyboardKeysEl = document.getElementById('sale-keyboard-keys');
         let keyboardLanguage = 'bg';
+
+        function setKeyboardVisible(visible) {
+            keyboardEl.style.display = visible ? '' : 'none';
+            keyboardToggleBtn.classList.toggle('is-active', visible);
+        }
 
         // Inserts at the current cursor position (not just appended) --
         // matches how typing on a real keyboard behaves if the cashier
@@ -1546,7 +1565,7 @@
         }
 
         function renderKeyboard() {
-            keyboardEl.innerHTML = '';
+            keyboardKeysEl.innerHTML = '';
 
             KEYBOARD_LAYOUTS[keyboardLanguage].forEach((rowKeys) => {
                 const rowEl = document.createElement('div');
@@ -1559,7 +1578,7 @@
                     keyBtn.addEventListener('click', () => insertAtCursor(key));
                     rowEl.appendChild(keyBtn);
                 });
-                keyboardEl.appendChild(rowEl);
+                keyboardKeysEl.appendChild(rowEl);
             });
 
             const controlsRow = document.createElement('div');
@@ -1615,21 +1634,19 @@
             });
             controlsRow.appendChild(enterBtn);
 
-            keyboardEl.appendChild(controlsRow);
+            keyboardKeysEl.appendChild(controlsRow);
         }
 
         renderKeyboard();
 
         keyboardToggleBtn.addEventListener('click', () => {
-            const isHidden = keyboardEl.style.display === 'none';
-            keyboardEl.style.display = isHidden ? '' : 'none';
-            keyboardToggleBtn.classList.toggle('is-active', isHidden);
+            setKeyboardVisible(keyboardEl.style.display === 'none');
             searchInput.focus();
-            // The keyboard sits above the cart in the layout -- showing/
-            // hiding it moves the table container's top edge, so the
-            // available height for the cart needs recomputing too.
-            syncCartHeight();
-            syncResultsDropdownDirection();
+        });
+
+        keyboardCloseBtn.addEventListener('click', () => {
+            setKeyboardVisible(false);
+            searchInput.focus();
         });
 
         // -- Submit: rebuild items-<n>-<field> hidden inputs from the

@@ -926,22 +926,6 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
     min-width: 0;
 }
 
-/* The results dropdown (.global-search-results, shared with the navbar
-   search) normally opens downward via `top: 100%` -- fine when the
-   on-screen keyboard is hidden, but the keyboard sits only a few px below
-   this same input once it's open, leaving no usable room to shrink into.
-   Flipping it to open upward instead -- into the page content above the
-   search row, which always has plenty of room -- is what actually keeps
-   it clear of the keyboard, not a smaller max-height (confirmed live: the
-   real gap measured ~6px, well under any usable dropdown size). Toggled
-   by syncResultsDropdownDirection() in sale_add.html. */
-.sale-item-search-wrapper.keyboard-open .global-search-results {
-    top: auto;
-    bottom: 100%;
-    margin-top: 0;
-    margin-bottom: 2px;
-}
-
 /* Docked inside the search box itself, flush right, instead of sitting
    next to it as a separate button. */
 #sale-item-search-input {
@@ -1035,13 +1019,17 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
     color: #1e4d35;
 }
 
-/* The GLOBAL on-screen keyboard (static/js/onscreen-keyboard.js) -- reuses
-   every .sale-keyboard* rule above as-is (same look), just docked fixed to
-   the bottom of the viewport instead of sitting inline in one page's own
-   layout, since it can be triggered by ANY text field on ANY page. z-index
-   above the POS compact-nav overlay (2000, the highest already in this
-   file) and Bootstrap's own modals -- needs to stay usable even with a
-   modal open (e.g. typing into a field inside one). */
+/* Fixed/floating variant of the keyboard panel -- docked to the bottom of
+   the viewport instead of sitting inline in the page layout, so it
+   overlaps whatever's underneath rather than pushing it down. Used by the
+   GLOBAL on-screen keyboard (static/js/onscreen-keyboard.js, since it can
+   be triggered by ANY text field on ANY page) and by sale_add.html's own
+   dedicated product-search keyboard alike -- the in-flow version used to
+   push the cart table down and force its results dropdown to flip open
+   upward just to stay clear of it. z-index above the POS compact-nav
+   overlay (2000, the highest already in this file) and Bootstrap's own
+   modals -- needs to stay usable even with a modal open (e.g. typing into
+   a field inside one). */
 .sale-keyboard--floating {
     position: fixed;
     left: 0;
@@ -1052,6 +1040,28 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
     max-width: 720px;
     border-radius: 0.5rem 0.5rem 0 0;
     box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.2);
+}
+
+/* sale_add.html's own product-search keyboard only (the shared global
+   module hides itself via its own outside-click listener instead, see
+   onscreen-keyboard.js) -- top-right corner of the floating panel, a
+   touch target as big as the keys themselves below it. */
+.sale-keyboard-close-btn {
+    position: absolute;
+    top: 0.4rem;
+    right: 0.6rem;
+    width: 2.2rem;
+    height: 2.2rem;
+    border: none;
+    background: transparent;
+    color: #6c757d;
+    font-size: 1.6rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.sale-keyboard-close-btn:active {
+    color: #212529;
 }
 
 /* Navbar "Touch Mode" toggle -- persisted per browser/device (localStorage,
