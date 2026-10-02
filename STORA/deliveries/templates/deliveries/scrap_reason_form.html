@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% load i18n %}
 
-{% block title %}STORA - {% if scrap_reason %}Edit Scrap Reason{% else %}New Scrap Reason{% endif %}{% endblock %}
+{% block title %}STORA - {% if scrap_reason %}{% translate "Edit Scrap Reason" %}{% else %}{% translate "New Scrap Reason" %}{% endif %}{% endblock %}
 
 {% block content %}
 

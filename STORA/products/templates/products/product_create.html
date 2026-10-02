@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% load static cache_bust i18n %}
 
-{% block title %}STORA - New Product{% endblock %}
+{% block title %}STORA - {% translate "New Product" %}{% endblock %}
 
 {% block content %}
 
@@ -32,7 +32,7 @@
                 fields either way, nothing duplicated), so comparing them
                 costs nothing.
                 {% endcomment %}
-                <div class="product-form__layout-toggle" role="group" aria-label="Field layout" id="layout-toggle">
+                <div class="product-form__layout-toggle" role="group" aria-label="{% translate "Field layout" %}" id="layout-toggle">
                     <button type="button" data-layout="grouped">{% translate "Side by side" %}</button>
                     <button type="button" data-layout="stacked">{% translate "Stacked" %}</button>
                 </div>
@@ -125,7 +125,7 @@
         <section class="product-form__section">
             <header class="product-form__section-header">
                 <h2>{% translate "Price" %}</h2>
-                <div class="product-form__layout-toggle" role="group" aria-label="Field layout" id="price-layout-toggle">
+                <div class="product-form__layout-toggle" role="group" aria-label="{% translate "Field layout" %}" id="price-layout-toggle">
                     <button type="button" data-layout="grouped">{% translate "Side by side" %}</button>
                     <button type="button" data-layout="stacked">{% translate "Stacked" %}</button>
                 </div>

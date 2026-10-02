@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
-
-{% block title %}STORA - Stock As Of Date{% endblock %}
 {% load static cache_bust i18n %}
+
+{% block title %}STORA - {% translate "Stock As Of Date" %}{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">

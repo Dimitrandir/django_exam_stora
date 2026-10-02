@@ -451,7 +451,8 @@ class ProductHistoryViewTests(TestCase):
         )
 
         self.client.force_login(self.manager)
-        response = self.client.get(reverse('product_history', kwargs={'pk': self.product.pk}))
+        # English pinned -- event_type is the (translated) movement type label.
+        response = self.client.get(reverse('product_history', kwargs={'pk': self.product.pk}), HTTP_ACCEPT_LANGUAGE='en')
         events = response.context['events']
 
         write_off_event = next(e for e in events if e['event_type'] == 'Write-off')

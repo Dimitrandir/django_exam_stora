@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
-
-{% block title %}STORA - Sales Quantity Report{% endblock %}
 {% load static cache_bust i18n %}
+
+{% block title %}STORA - {% translate "Sales Quantity Report" %}{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">

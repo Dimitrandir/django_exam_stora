@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% load i18n %}
 
-{% block title %}STORA - {% if document_type %}Edit Document Type{% else %}New Document Type{% endif %}{% endblock %}
+{% block title %}STORA - {% if document_type %}{% translate "Edit Document Type" %}{% else %}{% translate "New Document Type" %}{% endif %}{% endblock %}
 
 {% block content %}
 

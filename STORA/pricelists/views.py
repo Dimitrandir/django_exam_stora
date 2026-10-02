@@ -9,7 +9,7 @@ from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
-from django.utils.translation import gettext as _, gettext_lazy
+from django.utils.translation import gettext as _, pgettext_lazy
 from django.views.decorators.http import require_GET, require_POST
 from django.views.generic import ListView
 
@@ -200,10 +200,12 @@ def price_list_delete(request, pk):
     return redirect('price_list_list')
 
 
+# Context-qualified so "Active" here (feminine, a price list) can be
+# translated apart from the Products list's "Active" pill.
 PRICE_LIST_STATUS_LABELS = {
-    'Active': gettext_lazy('Active'),
-    'Upcoming': gettext_lazy('Upcoming'),
-    'Expired': gettext_lazy('Expired'),
+    'Active': pgettext_lazy('price list status', 'Active'),
+    'Upcoming': pgettext_lazy('price list status', 'Upcoming'),
+    'Expired': pgettext_lazy('price list status', 'Expired'),
 }
 
 

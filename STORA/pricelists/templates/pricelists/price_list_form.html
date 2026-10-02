@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
-
-{% block title %}STORA - {% if price_list %}Edit Price List{% else %}New Price List{% endif %}{% endblock %}
 {% load static i18n %}
+
+{% block title %}STORA - {% if price_list %}{% translate "Edit Price List" %}{% else %}{% translate "New Price List" %}{% endif %}{% endblock %}
 
 {% block main_class %}main-wide{% endblock %}
 {% block container_class %}container-fluid{% endblock %}
