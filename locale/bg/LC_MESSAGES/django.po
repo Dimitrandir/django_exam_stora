@@ -5,7 +5,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: STORA\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-02 19:28+0000\n"
+"POT-Creation-Date: 2026-10-02 21:12+0000\n"
 "PO-Revision-Date: 2026-10-02 00:00+0000\n"
 "Language-Team: Bulgarian\n"
 "Language: bg\n"
@@ -13,6 +13,220 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#: STORA/accounts/forms.py:15
+msgid "Username"
+msgstr "Потребителско име"
+
+#: STORA/accounts/forms.py:16
+#: STORA/accounts/templates/accounts/employee_list.html:17
+msgid "First Name"
+msgstr "Име"
+
+#: STORA/accounts/forms.py:17
+#: STORA/accounts/templates/accounts/employee_list.html:18
+msgid "Last Name"
+msgstr "Фамилия"
+
+#: STORA/accounts/forms.py:18 STORA/products/forms.py:179
+msgid "Email Address"
+msgstr "Имейл адрес"
+
+#: STORA/accounts/forms.py:19 STORA/products/forms.py:178
+msgid "Phone Number"
+msgstr "Телефонен номер"
+
+#: STORA/accounts/forms.py:20
+#: STORA/accounts/templates/accounts/employee_list.html:19
+#: STORA/products/models.py:111 STORA/products/models.py:296
+msgid "Position"
+msgstr "Позиция"
+
+#: STORA/accounts/forms.py:24
+msgid "Enter username"
+msgstr "Въведи потребителско име"
+
+#: STORA/accounts/forms.py:26
+msgid "First name"
+msgstr "Име"
+
+#: STORA/accounts/forms.py:27
+msgid "Last name"
+msgstr "Фамилия"
+
+#: STORA/accounts/models.py:11
+msgid "Manager"
+msgstr "Мениджър"
+
+#: STORA/accounts/models.py:11
+#: STORA/products/templates/products/product_history.html:74
+msgid "Cashier"
+msgstr "Касиер"
+
+#: STORA/accounts/models.py:11
+msgid "Warehouse"
+msgstr "Склад"
+
+#: STORA/accounts/models.py:13 STORA/products/models.py:27
+msgid "Phone number"
+msgstr "Телефонен номер"
+
+#: STORA/accounts/models.py:36
+msgid "Company name"
+msgstr "Име на фирмата"
+
+#: STORA/accounts/models.py:39 STORA/products/models.py:18
+msgid "BULSTAT must contain only digits"
+msgstr "БУЛСТАТ трябва да съдържа само цифри"
+
+#: STORA/accounts/models.py:40 STORA/products/forms.py:176
+#: STORA/products/models.py:20
+#: STORA/products/templates/products/suppliers_list.html:19
+msgid "BULSTAT"
+msgstr "БУЛСТАТ"
+
+#: STORA/accounts/models.py:46 STORA/products/models.py:23
+msgid "VAT number must start with BG followed by digits"
+msgstr "ДДС номерът трябва да започва с BG, последвано от цифри"
+
+#: STORA/accounts/models.py:47
+msgid "VAT number"
+msgstr "ДДС номер"
+
+#: STORA/accounts/models.py:49
+msgid "Site address"
+msgstr "Адрес на обекта"
+
+#: STORA/accounts/models.py:52 STORA/accounts/models.py:53
+msgid "Company Profile"
+msgstr "Профил на фирмата"
+
+#: STORA/accounts/templates/accounts/company_profile_edit.html:4
+#: STORA/accounts/templates/accounts/company_profile_edit.html:7
+#: STORA/accounts/templates/accounts/employee_list.html:10
+msgid "My Company"
+msgstr "Моята фирма"
+
+#: STORA/accounts/templates/accounts/company_profile_edit.html:8
+msgid ""
+"Printed as the ordering company on outgoing documents (e.g. the Orders "
+"\"заявка\" blank)."
+msgstr ""
+"Отпечатва се като фирма-поръчител в изходящите документи (напр. бланката "
+"„заявка“ от Поръчки)."
+
+#: STORA/accounts/templates/accounts/company_profile_edit.html:14
+#: STORA/products/templates/products/category_form.html:41
+#: STORA/products/templates/products/product_create.html:197
+#: STORA/products/templates/products/suppliers_form.html:17
+#: STORA/products/templates/products/tax_group_form.html:17
+msgid "Save"
+msgstr "Запази"
+
+#: STORA/accounts/templates/accounts/company_profile_edit.html:19
+msgid "Back to Employees"
+msgstr "Обратно към служителите"
+
+#: STORA/accounts/templates/accounts/employee_confirm_delete.html:4
+msgid "Delete Employee"
+msgstr "Изтриване на служител"
+
+#: STORA/accounts/templates/accounts/employee_confirm_delete.html:8
+msgid "Are you sure you want to delete employee:"
+msgstr "Сигурен ли си, че искаш да изтриеш служител:"
+
+#: STORA/accounts/templates/accounts/employee_confirm_delete.html:13
+#: STORA/products/templates/products/category_confirm_delete.html:12
+#: STORA/products/templates/products/product_confirm_delete.html:26
+#: STORA/products/templates/products/suppliers_confirm_delete.html:12
+#: STORA/products/templates/products/tax_group_confirm_delete.html:12
+msgid "YES"
+msgstr "ДА"
+
+#: STORA/accounts/templates/accounts/employee_confirm_delete.html:14
+#: STORA/products/templates/products/category_confirm_delete.html:13
+#: STORA/products/templates/products/product_confirm_delete.html:27
+#: STORA/products/templates/products/suppliers_confirm_delete.html:13
+#: STORA/products/templates/products/tax_group_confirm_delete.html:13
+msgid "NO"
+msgstr "НЕ"
+
+#: STORA/accounts/templates/accounts/employee_details.html:10
+msgid "First Name: "
+msgstr "Име: "
+
+#: STORA/accounts/templates/accounts/employee_details.html:11
+msgid "Last Name: "
+msgstr "Фамилия: "
+
+#: STORA/accounts/templates/accounts/employee_details.html:12
+msgid "Phone Number: "
+msgstr "Телефон: "
+
+#: STORA/accounts/templates/accounts/employee_details.html:13
+msgid "Email: "
+msgstr "Имейл: "
+
+#: STORA/accounts/templates/accounts/employee_details.html:14
+msgid "Role: "
+msgstr "Длъжност: "
+
+#: STORA/accounts/templates/accounts/employee_details.html:19
+#: STORA/products/templates/products/products_details.html:73
+msgid "EDIT"
+msgstr "РЕДАКЦИЯ"
+
+#: STORA/accounts/templates/accounts/employee_details.html:20
+#: STORA/products/templates/products/products_details.html:74
+msgid "DELETE"
+msgstr "ИЗТРИВАНЕ"
+
+#: STORA/accounts/templates/accounts/employee_edit.html:4
+msgid "Edit Employee"
+msgstr "Редакция на служител"
+
+#: STORA/accounts/templates/accounts/employee_edit.html:7
+#, python-format
+msgid "Edit details for %(first)s %(last)s"
+msgstr "Редакция на данните за %(first)s %(last)s"
+
+#: STORA/accounts/templates/accounts/employee_edit.html:13
+msgid "Update Employee Info"
+msgstr "Обнови данните на служителя"
+
+#: STORA/accounts/templates/accounts/employee_edit.html:18
+msgid "Cancel and back to details"
+msgstr "Отказ и обратно към детайлите"
+
+#: STORA/accounts/templates/accounts/employee_edit.html:19
+msgid "DELETE Employee"
+msgstr "ИЗТРИЙ служителя"
+
+#: STORA/accounts/templates/accounts/employee_list.html:4
+#: STORA/accounts/templates/accounts/employee_list.html:7
+msgid "Employees List"
+msgstr "Списък със служители"
+
+#: STORA/accounts/templates/accounts/employee_list.html:20
+msgid "Add a new employee"
+msgstr "Добави нов служител"
+
+#: STORA/accounts/templates/accounts/employee_list.html:29
+#: STORA/products/templates/products/suppliers_list.html:35
+msgid "View"
+msgstr "Преглед"
+
+#: STORA/accounts/templates/accounts/login.html:4
+#: STORA/accounts/templates/accounts/login.html:7
+#: STORA/accounts/templates/accounts/login.html:12 templates/base.html:203
+msgid "Login"
+msgstr "Вход"
+
+#: STORA/accounts/templates/accounts/register.html:4
+#: STORA/accounts/templates/accounts/register.html:7
+#: STORA/accounts/templates/accounts/register.html:12
+msgid "Register"
+msgstr "Регистрация"
 
 #: STORA/products/forms.py:26
 msgid "Product Name"
@@ -37,11 +251,11 @@ msgstr "Показва се на касовия екран"
 
 #: STORA/products/forms.py:74
 msgid ""
-"Quantity cannot be changed manually. Use Deliveries, Sales, modules to "
-"update stock levels."
+"Quantity cannot be changed manually. Use Deliveries, Sales, modules to update"
+" stock levels."
 msgstr ""
-"Количеството не може да се променя ръчно. Ползвай модулите Доставки, "
-"Продажби за промяна на наличността."
+"Количеството не може да се променя ръчно. Ползвай модулите Доставки, Продажби"
+" за промяна на наличността."
 
 #: STORA/products/forms.py:93
 #: STORA/products/templates/products/products_list.html:97
@@ -85,30 +299,17 @@ msgid ""
 "printer."
 msgstr ""
 "Единствената кирилска буква (напр. Б, Г), с която тази ставка е програмирана "
-"на фискалното устройство - остави празно, ако тази група никога не се "
-"продава през фискалния принтер."
+"на фискалното устройство - остави празно, ако тази група никога не се продава"
+" през фискалния принтер."
 
 #: STORA/products/forms.py:175
 msgid "Supplier Name"
 msgstr "Име на доставчика"
 
-#: STORA/products/forms.py:176 STORA/products/models.py:20
-#: STORA/products/templates/products/suppliers_list.html:19
-msgid "BULSTAT"
-msgstr "БУЛСТАТ"
-
 #: STORA/products/forms.py:177
 #: STORA/products/templates/products/suppliers_list.html:20
 msgid "VAT Number"
 msgstr "ДДС номер"
-
-#: STORA/products/forms.py:178
-msgid "Phone Number"
-msgstr "Телефонен номер"
-
-#: STORA/products/forms.py:179
-msgid "Email Address"
-msgstr "Имейл адрес"
 
 #: STORA/products/forms.py:188
 msgid "Barcode Number"
@@ -143,14 +344,6 @@ msgstr "Началната дата не може да е след крайна�
 msgid "name"
 msgstr "име"
 
-#: STORA/products/models.py:18
-msgid "BULSTAT must contain only digits"
-msgstr "БУЛСТАТ трябва да съдържа само цифри"
-
-#: STORA/products/models.py:23
-msgid "VAT number must start with BG followed by digits"
-msgstr "ДДС номерът трябва да започва с BG, последвано от цифри"
-
 #: STORA/products/models.py:24
 msgid "VAT:"
 msgstr "ДДС:"
@@ -158,10 +351,6 @@ msgstr "ДДС:"
 #: STORA/products/models.py:25
 msgid "Only if the company is VAT registered!"
 msgstr "Само ако фирмата е регистрирана по ДДС!"
-
-#: STORA/products/models.py:27
-msgid "Phone number"
-msgstr "Телефонен номер"
 
 #: STORA/products/models.py:28
 msgid "Email address"
@@ -174,7 +363,7 @@ msgstr "Имейл адрес"
 msgid "Supplier"
 msgstr "Доставчик"
 
-#: STORA/products/models.py:32 templates/base.html:69 templates/base.html:252
+#: STORA/products/models.py:32 templates/base.html:83 templates/base.html:266
 msgid "Suppliers"
 msgstr "Доставчици"
 
@@ -194,7 +383,7 @@ msgstr ""
 msgid "Category"
 msgstr "Категория"
 
-#: STORA/products/models.py:58 templates/base.html:67 templates/base.html:253
+#: STORA/products/models.py:58 templates/base.html:81 templates/base.html:267
 msgid "Categories"
 msgstr "Категории"
 
@@ -209,7 +398,7 @@ msgstr "Данъчна група"
 
 #: STORA/products/models.py:101
 #: STORA/products/templates/products/tax_group_list.html:8
-#: templates/base.html:68
+#: templates/base.html:82
 msgid "Tax Groups"
 msgstr "Данъчни групи"
 
@@ -220,10 +409,6 @@ msgstr "Номер на баркод"
 #: STORA/products/models.py:110
 msgid "Scan the barcode or enter the EAN-13 number"
 msgstr "Сканирай баркода или въведи EAN-13 номера"
-
-#: STORA/products/models.py:111 STORA/products/models.py:296
-msgid "Position"
-msgstr "Позиция"
 
 #: STORA/products/models.py:112
 msgid "1 = primary barcode, 2+ = alternates"
@@ -239,8 +424,8 @@ msgstr "Представка за везнен баркод"
 
 #: STORA/products/models.py:124
 msgid ""
-"Check this if the barcode above is a 7 or 8 digit scale-printed prefix (not "
-"a full barcode) -- the scale encodes weight/quantity after it."
+"Check this if the barcode above is a 7 or 8 digit scale-printed prefix (not a"
+" full barcode) -- the scale encodes weight/quantity after it."
 msgstr ""
 "Отметни, ако баркодът по-горе е 7- или 8-цифрена представка, отпечатана от "
 "везна (не пълен баркод) - везната кодира теглото/количеството след нея."
@@ -351,7 +536,7 @@ msgstr ""
 msgid "Product"
 msgstr "Продукт"
 
-#: STORA/products/models.py:198 templates/base.html:62 templates/base.html:251
+#: STORA/products/models.py:198 templates/base.html:76 templates/base.html:265
 msgid "Products"
 msgstr "Продукти"
 
@@ -430,8 +615,8 @@ msgstr "Съставки"
 
 #: STORA/products/templates/products/_recipe_formset.html:6
 msgid ""
-"Search below to add an ingredient, then set how much of it goes into one "
-"unit sold (kg for a weight ingredient, pcs for a piece one)."
+"Search below to add an ingredient, then set how much of it goes into one unit"
+" sold (kg for a weight ingredient, pcs for a piece one)."
 msgstr ""
 "Търси по-долу, за да добавиш съставка, после задай колко от нея влиза в една "
 "продадена единица (кг за теглова съставка, бр. за бройкова)."
@@ -476,8 +661,8 @@ msgstr "Марж спрямо продажната цена:"
 #: STORA/products/templates/products/_supplier_formset.html:79
 #: STORA/products/templates/products/product_create.html:264
 #: STORA/products/templates/products/product_edit.html:262
-#: STORA/products/templates/products/products_list.html:739
-#: templates/base.html:258
+#: STORA/products/templates/products/products_list.html:748
+#: templates/base.html:272
 msgid "No matches"
 msgstr "Няма съвпадения"
 
@@ -525,20 +710,6 @@ msgstr "+ Добави допълнителен доставчик"
 msgid "Are you sure you want to delete category: \"%(name)s\"?"
 msgstr "Сигурен ли си, че искаш да изтриеш категория: \"%(name)s\"?"
 
-#: STORA/products/templates/products/category_confirm_delete.html:12
-#: STORA/products/templates/products/product_confirm_delete.html:26
-#: STORA/products/templates/products/suppliers_confirm_delete.html:12
-#: STORA/products/templates/products/tax_group_confirm_delete.html:12
-msgid "YES"
-msgstr "ДА"
-
-#: STORA/products/templates/products/category_confirm_delete.html:13
-#: STORA/products/templates/products/product_confirm_delete.html:27
-#: STORA/products/templates/products/suppliers_confirm_delete.html:13
-#: STORA/products/templates/products/tax_group_confirm_delete.html:13
-msgid "NO"
-msgstr "НЕ"
-
 #: STORA/products/templates/products/category_form.html:4
 msgid "Edit Category"
 msgstr "Редакция на категория"
@@ -561,13 +732,6 @@ msgstr "Добави нова категория"
 #: STORA/products/templates/products/product_edit.html:69
 msgid "Search category by name..."
 msgstr "Търси категория по име..."
-
-#: STORA/products/templates/products/category_form.html:41
-#: STORA/products/templates/products/product_create.html:197
-#: STORA/products/templates/products/suppliers_form.html:17
-#: STORA/products/templates/products/tax_group_form.html:17
-msgid "Save"
-msgstr "Запази"
 
 #: STORA/products/templates/products/category_form.html:46
 #: STORA/products/templates/products/product_confirm_delete.html:17
@@ -597,7 +761,7 @@ msgstr ""
 #: STORA/products/templates/products/category_list.html:23
 #: STORA/products/templates/products/category_list.html:145
 #: STORA/products/templates/products/products_list.html:35
-#: STORA/products/templates/products/products_list.html:829
+#: STORA/products/templates/products/products_list.html:838
 msgid "selected"
 msgstr "избрани"
 
@@ -619,8 +783,8 @@ msgstr "Изкл"
 #: STORA/products/templates/products/category_list.html:76
 #: STORA/products/templates/products/products_list.html:228
 #: STORA/products/templates/products/products_list.html:257
-#: STORA/products/templates/products/products_list.html:653
-#: STORA/products/templates/products/products_list.html:669
+#: STORA/products/templates/products/products_list.html:662
+#: STORA/products/templates/products/products_list.html:678
 msgid "Could not save the change."
 msgstr "Промяната не можа да се запази."
 
@@ -628,8 +792,8 @@ msgstr "Промяната не можа да се запази."
 #: STORA/products/templates/products/category_list.html:160
 #: STORA/products/templates/products/products_list.html:233
 #: STORA/products/templates/products/products_list.html:262
-#: STORA/products/templates/products/products_list.html:659
-#: STORA/products/templates/products/products_list.html:676
+#: STORA/products/templates/products/products_list.html:668
+#: STORA/products/templates/products/products_list.html:685
 msgid "Network error -- change was not saved."
 msgstr "Мрежова грешка - промяната не е запазена."
 
@@ -658,13 +822,13 @@ msgid "categories"
 msgstr "категории"
 
 #: STORA/products/templates/products/category_list.html:145
-#: STORA/products/templates/products/products_list.html:829
+#: STORA/products/templates/products/products_list.html:838
 #: STORA/products/templates/products/tax_group_list.html:26
 msgid "Delete"
 msgstr "Изтрий"
 
 #: STORA/products/templates/products/category_list.html:145
-#: STORA/products/templates/products/products_list.html:829
+#: STORA/products/templates/products/products_list.html:838
 msgid "This cannot be undone."
 msgstr "Това не може да се отмени."
 
@@ -724,8 +888,8 @@ msgstr "+ Нова категория"
 
 #: STORA/products/templates/products/product_create.html:113
 msgid ""
-"Makes this product appear as a button when browsing its category on the "
-"Sales screen (it can also be pinned there as its own shortcut)."
+"Makes this product appear as a button when browsing its category on the Sales"
+" screen (it can also be pinned there as its own shortcut)."
 msgstr ""
 "Прави продукта бутон, когато категорията му се разглежда на касовия екран "
 "(може и да се закачи там като пряк път)."
@@ -754,8 +918,8 @@ msgid ""
 "Type either Selling Price or Markup %% -- the other fills in, based on Last "
 "Delivery Price."
 msgstr ""
-"Въведи продажна цена или надценка %% - другото се попълва автоматично, "
-"спрямо последната доставна цена."
+"Въведи продажна цена или надценка %% - другото се попълва автоматично, спрямо"
+" последната доставна цена."
 
 #: STORA/products/templates/products/product_create.html:172
 #: STORA/products/templates/products/product_edit.html:179
@@ -861,10 +1025,6 @@ msgstr "Единична цена"
 msgid "eur avg"
 msgstr "eur средно"
 
-#: STORA/products/templates/products/product_history.html:74
-msgid "Cashier"
-msgstr "Касиер"
-
 #: STORA/products/templates/products/product_history.html:75
 #, python-format
 msgid "No sales or deliveries for %(name)s in this period."
@@ -961,14 +1121,6 @@ msgstr "Последна активност:"
 msgid "No sales or deliveries yet."
 msgstr "Все още няма продажби или доставки."
 
-#: STORA/products/templates/products/products_details.html:73
-msgid "EDIT"
-msgstr "РЕДАКЦИЯ"
-
-#: STORA/products/templates/products/products_details.html:74
-msgid "DELETE"
-msgstr "ИЗТРИВАНЕ"
-
 #: STORA/products/templates/products/products_details.html:75
 msgid "HISTORY"
 msgstr "ИСТОРИЯ"
@@ -978,7 +1130,7 @@ msgid "Category..."
 msgstr "Категория..."
 
 #: STORA/products/templates/products/products_list.html:45
-#: STORA/products/templates/products/products_list.html:731
+#: STORA/products/templates/products/products_list.html:740
 msgid "Pick a category"
 msgstr "Избери категория"
 
@@ -999,14 +1151,17 @@ msgid "Revision"
 msgstr "Ревизия"
 
 #: STORA/products/templates/products/products_list.html:61
+#: templates/base.html:110
 msgid "Delivery"
 msgstr "Доставка"
 
 #: STORA/products/templates/products/products_list.html:62
+#: templates/base.html:111
 msgid "Write-off"
 msgstr "Изписване"
 
 #: STORA/products/templates/products/products_list.html:63
+#: templates/base.html:112
 msgid "Scrap"
 msgstr "Брак"
 
@@ -1098,27 +1253,27 @@ msgstr "Доп. доставчик 2"
 msgid "No products found."
 msgstr "Няма намерени продукти."
 
-#: STORA/products/templates/products/products_list.html:395
+#: STORA/products/templates/products/products_list.html:404
 msgid "New Product"
 msgstr "Нов продукт"
 
-#: STORA/products/templates/products/products_list.html:411
-#: STORA/products/templates/products/products_list.html:556
+#: STORA/products/templates/products/products_list.html:420
+#: STORA/products/templates/products/products_list.html:565
 msgid "Enable Edit"
 msgstr "Включи редакция"
 
-#: STORA/products/templates/products/products_list.html:463
+#: STORA/products/templates/products/products_list.html:472
 msgid "Products List"
 msgstr "Списък с продукти"
 
-#: STORA/products/templates/products/products_list.html:465
+#: STORA/products/templates/products/products_list.html:474
 msgid "Explanation"
 msgstr "Обяснение"
 
-#: STORA/products/templates/products/products_list.html:466
+#: STORA/products/templates/products/products_list.html:475
 msgid ""
-"Overview of all products in stock. Click a row to open it, a column header "
-"to sort, use the ▾ to filter. Archived products are hidden -- show the "
+"Overview of all products in stock. Click a row to open it, a column header to"
+" sort, use the ▾ to filter. Archived products are hidden -- show the "
 "\"Archived\" column (Columns ▾) to see them too."
 msgstr ""
 "Преглед на всички продукти в наличност. Кликни на ред, за да го отвориш, на "
@@ -1126,44 +1281,44 @@ msgstr ""
 "продукти са скрити - покажи колоната \"Архивиран\" (Columns ▾), за да ги "
 "видиш и тях."
 
-#: STORA/products/templates/products/products_list.html:492
-#: STORA/products/templates/products/products_list.html:510
+#: STORA/products/templates/products/products_list.html:501
+#: STORA/products/templates/products/products_list.html:519
 msgid "Full Screen"
 msgstr "Цял екран"
 
-#: STORA/products/templates/products/products_list.html:510
+#: STORA/products/templates/products/products_list.html:519
 msgid "Exit Full Screen"
 msgstr "Изход от цял екран"
 
-#: STORA/products/templates/products/products_list.html:556
+#: STORA/products/templates/products/products_list.html:565
 msgid "Disable Edit"
 msgstr "Изключи редакция"
 
-#: STORA/products/templates/products/products_list.html:629
+#: STORA/products/templates/products/products_list.html:638
 msgid "Set a Delivery Price for this product first."
 msgstr "Първо задай доставна цена за този продукт."
 
-#: STORA/products/templates/products/products_list.html:731
+#: STORA/products/templates/products/products_list.html:740
 msgid "Apply category"
 msgstr "Приложи категория"
 
-#: STORA/products/templates/products/products_list.html:794
+#: STORA/products/templates/products/products_list.html:803
 msgid "Could not apply category."
 msgstr "Категорията не можа да се приложи."
 
-#: STORA/products/templates/products/products_list.html:815
+#: STORA/products/templates/products/products_list.html:824
 msgid "Enter a sell price first."
 msgstr "Първо въведи продажна цена."
 
-#: STORA/products/templates/products/products_list.html:817
+#: STORA/products/templates/products/products_list.html:826
 msgid "Could not apply price."
 msgstr "Цената не можа да се приложи."
 
-#: STORA/products/templates/products/products_list.html:828
+#: STORA/products/templates/products/products_list.html:837
 msgid "product"
 msgstr "продукт"
 
-#: STORA/products/templates/products/products_list.html:828
+#: STORA/products/templates/products/products_list.html:837
 msgid "products"
 msgstr "продукти"
 
@@ -1201,10 +1356,6 @@ msgstr "Преглед на всички регистрирани доставч
 #: STORA/products/templates/products/suppliers_list.html:34
 msgid "Edit supplier"
 msgstr "Редакция на доставчик"
-
-#: STORA/products/templates/products/suppliers_list.html:35
-msgid "View"
-msgstr "Преглед"
 
 #: STORA/products/templates/products/suppliers_list.html:42
 msgid "No suppliers found."
@@ -1295,6 +1446,14 @@ msgstr ""
 msgid "No categories selected."
 msgstr "Няма избрани категории."
 
+#: templates/404.html:6
+msgid "Page Not Found"
+msgstr "Страницата не е намерена"
+
+#: templates/404.html:7
+msgid "Sorry, the thing you are looking for does not exist or has been moved."
+msgstr "Съжаляваме, търсеното не съществува или е преместено."
+
 #: templates/base.html:33
 msgid "Search..."
 msgstr "Търси..."
@@ -1339,38 +1498,143 @@ msgstr "Филтрирай категории..."
 msgid "Clear"
 msgstr "Изчисти"
 
-#: templates/base.html:65
+#: templates/base.html:79
 msgid "Products list"
 msgstr "Списък с продукти"
 
-#: templates/base.html:66
+#: templates/base.html:80
 msgid "New product"
 msgstr "Нов продукт"
 
-#: templates/base.html:70
+#: templates/base.html:84
 msgid "Price Lists"
 msgstr "Ценови листи"
 
-#: templates/base.html:72
+#: templates/base.html:86
 msgid "Stock as of date"
 msgstr "Наличност към дата"
 
-#: templates/base.html:73
+#: templates/base.html:87
 msgid "Stock balance report"
 msgstr "Справка за салдо на наличности"
 
-#: templates/base.html:74
+#: templates/base.html:88
 msgid "Expiring products"
 msgstr "Изтичащи продукти"
 
+#: templates/base.html:94
+msgid "Sales"
+msgstr "Продажби"
+
+#: templates/base.html:97
+msgid "New sale"
+msgstr "Нова продажба"
+
+#: templates/base.html:99
+msgid "Sales report"
+msgstr "Справка за продажби"
+
+#: templates/base.html:101
+msgid "Sales quantity report"
+msgstr "Справка за продадени количества"
+
+#: templates/base.html:107
+msgid "Stock Movements"
+msgstr "Движения на стоки"
+
+#: templates/base.html:114
+msgid "Document Types"
+msgstr "Типове документи"
+
+#: templates/base.html:115
+msgid "Scrap Reasons"
+msgstr "Причини за брак"
+
+#: templates/base.html:116
+msgid "Stock movements report"
+msgstr "Справка за движения на стоки"
+
 #: templates/base.html:118
+msgid "Stock Revision"
+msgstr "Ревизия на наличности"
+
+#: templates/base.html:119
+msgid "Revisions history"
+msgstr "История на ревизиите"
+
+#: templates/base.html:124
+msgid "Reports"
+msgstr "Справки"
+
+#: templates/base.html:132
 msgid "Search products, suppliers, categories, employees..."
 msgstr "Търси продукти, доставчици, категории, служители..."
 
-#: templates/base.html:254
+#: templates/base.html:159 templates/base.html:268
 msgid "Employees"
 msgstr "Служители"
 
-#: templates/base.html:315 templates/base.html:316
+#: templates/base.html:165
+msgid "Logout"
+msgstr "Изход"
+
+#: templates/base.html:187
+msgid "Touch Mode: auto-show an on-screen keyboard for any text field"
+msgstr ""
+"Тъч режим: автоматично показва екранна клавиатура за всяко текстово поле"
+
+#: templates/base.html:187
+msgid "Touch Mode"
+msgstr "Тъч режим"
+
+#: templates/base.html:216
+msgid "Open operation:"
+msgstr "Незавършена операция:"
+
+#: templates/base.html:218
+msgid "is saved in draft"
+msgstr "е запазена като чернова"
+
+#: templates/base.html:221
+msgid "Resume / Clear"
+msgstr "Продължи / Изчисти"
+
+#: templates/base.html:329 templates/base.html:330
 msgid "Open in new tab"
 msgstr "Отвори в нов таб"
+
+#: templates/index.html:8
+msgid "Warehouse & Sales System"
+msgstr "Система за склад и продажби"
+
+#: templates/index.html:9
+msgid "Welcome to STORA"
+msgstr "Добре дошли в STORA"
+
+#: templates/index.html:11
+msgid "Manage products, sales, deliveries and reports in one clean dashboard."
+msgstr "Управлявайте продукти, продажби, доставки и справки от едно място."
+
+#: templates/index.html:15
+msgid "Browse Products"
+msgstr "Към продуктите"
+
+#: templates/index.html:16
+msgid "Open Sales"
+msgstr "Към продажбите"
+
+#: templates/index.html:23
+msgid "Quick Access"
+msgstr "Бърз достъп"
+
+#: templates/index.html:26
+msgid "New Delivery"
+msgstr "Нова доставка"
+
+#: templates/index.html:29
+msgid "New Sale"
+msgstr "Нова продажба"
+
+#: templates/index.html:32
+msgid "Sales Report"
+msgstr "Справка за продажби"

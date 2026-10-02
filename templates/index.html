@@ -1,34 +1,35 @@
 {% extends 'base.html' %}
+{% load i18n %}
 
 {% block content %}
 <div class="row align-items-center g-4">
     <div class="col-lg-7">
         <div class="p-4 p-lg-5 bg-white rounded-4 shadow-sm">
-            <span class="badge bg-primary mb-3">Warehouse & Sales System</span>
-            <h1 class="display-5 fw-bold mb-3">Welcome to STORA</h1>
+            <span class="badge bg-primary mb-3">{% translate "Warehouse & Sales System" %}</span>
+            <h1 class="display-5 fw-bold mb-3">{% translate "Welcome to STORA" %}</h1>
             <p class="lead text-muted mb-4">
-                Manage products, sales, deliveries and reports in one clean dashboard.
+                {% translate "Manage products, sales, deliveries and reports in one clean dashboard." %}
             </p>
 
             <div class="d-flex flex-wrap gap-2">
-                <a href="{% url 'product_list' %}" class="btn btn-dark btn-lg">Browse Products</a>
-                <a href="{% url 'sales_report' %}" class="btn btn-outline-primary btn-lg">Open Sales</a>
+                <a href="{% url 'product_list' %}" class="btn btn-dark btn-lg">{% translate "Browse Products" %}</a>
+                <a href="{% url 'sales_report' %}" class="btn btn-outline-primary btn-lg">{% translate "Open Sales" %}</a>
             </div>
         </div>
     </div>
 
     <div class="col-lg-5">
         <div class="bg-dark text-white p-4 p-lg-5 rounded-4 shadow-sm">
-            <h2 class="h4 mb-3">Quick Access</h2>
+            <h2 class="h4 mb-3">{% translate "Quick Access" %}</h2>
             <div class="list-group list-group-flush rounded-3 overflow-hidden">
                 <a href="{% url 'delivery_add' %}" class="list-group-item list-group-item-action">
-                    New Delivery
+                    {% translate "New Delivery" %}
                 </a>
                 <a href="{% url 'sale_add' %}" class="list-group-item list-group-item-action">
-                    New Sale
+                    {% translate "New Sale" %}
                 </a>
                 <a href="{% url 'sales_report' %}" class="list-group-item list-group-item-action">
-                    Sales Report
+                    {% translate "Sales Report" %}
                 </a>
             </div>
         </div>

@@ -89,37 +89,37 @@
 
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
-                        Sales
+                        {% translate "Sales" %}
                     </a>
                     <ul class="dropdown-menu">
-                        <li><a class="dropdown-item" href="{% url 'sale_add' %}">New sale</a></li>
+                        <li><a class="dropdown-item" href="{% url 'sale_add' %}">{% translate "New sale" %}</a></li>
                         {% if perms.sales.view_saleattributes %}
-                        <li><a class="dropdown-item" href="{% url 'sales_report' %}">Sales report</a></li>
+                        <li><a class="dropdown-item" href="{% url 'sales_report' %}">{% translate "Sales report" %}</a></li>
                         {% endif %}
-                        <li><a class="dropdown-item" href="{% url 'sales_quantity_report' %}">Sales quantity report</a></li>
+                        <li><a class="dropdown-item" href="{% url 'sales_quantity_report' %}">{% translate "Sales quantity report" %}</a></li>
                     </ul>
                 </li>
 
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
-                        Stock Movements
+                        {% translate "Stock Movements" %}
                     </a>
                     <ul class="dropdown-menu">
-                        <li><a class="dropdown-item" href="{% url 'delivery_add' %}">Delivery</a></li>
-                        <li><a class="dropdown-item" href="{% url 'writeoff_add' %}">Write-off</a></li>
-                        <li><a class="dropdown-item" href="{% url 'scrap_add' %}">Scrap</a></li>
+                        <li><a class="dropdown-item" href="{% url 'delivery_add' %}">{% translate "Delivery" %}</a></li>
+                        <li><a class="dropdown-item" href="{% url 'writeoff_add' %}">{% translate "Write-off" %}</a></li>
+                        <li><a class="dropdown-item" href="{% url 'scrap_add' %}">{% translate "Scrap" %}</a></li>
                         <li><hr class="dropdown-divider"></li>
-                        <li><a class="dropdown-item" href="{% url 'document_type_list' %}">Document Types</a></li>
-                        <li><a class="dropdown-item" href="{% url 'scrap_reason_list' %}">Scrap Reasons</a></li>
-                        <li><a class="dropdown-item" href="{% url 'deliveries_report' %}">Stock movements report</a></li>
+                        <li><a class="dropdown-item" href="{% url 'document_type_list' %}">{% translate "Document Types" %}</a></li>
+                        <li><a class="dropdown-item" href="{% url 'scrap_reason_list' %}">{% translate "Scrap Reasons" %}</a></li>
+                        <li><a class="dropdown-item" href="{% url 'deliveries_report' %}">{% translate "Stock movements report" %}</a></li>
                         <li><hr class="dropdown-divider"></li>
-                        <li><a class="dropdown-item" href="{% url 'revision_home' %}">Stock Revision</a></li>
-                        <li><a class="dropdown-item" href="{% url 'revision_list' %}">Revisions history</a></li>
+                        <li><a class="dropdown-item" href="{% url 'revision_home' %}">{% translate "Stock Revision" %}</a></li>
+                        <li><a class="dropdown-item" href="{% url 'revision_list' %}">{% translate "Revisions history" %}</a></li>
                     </ul>
                 </li>
 
                 <li class="nav-item">
-                    <a class="nav-link" href="{% url 'reports_dashboard' %}">Reports</a>
+                    <a class="nav-link" href="{% url 'reports_dashboard' %}">{% translate "Reports" %}</a>
                 </li>
             </ul>
 
@@ -153,13 +153,13 @@
                 {% if user.is_authenticated %}
                     {% if perms.accounts.view_employee %}
                     <li class="nav-item">
-                        <a class="nav-link" href="{% url 'employee_list' %}">Employees</a>
+                        <a class="nav-link" href="{% url 'employee_list' %}">{% translate "Employees" %}</a>
                     </li>
                     {% endif %}
                     <li class="nav-item">
                         <form method="post" action="{% url 'logout' %}" class="d-inline">
                             {% csrf_token %}
-                            <button type="submit" class="btn btn-outline-light btn-sm">Logout {{ user.username }}</button>
+                            <button type="submit" class="btn btn-outline-light btn-sm">{% translate "Logout" %} {{ user.username }}</button>
                         </form>
                     </li>
                     <li class="nav-item">
@@ -180,7 +180,7 @@
                         keyboard/keypad opt out explicitly, see that file's
                         own comments).
                         {% endcomment %}
-                        <button type="button" class="touch-mode-toggle-btn nav-link" title="Touch Mode: auto-show an on-screen keyboard for any text field" aria-label="Touch Mode">
+                        <button type="button" class="touch-mode-toggle-btn nav-link" title="{% translate "Touch Mode: auto-show an on-screen keyboard for any text field" %}" aria-label="{% translate "Touch Mode" %}">
                             {% comment %}
                             Two custom icons the user dropped into static/
                             themselves -- mouse.png = Touch Mode off (pointer
@@ -195,7 +195,7 @@
                     </li>
                 {% else %}
                     <li class="nav-item me-2">
-                        <a class="btn btn-outline-light btn-sm" href="{% url 'login' %}">Login</a>
+                        <a class="btn btn-outline-light btn-sm" href="{% url 'login' %}">{% translate "Login" %}</a>
                     </li>
                 {% endif %}
             </ul>
@@ -208,12 +208,12 @@
         {% if cashier_operation %}
             <div class="alert alert-info shadow-sm d-flex justify-content-between align-items-center rounded-4 mb-4">
                 <div>
-                    <strong>Open operation:</strong>
+                    <strong>{% translate "Open operation:" %}</strong>
                     {{ cashier_operation.type|cut:"_"|title }}
-                    <span class="text-muted">is saved in draft</span>
+                    <span class="text-muted">{% translate "is saved in draft" %}</span>
                 </div>
                 <a href="{% url 'clear_cashier_operation' %}" class="btn btn-sm btn-outline-primary">
-                    Resume / Clear
+                    {% translate "Resume / Clear" %}
                 </a>
             </div>
         {% endif %}
