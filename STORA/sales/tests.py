@@ -871,8 +871,10 @@ class RefundViewTests(TestCase):
 
     def test_refund_find_marks_refund_status_per_sale(self):
         def status_for(sale_id, response):
+            # The status code, not the 'refunded' display label -- that one
+            # is translated (Bulgarian by default).
             row = next(r for r in response.context['results_data'] if r['id'] == sale_id)
-            return row['refunded']
+            return row['refunded_status']
 
         response = self.client.get(reverse('refund_find'))
         self.assertEqual(status_for(self.sale.pk, response), 'None')

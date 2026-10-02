@@ -22,6 +22,12 @@
 // regardless of whether Touch Mode is on, via `OnscreenKeyboard.toggleFor
 // (inputEl)` -- refund_find.html's own "⌨ Show keyboard" button uses this.
 (function () {
+    // Translated labels come from base.html's window.DataTableI18n (this is
+    // a static file, so no {% translate %} here) -- English fallback.
+    var i18n = window.DataTableI18n || {};
+    function t(key, fallback) {
+        return i18n[key] || fallback;
+    }
     var TOUCH_MODE_KEY = 'stora_touch_mode';
 
     var KEYBOARD_LAYOUTS = {
@@ -203,10 +209,10 @@
             renderKeyboard();
             if (activeInput) activeInput.focus();
         }, 'sale-keyboard-key--lang');
-        langBtn.title = 'Switch keyboard language';
+        langBtn.title = t('switchKeyboardLanguage', 'Switch keyboard language');
         controlsRow.appendChild(langBtn);
 
-        controlsRow.appendChild(makeKey('Space', function () { insertAtCursor(' '); }, 'sale-keyboard-key--space'));
+        controlsRow.appendChild(makeKey(t('space', 'Space'), function () { insertAtCursor(' '); }, 'sale-keyboard-key--space'));
         controlsRow.appendChild(makeKey('←', backspace, 'sale-keyboard-key--backspace'));
         controlsRow.appendChild(makeKey('↵', submitActiveInput, 'sale-keyboard-key--enter'));
 

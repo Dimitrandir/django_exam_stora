@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 
 {% block title %}STORA - Refund Sale #{{ sale.id }}{% endblock %}
-{% load static cache_bust %}
+{% load static cache_bust i18n %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
@@ -9,7 +9,7 @@
 
 {% block content %}
 
-<h1>Refund Sale #{{ sale.id }} ({{ sale.time_of_sale|date:"d.m.Y H:i" }})</h1>
+<h1>{% blocktranslate with id=sale.id time=sale.time_of_sale|date:"d.m.Y H:i" %}Refund Sale #{{ id }} ({{ time }}){% endblocktranslate %}</h1>
 
 {% if error %}
 <div class="form-errors"><strong>{{ error }}</strong></div>
@@ -25,7 +25,7 @@
     </div>
 
     <p>
-        <label for="id_reason">Reason:</label>
+        <label for="id_reason">{% translate "Reason:" %}</label>
         <select name="reason" id="id_reason">
             {% for value, label in reason_choices %}
             <option value="{{ value }}">{{ label }}</option>
@@ -33,8 +33,8 @@
         </select>
     </p>
 
-    <button type="submit" class="btn button-save">Confirm Refund</button>
-    <a href="{% url 'refund_find' %}">Cancel</a>
+    <button type="submit" class="btn button-save">{% translate "Confirm Refund" %}</button>
+    <a href="{% url 'refund_find' %}">{% translate "Cancel" %}</a>
 </form>
 
 {% endblock %}
@@ -98,18 +98,18 @@ document.addEventListener('DOMContentLoaded', function () {
         // "#" itself shuffle around too. Same fix as the Deliveries grid
         // and the POS cart (see their own 'seq' comments).
         {title: '#', field: 'seq', width: 40, hozAlign: 'center', headerFilter: false, hideable: false},
-        {title: 'Product', field: 'name', widthGrow: 2},
-        {title: 'Sold Qty', field: 'sold_qty', width: 90, hozAlign: 'right', formatter: quantityFormatter},
-        {title: 'Already Refunded', field: 'already_refunded', width: 110, hozAlign: 'right', formatter: quantityFormatter},
-        {title: 'Remaining', field: 'remaining', width: 90, hozAlign: 'right', formatter: quantityFormatter},
+        {title: '{% translate "Product" %}', field: 'name', widthGrow: 2},
+        {title: '{% translate "Sold Qty" %}', field: 'sold_qty', width: 90, hozAlign: 'right', formatter: quantityFormatter},
+        {title: '{% translate "Already Refunded" %}', field: 'already_refunded', width: 110, hozAlign: 'right', formatter: quantityFormatter},
+        {title: '{% translate "Remaining" %}', field: 'remaining', width: 90, hozAlign: 'right', formatter: quantityFormatter},
         {
-            title: 'Refund Qty Now', field: 'refund_qty', width: 120, hozAlign: 'right',
+            title: '{% translate "Refund Qty Now" %}', field: 'refund_qty', width: 120, hozAlign: 'right',
             formatter: quantityFormatter,
             editor: numberEditor,
             editorParams: function (cell) { return {min: 0, max: cell.getData().remaining, step: 0.001}; },
             editable: function (cell) { return cell.getData().remaining > 0; },
         },
-    ], {placeholder: 'Nothing left to refund on this sale.', columnChooser: false});
+    ], {placeholder: '{% translate "Nothing left to refund on this sale." %}', columnChooser: false});
 
     // "Select All" -- fills every still-refundable line's qty to its own
     // remaining amount in one tap, so the common "customer returns
@@ -121,7 +121,7 @@ document.addEventListener('DOMContentLoaded', function () {
     refundAllBtn.className = 'icon-btn icon-btn--outline icon-btn--sm';
     refundAllBtn.innerHTML =
         '<span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--checklist"></span></span>' +
-        '<span class="icon-btn__label">Select All</span>';
+        '<span class="icon-btn__label">{% translate "Select All" %}</span>';
     refundAllBtn.addEventListener('click', function () {
         table.getRows().forEach(function (row) {
             var data = row.getData();
@@ -129,7 +129,7 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     });
 
-    attachTableExportToToolbar(table, '#refund-items-table-card', 'refund_sale_{{ sale.id }}_items.xlsx', 'Refund Items', [refundAllBtn]);
+    attachTableExportToToolbar(table, '#refund-items-table-card', 'refund_sale_{{ sale.id }}_items.xlsx', '{% translate "Refund Items" %}', [refundAllBtn]);
 
     document.getElementById('refund-form').addEventListener('submit', function () {
         var container = document.getElementById('refund-hidden-inputs');

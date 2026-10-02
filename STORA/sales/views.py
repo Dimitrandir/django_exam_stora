@@ -11,6 +11,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.utils.dateparse import parse_date
+from django.utils.translation import gettext as _
 from django.views.generic import DetailView, DeleteView
 from django.views.decorators.http import require_POST
 from STORA.sales.tasks import log_sale_completed
@@ -333,9 +334,9 @@ def fiscal_report_period(request):
     start_date = parse_date(request.POST.get('start_date', ''))
     end_date = parse_date(request.POST.get('end_date', ''))
     if not start_date or not end_date:
-        return JsonResponse({'error': 'Pick both a start and an end date.'}, status=400)
+        return JsonResponse({'error': _('Pick both a start and an end date.')}, status=400)
     if end_date < start_date:
-        return JsonResponse({'error': 'End date must be on or after the start date.'}, status=400)
+        return JsonResponse({'error': _('End date must be on or after the start date.')}, status=400)
     try:
         fiscal.print_period_report(start_date, end_date)
     except fiscal.FiscalPrintError as exc:
@@ -359,7 +360,7 @@ class SalesDeleteView(LoginRequiredMixin, StaffPermissionRequiredMixin, DeleteVi
             self.object.delete()
         except ProtectedError:
             context = self.get_context_data(
-                protected_error=(
+                protected_error=_(
                     "Cannot delete this sale -- it has a refund linked to it. "
                     "The refund is a record of money handed back and must stay together with its sale."
                 )
@@ -392,7 +393,7 @@ def switch_sale_tab(request):
     payload = json.loads(request.body.decode('utf-8'))
     tab = payload.get('tab')
     if tab not in TAB_IDS:
-        return JsonResponse({'error': 'Invalid tab.'}, status=400)
+        return JsonResponse({'error': _('Invalid tab.')}, status=400)
     set_active_tab(request, tab)
     return JsonResponse({'status': 'ok'})
 
@@ -428,7 +429,7 @@ def pos_pin_add(request):
         product = get_object_or_404(Product, pk=target_id, show_on_pos=True)
         PosPin.objects.create(product=product, position=next_position)
     else:
-        return JsonResponse({'error': 'Invalid type'}, status=400)
+        return JsonResponse({'error': _('Invalid type')}, status=400)
 
     return JsonResponse({'status': 'ok'})
 
@@ -453,7 +454,7 @@ def log_removed_sale_item(request):
     payload = json.loads(request.body.decode('utf-8'))
     action = payload.get('action')
     if action not in dict(SaleItemVoidLog.ACTION_CHOICES):
-        return JsonResponse({'error': 'Invalid action.'}, status=400)
+        return JsonResponse({'error': _('Invalid action.')}, status=400)
 
     items = payload.get('items', [])
     product_ids = [item['product_id'] for item in items if item.get('product_id')]
@@ -536,6 +537,8 @@ def refund_find(request):
         .values_list('original_item__sale_id', 'total')
     )
 
+    REFUND_STATUS_LABELS = {'None': _('None'), 'Partial': _('Partial'), 'Full': _('Full')}
+
     def _refund_status(sale_id):
         sold = sold_qty_by_sale.get(sale_id) or Decimal('0')
         refunded = refunded_qty_by_sale.get(sale_id) or Decimal('0')
@@ -554,7 +557,10 @@ def refund_find(request):
             'time': timezone.localtime(sale.time_of_sale).strftime('%H:%M'),
             'cashier': str(sale.cashier),
             'amount': float(sale.total_amount),
-            'refunded': _refund_status(sale.id),
+            # Status code (None/Partial/Full) drives the cell's colour;
+            # the translated label is what the grid shows and filters on.
+            'refunded_status': _refund_status(sale.id),
+            'refunded': REFUND_STATUS_LABELS[_refund_status(sale.id)],
             'refund_url': reverse('refund_new', args=[sale.id]),
         }
         for sale in results
@@ -608,7 +614,7 @@ def refund_new(request, pk):
         to_refund = []
 
         if reason not in dict(RefundAttributes.REASON_CHOICES):
-            error = 'Please choose a valid reason.'
+            error = _('Please choose a valid reason.')
         else:
             for row in lines:
                 raw = request.POST.get(f'refund_qty_{row["item"].pk}', '').strip()
@@ -617,17 +623,18 @@ def refund_new(request, pk):
                 try:
                     qty = Decimal(raw)
                 except InvalidOperation:
-                    error = 'Invalid quantity entered.'
+                    error = _('Invalid quantity entered.')
                     break
                 if qty <= 0:
                     continue
                 if qty > row['remaining']:
-                    error = f'Cannot refund more than {row["remaining"]} of {row["item"].sale_item.name}.'
+                    error = _('Cannot refund more than %(qty)s of %(name)s.') % {
+                        'qty': row['remaining'], 'name': row['item'].sale_item.name}
                     break
                 to_refund.append((row['item'], qty))
             else:
                 if not to_refund:
-                    error = 'Select at least one item to refund.'
+                    error = _('Select at least one item to refund.')
 
         if not error:
             with transaction.atomic():

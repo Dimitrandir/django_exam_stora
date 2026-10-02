@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 
 {% block title %}STORA - Refund #{{ refund.id }}{% endblock %}
-{% load static cache_bust currency_filters %}
+{% load static cache_bust currency_filters i18n %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
@@ -9,15 +9,15 @@
 
 {% block content %}
 
-<h1>Refund #{{ refund.id }} of Sale #{{ refund.original_sale_id }}</h1>
+<h1>{% blocktranslate with id=refund.id sale_id=refund.original_sale_id %}Refund #{{ id }} of Sale #{{ sale_id }}{% endblocktranslate %}</h1>
 <p>{{ refund.time_of_refund|date:"d.m.Y H:i" }} -- {{ refund.cashier }} -- {{ refund.get_reason_display }}</p>
 
 {% if refund.fiscal_status == 'FAILED' %}
 <div class="form-errors">
-    Fiscal storno receipt was NOT printed: {{ refund.fiscal_error }}
+    {% translate "Fiscal storno receipt was NOT printed:" %} {{ refund.fiscal_error }}
 </div>
 {% elif refund.fiscal_status == 'PRINTED' %}
-<p class="text-muted">Fiscal storno receipt printed at {{ refund.fiscal_printed_at|date:"d.m.Y H:i" }} (УНП {{ refund.fiscal_unic_sale_num }}).</p>
+<p class="text-muted">{% blocktranslate with time=refund.fiscal_printed_at|date:"d.m.Y H:i" unp=refund.fiscal_unic_sale_num %}Fiscal storno receipt printed at {{ time }} (УНП {{ unp }}).{% endblocktranslate %}</p>
 {% endif %}
 
 {{ refund_items_data|json_script:"refund-items-data" }}
@@ -25,14 +25,14 @@
     <div id="refund-items-table" class="table-sm"></div>
 </div>
 
-<h2 align="center">Total Refunded: {{ refund.total_amount|currency }}</h2>
+<h2 align="center">{% translate "Total Refunded:" %} {{ refund.total_amount|currency }}</h2>
 
-<a href="{% url 'sale_details' refund.original_sale_id %}">View Original Sale</a>
+<a href="{% url 'sale_details' refund.original_sale_id %}">{% translate "View Original Sale" %}</a>
 
 {% if refund.fiscal_status == 'FAILED' and perms.sales.change_saleattributes %}
 <form method="post" action="{% url 'refund_fiscal_retry' refund.pk %}" style="display:inline;">
     {% csrf_token %}
-    <button type="submit" class="btn button-save">Retry Fiscal Print</button>
+    <button type="submit" class="btn button-save">{% translate "Retry Fiscal Print" %}</button>
 </form>
 {% endif %}
 
@@ -54,16 +54,16 @@ document.addEventListener('DOMContentLoaded', function () {
             title: '#', field: 'product_name', formatter: 'rownum', width: 50, hozAlign: 'center',
             headerFilter: false, hideable: false,
         },
-        {title: 'Product', field: 'product_name', widthGrow: 2},
-        {title: 'Refunded Qty', field: 'refund_quantity', width: 130, hozAlign: 'right'},
-        {title: 'Price per unit', field: 'price_at_refund', width: 130, hozAlign: 'right', formatter: moneyFormatter},
+        {title: '{% translate "Product" %}', field: 'product_name', widthGrow: 2},
+        {title: '{% translate "Refunded Qty" %}', field: 'refund_quantity', width: 130, hozAlign: 'right'},
+        {title: '{% translate "Price per unit" %}', field: 'price_at_refund', width: 130, hozAlign: 'right', formatter: moneyFormatter},
         {
-            title: 'Total price', field: 'total_price_row', width: 130, hozAlign: 'right',
+            title: '{% translate "Total price" %}', field: 'total_price_row', width: 130, hozAlign: 'right',
             formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
         },
-    ], {placeholder: 'No items on this refund.', columnChooser: false});
+    ], {placeholder: '{% translate "No items on this refund." %}', columnChooser: false});
 
-    attachTableExportToToolbar(table, '#refund-items-table-card', 'refund_{{ refund.id }}_items.xlsx', 'Refund Items');
+    attachTableExportToToolbar(table, '#refund-items-table-card', 'refund_{{ refund.id }}_items.xlsx', '{% translate "Refund Items" %}');
 });
 </script>
 {% endblock %}

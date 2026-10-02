@@ -1,36 +1,37 @@
 {% extends 'base.html' %}
+{% load i18n %}
 
 {% block title %}STORA - Fiscal Reports{% endblock %}
 
 {% block content %}
 
-<h1 class="h2 mb-1">Fiscal Reports</h1>
-<p class="text-muted">Reports print directly on the fiscal device's own paper -- nothing shown here comes back as data.</p>
+<h1 class="h2 mb-1">{% translate "Fiscal Reports" %}</h1>
+<p class="text-muted">{% translate "Reports print directly on the fiscal device's own paper -- nothing shown here comes back as data." %}</p>
 
 {% if not fiscal_enabled %}
-<div class="form-errors">Fiscal printing is disabled on this machine (FISCAL_ENABLED). These buttons will not work.</div>
+<div class="form-errors">{% translate "Fiscal printing is disabled on this machine (FISCAL_ENABLED). These buttons will not work." %}</div>
 {% endif %}
 
 <div class="mb-4">
-    <h2 class="h4">Daily</h2>
-    <p class="text-muted small">X Report is just a reading -- run it as many times as you like. Z Report closes out the day and resets today's totals on the device -- run it once, at the end of the day.</p>
-    <button type="button" id="fiscal-x-btn" class="btn button-save">X Report</button>
-    <button type="button" id="fiscal-z-btn" class="btn btn-outline-danger">Z Report (resets today's totals)</button>
+    <h2 class="h4">{% translate "Daily" %}</h2>
+    <p class="text-muted small">{% translate "X Report is just a reading -- run it as many times as you like. Z Report closes out the day and resets today's totals on the device -- run it once, at the end of the day." %}</p>
+    <button type="button" id="fiscal-x-btn" class="btn button-save">{% translate "X Report" %}</button>
+    <button type="button" id="fiscal-z-btn" class="btn btn-outline-danger">{% translate "Z Report (resets today's totals)" %}</button>
 </div>
 
 <div class="mb-4">
-    <h2 class="h4">Period (monthly / yearly)</h2>
+    <h2 class="h4">{% translate "Period (monthly / yearly)" %}</h2>
     <form id="fiscal-period-form" class="d-flex align-items-end gap-2 flex-wrap">
         {% csrf_token %}
         <div>
-            <label for="fiscal-period-start" class="form-label">From</label>
+            <label for="fiscal-period-start" class="form-label">{% translate "From" %}</label>
             <input type="date" id="fiscal-period-start" name="start_date" class="form-control" required>
         </div>
         <div>
-            <label for="fiscal-period-end" class="form-label">To</label>
+            <label for="fiscal-period-end" class="form-label">{% translate "To" %}</label>
             <input type="date" id="fiscal-period-end" name="end_date" class="form-control" required>
         </div>
-        <button type="submit" class="btn button-save">Print Period Report</button>
+        <button type="submit" class="btn button-save">{% translate "Print Period Report" %}</button>
     </form>
 </div>
 
@@ -50,10 +51,10 @@ document.addEventListener('DOMContentLoaded', function () {
         })
             .then(function (r) { return r.json().then(function (data) { return {ok: r.ok, data: data}; }); })
             .then(function (result) {
-                if (!result.ok) { alert(result.data.error || 'Report failed.'); return; }
-                alert('Done -- check the printer.');
+                if (!result.ok) { alert(result.data.error || '{% translate "Report failed." %}'); return; }
+                alert('{% translate "Done -- check the printer." %}');
             })
-            .catch(function () { alert('Network error -- check your connection and try again.'); })
+            .catch(function () { alert('{% translate "Network error -- check your connection and try again." %}'); })
             .finally(function () { button.disabled = false; });
     }
 
@@ -62,7 +63,7 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     document.getElementById('fiscal-z-btn').addEventListener('click', function () {
-        if (!confirm('Print the Z report? This resets today\'s accumulated totals on the fiscal device -- only do this once, at the end of the day.')) return;
+        if (!confirm('{% translate "Print the Z report? This resets the accumulated daily totals on the fiscal device -- only do this once, at the end of the day." %}')) return;
         runReport('{% url "fiscal_report_z" %}', '', this);
     });
 
