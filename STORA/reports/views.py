@@ -17,7 +17,7 @@ from STORA.products.models import Product
 from STORA.reports.ai_service import AIReportsNotConfigured, rerun_stored_query, rows_to_dicts, run_ai_report
 from STORA.reports.forms import ExpiringPeriodForm, ReportPeriodForm, StockAsOfDateForm
 from STORA.reports.models import AIReport
-from STORA.reports.services import stock_as_of
+from STORA.reports.services import stock_as_of, stock_movement_totals
 from STORA.sales.models import SaleAttributes, SaleItems, RefundItems
 
 
@@ -277,6 +277,75 @@ class StockAsOfDateReportView(LoginRequiredMixin, StaffPermissionRequiredMixin, 
         context = {
             'form': form,
             'as_of_date': as_of_date,
+            'stock_data': stock_data,
+        }
+        return render(request, self.template_name, context)
+
+
+class StockBalanceReportView(StaffPermissionRequiredMixin, ReportsBaseView):
+    """"Stock Balance Report" -- opening balance, a column per kind of
+    movement, closing balance, one row per product that actually moved in
+    the chosen period, plus closing-stock VALUE at sell and purchase price
+    (with/without VAT). See reports/services.py::stock_movement_totals for
+    how each column is computed (opening/closing reuse stock_as_of; the
+    movement columns are fresh range-scoped aggregates using the same
+    signed conventions; the value columns use the price actually in effect
+    as of end_date, not today's -- an accountant can ask for a past date).
+
+    permission_required matches DeliveriesReportView's, NOT the broader
+    products.view_product "Stock as of date" uses -- this report shows
+    purchase-price (cost) data now that the value columns exist, same
+    reason DeliveriesReportView itself is Manager/Warehouse-only rather
+    than open to every Cashier."""
+
+    permission_required = 'deliveries.add_deliveryattributes'
+    template_name = 'reports/stock_balance_report.html'
+
+    def get(self, request, *args, **kwargs):
+        form, start_date, end_date = self.get_period(request)
+
+        rows = stock_movement_totals(start_date, end_date)
+        stock_data = [
+            {
+                'code': row['product'].internal_code,
+                'name': row['product'].name,
+                'category': row['product'].category.name if row['product'].category else '',
+                'unit_type': row['product'].get_unit_type_display(),
+                'opening': float(row['opening']),
+                'delivered': float(row['delivered']),
+                'sold': float(row['sold']),
+                'refunded': float(row['refunded']),
+                'scrapped': float(row['scrapped']),
+                'written_off': float(row['written_off']),
+                'revised': float(row['revised']),
+                'recipe_consumed': float(row['recipe_consumed']),
+                'closing': float(row['closing']),
+                'opening_sell_value': float(row['opening_sell_value']),
+                'opening_sell_value_no_vat': float(row['opening_sell_value_no_vat']),
+                'opening_purchase_value': (
+                    float(row['opening_purchase_value']) if row['opening_purchase_value'] is not None else None
+                ),
+                'opening_purchase_value_no_vat': (
+                    float(row['opening_purchase_value_no_vat'])
+                    if row['opening_purchase_value_no_vat'] is not None else None
+                ),
+                'closing_sell_value': float(row['closing_sell_value']),
+                'closing_sell_value_no_vat': float(row['closing_sell_value_no_vat']),
+                'closing_purchase_value': (
+                    float(row['closing_purchase_value']) if row['closing_purchase_value'] is not None else None
+                ),
+                'closing_purchase_value_no_vat': (
+                    float(row['closing_purchase_value_no_vat'])
+                    if row['closing_purchase_value_no_vat'] is not None else None
+                ),
+            }
+            for row in rows
+        ]
+
+        context = {
+            'form': form,
+            'start_date': start_date,
+            'end_date': end_date,
             'stock_data': stock_data,
         }
         return render(request, self.template_name, context)

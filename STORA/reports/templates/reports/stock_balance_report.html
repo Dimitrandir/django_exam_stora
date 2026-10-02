@@ -1,0 +1,179 @@
+{% extends 'base.html' %}
+
+{% block title %}STORA - Stock Balance Report{% endblock %}
+{% load static cache_bust %}
+{% block main_class %}main-wide{% endblock %}
+{% block container_class %}container-fluid{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
+{% endblock %}
+
+{% block content %}
+<section class="reports-stock-balance">
+    <header class="page-header mb-4">
+        <h1 class="h2 mb-1">Stock Balance Report</h1>
+        <p class="text-muted mb-0">
+            Opening balance, every kind of movement, and closing balance -- one row per
+            product that actually moved in the period. Only products with at least one
+            nonzero movement are shown. Both opening and closing stock are also valued at
+            sell and purchase price (Columns &#9662; for the opening and no-VAT versions),
+            each using the price actually in effect as of its own date -- not today's, if
+            you're looking at a past period.
+        </p>
+    </header>
+
+    {% if form.errors %}
+    <div class="form-errors">{{ form.errors }}</div>
+    {% endif %}
+
+    <section class="report-filter card shadow-sm border-0 rounded-4 mb-4">
+        <div class="card-body">
+            <form method="get">
+                <fieldset class="report-filter__fieldset border-0 p-0 m-0">
+                    <legend class="h5 mb-3">Choose period</legend>
+
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <div class="report-filter__field">
+                                {{ form.start_date.label_tag }}
+                                {{ form.start_date }}
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <div class="report-filter__field">
+                                {{ form.end_date.label_tag }}
+                                {{ form.end_date }}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-3">
+                        <button type="submit" class="btn btn-primary">Show report</button>
+                    </div>
+                </fieldset>
+            </form>
+        </div>
+    </section>
+
+    <section class="report-section card shadow-sm border-0 rounded-4 mb-4">
+        <div class="card-body">
+            <header class="section-header mb-3">
+                <h2 class="h4 mb-0">Movement by Product</h2>
+            </header>
+
+            {{ stock_data|json_script:"stock-balance-table-data" }}
+            <div id="stock-balance-table-card" class="data-table-card">
+                <div id="stock-balance-table" class="table-sm"></div>
+            </div>
+            <p class="text-muted small mt-2 mb-0">
+                Sold/Scrapped/Written off/Used in recipes reduce stock; Delivered/Refunded add
+                to it; Revised can go either way (a stock-count correction). Opening + Delivered
+                + Refunded &minus; Sold &minus; Scrapped &minus; Written off + Revised &minus;
+                Used in recipes = Closing.
+            </p>
+        </div>
+    </section>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'vendor/sheetjs/xlsx.full.min.js' %}"></script>
+<script src="{% static 'vendor/tabulator/tabulator.min.js' %}"></script>
+<script src="{% static_v 'js/data-table.js' %}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    function quantityFormatter(cell) {
+        var v = Number(cell.getValue());
+        if (isNaN(v) || v === 0) return '';
+        return v.toFixed(3).replace(/\.?0+$/, '') || '0';
+    }
+
+    function signedQuantityFormatter(cell) {
+        var v = Number(cell.getValue());
+        if (isNaN(v) || v === 0) return '';
+        var text = Math.abs(v).toFixed(3).replace(/\.?0+$/, '') || '0';
+        return v > 0 ? '+' + text : '-' + text;
+    }
+
+    // Purchase value is null when a product was delivered so long ago (or
+    // never) that no price_at_delivery exists to average up to end_date --
+    // blank, not "null"/"NaN", same as every other formatter here treating
+    // "nothing happened" as an empty cell rather than a zero.
+    function moneyFormatter(cell) {
+        var v = cell.getValue();
+        if (v === null || v === undefined) return '';
+        var n = Number(v);
+        return isNaN(n) ? '' : n.toFixed(2);
+    }
+
+    var table = initExcelStyleTable('#stock-balance-table', 'stock-balance-table-data', [
+        {title: '#', field: 'code', formatter: 'rownum', width: 50, hozAlign: 'center', headerFilter: false, hideable: false},
+        {title: 'Code', field: 'code', width: 110},
+        {title: 'Name', field: 'name', widthGrow: 2, minWidth: 160},
+        {title: 'Category', field: 'category', width: 140},
+        {title: 'Unit', field: 'unit_type', width: 80},
+        {title: 'Opening', field: 'opening', width: 100, hozAlign: 'right', formatter: quantityFormatter},
+        {
+            title: 'Opening Value (Sell)', field: 'opening_sell_value', width: 140, hozAlign: 'right',
+            formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter, visible: false,
+        },
+        {
+            title: 'Opening Value (Sell, no VAT)', field: 'opening_sell_value_no_vat', width: 170, hozAlign: 'right',
+            formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter, visible: false,
+        },
+        {
+            title: 'Opening Value (Purchase)', field: 'opening_purchase_value', width: 150, hozAlign: 'right',
+            formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter, visible: false,
+        },
+        {
+            title: 'Opening Value (Purchase, no VAT)', field: 'opening_purchase_value_no_vat', width: 190, hozAlign: 'right',
+            formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter, visible: false,
+        },
+        {title: 'Delivered', field: 'delivered', width: 100, hozAlign: 'right', formatter: quantityFormatter, bottomCalc: 'sum', bottomCalcFormatter: quantityFormatter},
+        {title: 'Sold', field: 'sold', width: 100, hozAlign: 'right', formatter: quantityFormatter, bottomCalc: 'sum', bottomCalcFormatter: quantityFormatter},
+        {title: 'Refunded', field: 'refunded', width: 100, hozAlign: 'right', formatter: quantityFormatter, bottomCalc: 'sum', bottomCalcFormatter: quantityFormatter},
+        {title: 'Scrapped', field: 'scrapped', width: 100, hozAlign: 'right', formatter: quantityFormatter, bottomCalc: 'sum', bottomCalcFormatter: quantityFormatter},
+        {title: 'Written off', field: 'written_off', width: 100, hozAlign: 'right', formatter: quantityFormatter, bottomCalc: 'sum', bottomCalcFormatter: quantityFormatter},
+        {title: 'Revised', field: 'revised', width: 100, hozAlign: 'right', formatter: signedQuantityFormatter},
+        {title: 'Used in recipes', field: 'recipe_consumed', width: 130, hozAlign: 'right', formatter: quantityFormatter, bottomCalc: 'sum', bottomCalcFormatter: quantityFormatter, visible: false},
+        {title: 'Closing', field: 'closing', width: 100, hozAlign: 'right', formatter: quantityFormatter},
+        {
+            title: 'Closing Value (Sell)', field: 'closing_sell_value', width: 140, hozAlign: 'right',
+            formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
+        },
+        {
+            title: 'Closing Value (Sell, no VAT)', field: 'closing_sell_value_no_vat', width: 170, hozAlign: 'right',
+            formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter, visible: false,
+        },
+        {
+            title: 'Closing Value (Purchase)', field: 'closing_purchase_value', width: 150, hozAlign: 'right',
+            formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
+        },
+        {
+            title: 'Closing Value (Purchase, no VAT)', field: 'closing_purchase_value_no_vat', width: 190, hozAlign: 'right',
+            formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter, visible: false,
+        },
+    ], {placeholder: 'No stock movement in the selected period.'});
+
+    // fitColumns only fits column widths to the container once, at
+    // initial render -- doesn't recalculate on its own if something else
+    // changes how much room is available afterwards (e.g. toggling a
+    // column's visibility via Columns ▾). One recalculation right after
+    // Tabulator's own "I'm actually built" event, not synchronously
+    // (redraw(true) inside the same tick as `new Tabulator(...)` hits a
+    // null ref inside Tabulator's own adjustTableSize() -- confirmed live
+    // elsewhere in the app, e.g. sale_add.html's cart). NOTE: this does
+    // NOT fix the Name column collapsing on load (see its own minWidth
+    // above for that) -- tried, confirmed it doesn't help; that symptom
+    // was the container genuinely not having room for every fixed-width
+    // column at once, not a stale measurement.
+    table.on('tableBuilt', function () {
+        table.redraw(true);
+    });
+
+    attachTableExportToToolbar(table, '#stock-balance-table-card', 'stock_balance_report.xlsx', 'Stock Balance');
+});
+</script>
+{% endblock %}

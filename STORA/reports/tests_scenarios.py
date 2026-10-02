@@ -464,6 +464,27 @@ class ShopDayScenarioTests(TestCase):
         as_of = {row['product'].pk: row['quantity_as_of'] for row in stock_as_of(yesterday)}
         self.assertEqual(as_of[self.cola.pk], end_of_yesterday)
 
+    def test_stock_balance_adds_up_with_sale_during_open_revision(self):
+        """Opening + movements must equal closing even when a sale happens
+        between counting a product and completing the revision."""
+        from STORA.reports.services import stock_movement_totals
+        self.receive_morning_delivery(timezone.localdate() - timedelta(days=1))
+        self.login(self.warehouse)
+        self.client.post(reverse('revision_start'), {'name': ''})
+        revision = RevisionAttributes.objects.get(status='OPEN')
+        self.client.post(reverse('revision_set_item', args=[revision.pk]), {'product_id': self.cola.pk, 'quantity': '46'})
+        self.ring_up([{'product': self.cola, 'qty': 2, 'price': '2.00'}])
+        self.login(self.warehouse)
+        self.client.post(reverse('revision_complete', args=[revision.pk]))
+
+        today = timezone.localdate()
+        row = next(r for r in stock_movement_totals(today, today) if r['product'].pk == self.cola.pk)
+        movements = (row['delivered'] - row['sold'] + row['refunded'] - row['scrapped']
+                     - row['written_off'] + row['revised'] - row['recipe_consumed'])
+        self.assertEqual(row['opening'], D('48'))
+        self.assertEqual(row['revised'], D('0'), '46 counted, 46 really there after the sale -- no correction')
+        self.assertEqual(row['opening'] + movements, row['closing'])
+
     # ------------------------------------------------------------------
     # 7. Expiring report
     # ------------------------------------------------------------------
