@@ -108,6 +108,13 @@ class RevisionItems(models.Model):
     # while the count is still in progress doesn't move the comparison
     # target out from under the counters.
     system_quantity_at_start = models.DecimalField(max_digits=10, decimal_places=3)
+    # What Product.quantity really was the instant Complete overwrote it
+    # with found_quantity -- can differ from system_quantity_at_start if
+    # anything sold/arrived while the revision was still open. This (not
+    # the snapshot above) is the change Complete actually applied, which is
+    # what "Stock as of date" must undo (reports/services.py). Null for
+    # revisions completed before this field existed.
+    quantity_before_complete = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
     price_at_revision = models.DecimalField(null=True, blank=True, max_digits=9, decimal_places=2)
 
     objects = RevisionItemsManager()

@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from django.db.models import F, Sum
+from django.db.models.functions import Coalesce
 
 from STORA.deliveries.models import DeliveryAttributes, DeliveryItems
 from STORA.products.models import Product, RecipeIngredient
@@ -71,7 +72,10 @@ def stock_as_of(as_of_date):
             revision__status=RevisionAttributes.STATUS_COMPLETED,
             revision__completed_at__date__gt=as_of_date,
         )
-        .annotate(delta=F('found_quantity') - F('system_quantity_at_start'))
+        # quantity_before_complete is the change Complete REALLY applied;
+        # older revisions (completed before that field existed) fall back to
+        # the start-of-count snapshot, the best figure they have.
+        .annotate(delta=F('found_quantity') - Coalesce('quantity_before_complete', 'system_quantity_at_start'))
         .values('product_id')
         .annotate(total=Sum('delta'))
     )

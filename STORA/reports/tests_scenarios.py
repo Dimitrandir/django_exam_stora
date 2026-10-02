@@ -6,7 +6,6 @@ then check that stock levels and every report agree with what physically
 happened. Each assertion message says in plain words what a wrong number
 would mean for the shop.
 """
-import unittest
 from datetime import timedelta
 from decimal import Decimal
 
@@ -444,12 +443,6 @@ class ShopDayScenarioTests(TestCase):
             self.assertEqual(as_of[pk], real,
                              f'"Stock as of {yesterday}" shows {as_of[pk]} for {names[pk]}, but at the end of that day there were really {real}')
 
-    # Known limitation, waiting on a decision (needs a migration):
-    # RevisionItems only stores system_quantity_at_start (snapshotted when
-    # the product is first counted), not what stock was right before
-    # Complete overwrote it -- so a sale/delivery made while the revision
-    # is still open makes "Stock as of" off by exactly that movement.
-    @unittest.expectedFailure
     def test_stock_as_of_survives_sale_during_open_revision(self):
         """Revision started (snapshot taken), then a sale happens before the
         count is completed. Complete sets stock to the counted number --
