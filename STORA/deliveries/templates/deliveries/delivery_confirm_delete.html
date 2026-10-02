@@ -1,24 +1,25 @@
 {% extends 'base.html' %}
+{% load i18n %}
 
 {% block title %}STORA - Delete Delivery{% endblock %}
 
 {% block content %}
 <section class="delete-confirmation">
     <header class="page-header">
-        <h1>Delete Delivery</h1>
-        <p>Are you sure you want to delete Delivery ID: {{ delivery.id }}?</p>
+        <h1>{% translate "Delete Delivery" %}</h1>
+        <p>{% blocktranslate with id=delivery.id %}Are you sure you want to delete Delivery ID: {{ id }}?{% endblocktranslate %}</p>
     </header>
 
     <section class="delete-confirmation__details">
-        <p><strong>Supplier:</strong> {{ delivery.supplier }}</p>
-        <p><strong>Receiver:</strong> {{ delivery.receiver }}</p>
-        <p><strong>Date:</strong> {{ delivery.time_of_delivery|date:"d.m.Y H:i" }}</p>
+        <p><strong>{% translate "Supplier:" %}</strong> {{ delivery.supplier }}</p>
+        <p><strong>{% translate "Receiver:" %}</strong> {{ delivery.receiver }}</p>
+        <p><strong>{% translate "Date:" %}</strong> {{ delivery.time_of_delivery|date:"d.m.Y H:i" }}</p>
     </section>
 
     <form method="post" class="delete-confirmation__form">
         {% csrf_token %}
-        <button type="submit" class="delete_button">YES</button>
-        <a href="{% url 'deliveries_list' %}" class="button_cancel">NO</a>
+        <button type="submit" class="delete_button">{% translate "YES" %}</button>
+        <a href="{% url 'deliveries_list' %}" class="button_cancel">{% translate "NO" %}</a>
     </form>
 </section>
 {% endblock %}

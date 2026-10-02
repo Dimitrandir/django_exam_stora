@@ -1,15 +1,16 @@
 {% extends 'base.html' %}
+{% load i18n %}
 
 {% block title %}STORA - Delete Scrap Reason{% endblock %}
 
 {% block content %}
 
-<h1>Are you sure you want to delete scrap reason: "{{ scrap_reason.name }}"?</h1>
+<h1>{% blocktranslate with name=scrap_reason.name %}Are you sure you want to delete scrap reason: "{{ name }}"?{% endblocktranslate %}</h1>
 
 <form method="POST">
     {% csrf_token %}
-    <button type="submit" class="delete_button">YES</button>
-    <a href="{% url 'scrap_reason_list' %}" class="button_cancel">NO</a>
+    <button type="submit" class="delete_button">{% translate "YES" %}</button>
+    <a href="{% url 'scrap_reason_list' %}" class="button_cancel">{% translate "NO" %}</a>
 </form>
 
 {% endblock %}

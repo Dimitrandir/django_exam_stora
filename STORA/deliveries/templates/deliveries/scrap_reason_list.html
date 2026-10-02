@@ -1,16 +1,17 @@
 {% extends 'base.html' %}
+{% load i18n %}
 
 {% block title %}STORA - Scrap Reasons{% endblock %}
 
 {% block content %}
 
-<h1>Scrap Reasons</h1>
+<h1>{% translate "Scrap Reasons" %}</h1>
 
 <table>
     <thead>
         <tr>
-            <th>Name</th>
-            <th>{% if perms.deliveries.add_scrapreason %}<a href="{% url 'scrap_reason_create' %}" class="add-btn-table" title="Add a new scrap reason">+</a>{% endif %}</th>
+            <th>{% translate "Name" %}</th>
+            <th>{% if perms.deliveries.add_scrapreason %}<a href="{% url 'scrap_reason_create' %}" class="add-btn-table" title="{% translate "Add a new scrap reason" %}">+</a>{% endif %}</th>
         </tr>
     </thead>
     <tbody>
@@ -18,14 +19,14 @@
         <tr>
             <td>{{ scrap_reason.name }}</td>
             <td>
-                {% if perms.deliveries.change_scrapreason %}<a href="{% url 'scrap_reason_edit' scrap_reason.pk %}">Edit</a>{% endif %}
+                {% if perms.deliveries.change_scrapreason %}<a href="{% url 'scrap_reason_edit' scrap_reason.pk %}">{% translate "Edit" %}</a>{% endif %}
                 {% if perms.deliveries.change_scrapreason and perms.deliveries.delete_scrapreason %}|{% endif %}
-                {% if perms.deliveries.delete_scrapreason %}<a href="{% url 'scrap_reason_delete' scrap_reason.pk %}">Delete</a>{% endif %}
+                {% if perms.deliveries.delete_scrapreason %}<a href="{% url 'scrap_reason_delete' scrap_reason.pk %}">{% translate "Delete" %}</a>{% endif %}
             </td>
         </tr>
         {% empty %}
         <tr>
-            <td colspan="2">No scrap reasons found.</td>
+            <td colspan="2">{% translate "No scrap reasons found." %}</td>
         </tr>
         {% endfor %}
     </tbody>

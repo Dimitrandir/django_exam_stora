@@ -6,6 +6,7 @@ from django.dispatch import receiver
 from django.core.validators import MinValueValidator
 from django.utils import timezone
 from django.utils.dateparse import parse_date
+from django.utils.translation import gettext_lazy as _
 
 from STORA.accounts.models import Employee
 from STORA.products.models import Product, Suppliers, ProductSupplier
@@ -19,8 +20,8 @@ class DocumentType(models.Model):
     name = models.CharField(max_length=60, unique=True)
 
     class Meta:
-        verbose_name = 'Document Type'
-        verbose_name_plural = 'Document Types'
+        verbose_name = _('Document Type')
+        verbose_name_plural = _('Document Types')
         ordering = ['name']
 
     def __str__(self):
@@ -36,8 +37,8 @@ class ScrapReason(models.Model):
     name = models.CharField(max_length=60, unique=True)
 
     class Meta:
-        verbose_name = 'Scrap Reason'
-        verbose_name_plural = 'Scrap Reasons'
+        verbose_name = _('Scrap Reason')
+        verbose_name_plural = _('Scrap Reasons')
         ordering = ['name']
 
     def __str__(self):
@@ -52,43 +53,43 @@ class DeliveryAttributes(models.Model):
     MOVEMENT_WRITE_OFF = 'WRITE_OFF'
     MOVEMENT_SCRAP = 'SCRAP'
     MOVEMENT_TYPE_CHOICES = [
-        (MOVEMENT_DELIVERY, 'Delivery'),
-        (MOVEMENT_WRITE_OFF, 'Write-off'),
-        (MOVEMENT_SCRAP, 'Scrap'),
+        (MOVEMENT_DELIVERY, _('Delivery')),
+        (MOVEMENT_WRITE_OFF, _('Write-off')),
+        (MOVEMENT_SCRAP, _('Scrap')),
     ]
     # Both move stock OUT -- shared by DeliveryItems.save()'s sign check and
     # by templates deciding when to show the red/minus "outgoing" styling.
     OUTGOING_MOVEMENT_TYPES = (MOVEMENT_WRITE_OFF, MOVEMENT_SCRAP)
 
     movement_type = models.CharField(max_length=10, choices=MOVEMENT_TYPE_CHOICES,
-                                     default=MOVEMENT_DELIVERY, verbose_name='Movement Type')
+                                     default=MOVEMENT_DELIVERY, verbose_name=_('Movement Type'))
     receiver = models.ForeignKey(Employee, on_delete=models.PROTECT, related_name='deliveries',
-                                verbose_name='Receiver')
+                                verbose_name=_('Receiver'))
     # Nullable -- scrap has no supplier (it's stock leaving because it went
     # bad/broke, not stock going back to whoever delivered it).
     supplier = models.ForeignKey(Suppliers, on_delete=models.PROTECT, related_name='deliveries',
-                                verbose_name='Supplier', null=True, blank=True)
-    time_of_delivery = models.DateTimeField(default=timezone.now, verbose_name='Delivery Time')
+                                verbose_name=_('Supplier'), null=True, blank=True)
+    time_of_delivery = models.DateTimeField(default=timezone.now, verbose_name=_('Delivery Time'))
     # Nullable -- a write-off has no incoming invoice/delivery note, so
     # there's no meaningful DocumentType to pick for it.
     document_type = models.ForeignKey(DocumentType, on_delete=models.PROTECT, related_name='deliveries',
-                                      verbose_name='Document Type', null=True, blank=True)
+                                      verbose_name=_('Document Type'), null=True, blank=True)
 
     # Widened from 10 -- write-offs auto-generate an internal number like
     # "WO-20260910-001" when left blank (see _generate_internal_document_number)
     # to tell apart same-day write-offs to the same supplier.
-    document_number = models.CharField(max_length=20, blank=True, null=True, verbose_name='Document Number')
-    document_date = models.DateField(verbose_name='Document Date')
+    document_number = models.CharField(max_length=20, blank=True, null=True, verbose_name=_('Document Number'))
+    document_date = models.DateField(verbose_name=_('Document Date'))
     # Free-text note -- shared by all three movement types (Delivery/
     # Write-off/Scrap), same as every other field on this model. TextField,
     # not CharField, since a receiver/warehouse clerk may want more than a
     # short label (e.g. "3 crates damaged in transit, supplier notified").
-    comment = models.TextField(blank=True, null=True, verbose_name='Comment')
+    comment = models.TextField(blank=True, null=True, verbose_name=_('Comment'))
     total_amount = models.DecimalField(default=0.00, decimal_places=2, max_digits=12)
 
     class Meta:
-        verbose_name = 'Delivery'
-        verbose_name_plural = 'Deliveries'
+        verbose_name = _('Delivery')
+        verbose_name_plural = _('Deliveries')
 
     def __str__(self):
         return f"{self.receiver} {self.time_of_delivery}"
@@ -124,24 +125,24 @@ class DeliveryAttributes(models.Model):
 
 class DeliveryItems(models.Model):
     delivery = models.ForeignKey(DeliveryAttributes, on_delete=models.CASCADE, related_name='items',
-                             verbose_name='Delivery Reference')
+                             verbose_name=_('Delivery Reference'))
     delivery_item = models.ForeignKey(Product, on_delete=models.PROTECT, related_name='delivered_items',
-                                  verbose_name='Product')
+                                  verbose_name=_('Product'))
     # Decimal, not an integer count -- matches Product.quantity /
     # SaleItems.sale_quantity, so `unit_type=weight` products can be
     # received in fractional amounts (e.g. 12.500 kg).
     delivery_quantity = models.DecimalField(default=1, max_digits=10, decimal_places=3,
                                             validators=[MinValueValidator(Decimal('0.001'))],
-                                            verbose_name='Quantity Delivered')
+                                            verbose_name=_('Quantity Delivered'))
     price_at_delivery = models.DecimalField(blank=True, null= True, max_digits=9, decimal_places=2,
-                                        verbose_name='Unit Price at Delivery',
-                                        help_text='Price of the product at the moment of delivery')
+                                        verbose_name=_('Unit Price at Delivery'),
+                                        help_text=_('Price of the product at the moment of delivery'))
     total_price_row = models.DecimalField(blank=True, null= True, max_digits=9, decimal_places=2,
-                                        verbose_name='Total price',
-                                        help_text='Total price of the current article')
+                                        verbose_name=_('Total price'),
+                                        help_text=_('Total price of the current article'))
     # Per delivery line, not per product -- the same product can arrive in
     # different batches with different expiry dates.
-    expiry_date = models.DateField(blank=True, null=True, verbose_name='Expiry Date')
+    expiry_date = models.DateField(blank=True, null=True, verbose_name=_('Expiry Date'))
     # Scrap variant 1 (picking a specific delivered batch to scrap) points
     # this back at the original DELIVERY row for traceability -- variant 2
     # (free entry: product + quantity + reason, no batch reference, used to
@@ -149,14 +150,14 @@ class DeliveryItems(models.Model):
     # so deleting the original delivery item doesn't cascade-delete scrap
     # history that referenced it.
     source_item = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True,
-                                    related_name='scrapped_as', verbose_name='Source Batch')
+                                    related_name='scrapped_as', verbose_name=_('Source Batch'))
     # Only meaningful when the parent delivery's movement_type is SCRAP.
     scrap_reason = models.ForeignKey(ScrapReason, on_delete=models.PROTECT, null=True, blank=True,
-                                     related_name='scrap_items', verbose_name='Scrap Reason')
+                                     related_name='scrap_items', verbose_name=_('Scrap Reason'))
 
     class Meta:
-        verbose_name = 'Delivery Item'
-        verbose_name_plural = 'Delivery Items'
+        verbose_name = _('Delivery Item')
+        verbose_name_plural = _('Delivery Items')
 
     def __str__(self):
         return f"{self.delivery_item_id} {self.delivery_item.name} {self.delivery_quantity}"
@@ -290,8 +291,8 @@ class DeliveryItemRemoval(models.Model):
                                    related_name='delivery_item_removals')
 
     class Meta:
-        verbose_name = 'Delivery Item Removal'
-        verbose_name_plural = 'Delivery Item Removals'
+        verbose_name = _('Delivery Item Removal')
+        verbose_name_plural = _('Delivery Item Removals')
         ordering = ['-removed_at']
 
     def __str__(self):

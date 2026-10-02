@@ -1,4 +1,4 @@
-{% load static cache_bust %}
+{% load static cache_bust i18n %}
 {% comment %}
 Tabulator-driven delivery items grid: searchable add-row (reuses the
 products app's `ingredient_search` endpoint -- same trigram search as the
@@ -28,26 +28,26 @@ uses, independent of whether this delivery gets submitted at all.
     <div class="pill-search-wrapper flex-grow-1" style="max-width: 420px;">
         <span class="pill-search-wrapper__icon"></span>
         <input type="search" id="delivery-item-search-input" class="pill-input"
-               placeholder="Search product by name or code, or scan a barcode..." autocomplete="off">
+               placeholder="{% translate "Search product by name or code, or scan a barcode..." %}" autocomplete="off">
         <div id="delivery-item-search-results" class="global-search-results"></div>
     </div>
     <div class="pill-search-wrapper pill-search-wrapper--with-browse" style="max-width: 260px;">
         <span class="pill-search-wrapper__icon"></span>
         <input type="text" id="delivery-item-category-input" class="pill-input"
-               placeholder="Filter by category..." autocomplete="off">
-        <button type="button" id="delivery-item-category-tree-btn" class="pill-search-wrapper__browse-btn" title="Browse categories as a tree">Browse</button>
+               placeholder="{% translate "Filter by category..." %}" autocomplete="off">
+        <button type="button" id="delivery-item-category-tree-btn" class="pill-search-wrapper__browse-btn" title="{% translate "Browse categories as a tree" %}">{% translate "Browse" %}</button>
         <div id="delivery-item-category-results" class="global-search-results"></div>
     </div>
     {% if movement_type == 'DELIVERY' %}
     <a href="{% url 'product_create' %}?popup=1" target="_blank" class="icon-btn icon-btn--add icon-btn--sm">
         <span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--add"></span></span>
-        <span class="icon-btn__label">New product</span>
+        <span class="icon-btn__label">{% translate "New product" %}</span>
     </a>
     <button type="button" class="pill-btn pill-btn--outline" data-bs-toggle="modal" data-bs-target="#orderPickerModal">
-        Delivery from Order
+        {% translate "Delivery from Order" %}
     </button>
     <button type="button" class="pill-btn pill-btn--outline" data-bs-toggle="modal" data-bs-target="#importExcelModal">
-        Import from Excel
+        {% translate "Import from Excel" %}
     </button>
     {% endif %}
 </div>
@@ -63,12 +63,12 @@ uses, independent of whether this delivery gets submitted at all.
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Load a Delivery from an Order</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                <h5 class="modal-title">{% translate "Load a Delivery from an Order" %}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{% translate "Close" %}"></button>
             </div>
             <div class="modal-body">
                 <input type="text" id="order-picker-search" class="form-control mb-2"
-                       placeholder="Search order number or supplier..." autocomplete="off">
+                       placeholder="{% translate "Search order number or supplier..." %}" autocomplete="off">
                 <div id="order-picker-results" class="list-group" style="max-height: 340px; overflow-y: auto;"></div>
             </div>
         </div>
@@ -87,24 +87,22 @@ uses, independent of whether this delivery gets submitted at all.
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Import from Excel</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                <h5 class="modal-title">{% translate "Import from Excel" %}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{% translate "Close" %}"></button>
             </div>
             <div class="modal-body">
                 <p class="text-muted small mb-2">
-                    Columns: Code, Name, Quantity, Category, Subcategory, Delivery Price, Sell Price,
-                    Main Supplier, Barcode 1, Barcode 2, Barcode 3 -- only Name is required, everything
-                    else may be left blank.
+                    {% translate "Columns: Code, Name, Quantity, Category, Subcategory, Delivery Price, Sell Price, Main Supplier, Barcode 1, Barcode 2, Barcode 3 -- only Name is required, everything else may be left blank." %}
                 </p>
                 <p class="mb-3">
-                    <a href="{% url 'delivery_import_template' %}">Download a blank template</a>
+                    <a href="{% url 'delivery_import_template' %}">{% translate "Download a blank template" %}</a>
                 </p>
                 <input type="file" id="import-excel-file-input" class="form-control" accept=".xlsx">
                 <div id="import-excel-status" class="text-muted small mt-2"></div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" id="import-excel-submit-btn" class="btn btn-primary">Import</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{% translate "Cancel" %}</button>
+                <button type="button" id="import-excel-submit-btn" class="btn btn-primary">{% translate "Import" %}</button>
             </div>
         </div>
     </div>
@@ -120,41 +118,41 @@ uses, independent of whether this delivery gets submitted at all.
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Apply Discount</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                <h5 class="modal-title">{% translate "Apply Discount" %}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{% translate "Close" %}"></button>
             </div>
             <div class="modal-body">
                 <div class="mb-3">
-                    <label class="form-label d-block">Apply to</label>
+                    <label class="form-label d-block">{% translate "Apply to" %}</label>
                     <div class="form-check form-check-inline">
                         <input class="form-check-input" type="radio" name="discount-target" id="discount-target-document" value="document" checked>
-                        <label class="form-check-label" for="discount-target-document">Whole document</label>
+                        <label class="form-check-label" for="discount-target-document">{% translate "Whole document" %}</label>
                     </div>
                     <div class="form-check form-check-inline">
                         <input class="form-check-input" type="radio" name="discount-target" id="discount-target-line" value="line">
-                        <label class="form-check-label" for="discount-target-line">Selected line</label>
+                        <label class="form-check-label" for="discount-target-line">{% translate "Selected line" %}</label>
                     </div>
                 </div>
                 <div class="mb-3">
-                    <label class="form-label d-block">Type</label>
+                    <label class="form-label d-block">{% translate "Type" %}</label>
                     <div class="form-check form-check-inline">
                         <input class="form-check-input" type="radio" name="discount-type" id="discount-type-percent" value="percent" checked>
-                        <label class="form-check-label" for="discount-type-percent">Percentage %</label>
+                        <label class="form-check-label" for="discount-type-percent">{% translate "Percentage %" %}</label>
                     </div>
                     <div class="form-check form-check-inline">
                         <input class="form-check-input" type="radio" name="discount-type" id="discount-type-amount" value="amount">
-                        <label class="form-check-label" for="discount-type-amount">Fixed amount</label>
+                        <label class="form-check-label" for="discount-type-amount">{% translate "Fixed amount" %}</label>
                     </div>
                 </div>
                 <div class="mb-2">
-                    <label for="discount-value-input" class="form-label">Value</label>
+                    <label for="discount-value-input" class="form-label">{% translate "Value" %}</label>
                     <input type="number" id="discount-value-input" class="form-control" min="0" step="0.01">
                 </div>
-                <p class="text-muted small mb-0">Applied before VAT -- each affected row's price without VAT is reduced first, then VAT is recalculated on top of the new price.</p>
+                <p class="text-muted small mb-0">{% translate "Applied before VAT -- each affected row's price without VAT is reduced first, then VAT is recalculated on top of the new price." %}</p>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" id="discount-apply-btn" class="btn btn-primary">Apply</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{% translate "Cancel" %}</button>
+                <button type="button" id="discount-apply-btn" class="btn btn-primary">{% translate "Apply" %}</button>
             </div>
         </div>
     </div>
@@ -168,7 +166,7 @@ uses, independent of whether this delivery gets submitted at all.
      to the same grid, this one just also stamps source_item. -->
 <div class="position-relative mb-2" style="max-width: 420px;">
     <input type="search" id="delivery-batch-search-input" class="form-control form-control-sm"
-           placeholder="Or search a delivered batch by product (expiry-tracked)..." autocomplete="off">
+           placeholder="{% translate "Or search a delivered batch by product (expiry-tracked)..." %}" autocomplete="off">
     <div id="delivery-batch-search-results" class="global-search-results"></div>
 </div>
 {% endif %}
@@ -185,10 +183,10 @@ uses, independent of whether this delivery gets submitted at all.
 </div>
 
 <div class="d-flex align-items-center gap-2 mt-2 flex-wrap">
-    <button type="button" id="delivery-delete-line-btn" class="pill-btn button-delete-line">Delete Line</button>
-    <button type="button" id="delivery-discount-btn" class="pill-btn pill-btn--outline">Discount</button>
+    <button type="button" id="delivery-delete-line-btn" class="pill-btn button-delete-line">{% translate "Delete Line" %}</button>
+    <button type="button" id="delivery-discount-btn" class="pill-btn pill-btn--outline">{% translate "Discount" %}</button>
 </div>
-<p class="text-muted small mt-1 mb-0">Tap a row to select it, then Delete Line to remove it, or Discount to discount just that line.</p>
+<p class="text-muted small mt-1 mb-0">{% translate "Tap a row to select it, then Delete Line to remove it, or Discount to discount just that line." %}</p>
 
 <script src="{% static 'vendor/sheetjs/xlsx.full.min.js' %}"></script>
 <script src="{% static 'vendor/tabulator/tabulator.min.js' %}"></script>
@@ -425,9 +423,9 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!data.is_new_product) return '';
         if (data.duplicate_candidate) {
             return '<span style="color:#9a5b1f;text-decoration:underline;cursor:pointer;">' +
-                'Possible duplicate: ' + data.duplicate_candidate.name + ' (click to link)</span>';
+                '{% translate "Possible duplicate:" %} ' + data.duplicate_candidate.name + ' ({% translate "click to link" %})</span>';
         }
-        return '<span style="color:#2f6f4f;font-weight:600;">New product</span>';
+        return '<span style="color:#2f6f4f;font-weight:600;">{% translate "New product" %}</span>';
     }
 
     function importStatusCellClick(e, cell) {
@@ -468,9 +466,9 @@ document.addEventListener('DOMContentLoaded', function () {
     // buildNewProductRow above for why this exists.
     function unitTypeFormatter(cell) {
         var data = cell.getData();
-        var label = data.unit_type === 'weight' ? 'kg' : 'pcs';
+        var label = data.unit_type === 'weight' ? '{% translate "kg" %}' : '{% translate "pcs" %}';
         if (data.is_new_product) {
-            return '<span style="text-decoration:underline;cursor:pointer;" title="Click to switch pcs/kg">' + label + '</span>';
+            return '<span style="text-decoration:underline;cursor:pointer;" title="{% translate "Click to switch pcs/kg" %}">' + label + '</span>';
         }
         return label;
     }
@@ -659,7 +657,7 @@ document.addEventListener('DOMContentLoaded', function () {
             .then(function (r) { return r.json().then(function (body) { return {ok: r.ok, body: body}; }); })
             .then(function (result) {
                 if (!result.ok) {
-                    alert(result.body.error || 'Could not save the new selling price.');
+                    alert(result.body.error || '{% translate "Could not save the new selling price." %}');
                     row.update({sell_price: previousSellPrice});
                     recalcRow(row, 'price_at_delivery');
                     return;
@@ -668,7 +666,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (product) product.sell_price = data.sell_price;
             })
             .catch(function () {
-                alert('Could not save the new selling price (network error).');
+                alert('{% translate "Could not save the new selling price (network error)." %}');
                 row.update({sell_price: previousSellPrice});
                 recalcRow(row, 'price_at_delivery');
             });
@@ -686,20 +684,20 @@ document.addEventListener('DOMContentLoaded', function () {
             title: '#', field: 'seq', width: 40, hozAlign: 'center',
             headerFilter: false, hideable: false,
         },
-        {title: 'Code', field: 'internal_code', width: 110},
-        {title: 'Name', field: 'name', width: 220},
+        {title: '{% translate "Code" %}', field: 'internal_code', width: 110},
+        {title: '{% translate "Name" %}', field: 'name', width: 220},
         {
-            title: 'Unit Type', field: 'unit_type', width: 90, hozAlign: 'center',
+            title: '{% translate "Unit Type" %}', field: 'unit_type', width: 90, hozAlign: 'center',
             formatter: unitTypeFormatter, cellClick: unitTypeCellClick,
         },
         {% if movement_type == 'DELIVERY' %}
         {
-            title: 'Import', field: 'import_status', width: 260,
+            title: '{% translate "Import" %}', field: 'import_status', width: 260,
             formatter: importStatusFormatter, cellClick: importStatusCellClick,
         },
         {% endif %}
         {
-            title: 'Qty', field: 'delivery_quantity', width: 100, hozAlign: 'right',
+            title: '{% translate "Qty" %}', field: 'delivery_quantity', width: 100, hozAlign: 'right',
             editor: numberEditor,
             // min must match step's own base value, not a fixed 0.001 --
             // HTML5 <input type="number"> step validity is relative to
@@ -719,11 +717,11 @@ document.addEventListener('DOMContentLoaded', function () {
             bottomCalcFormatter: quantityFormatter,
         },
         {
-            title: 'Unit Price', field: 'price_at_delivery', width: 130, hozAlign: 'right',
+            title: '{% translate "Unit Price" %}', field: 'price_at_delivery', width: 130, hozAlign: 'right',
             editor: numberEditor, editorParams: {min: 0, step: 0.01}, formatter: deliveryPriceFormatter,
         },
         {
-            title: 'Unit Price (no VAT)', field: 'price_without_vat', width: 150, hozAlign: 'right',
+            title: '{% translate "Unit Price (no VAT)" %}', field: 'price_without_vat', width: 150, hozAlign: 'right',
             editor: numberEditor, editorParams: {min: 0, step: 0.01}, formatter: moneyFormatter, visible: false,
         },
         {
@@ -731,34 +729,34 @@ document.addEventListener('DOMContentLoaded', function () {
             // known quantity back-fills the unit price (see recalcRow's
             // 'total_price_row' branch), instead of always going the other
             // direction.
-            title: 'Line Total', field: 'total_price_row', width: 130, hozAlign: 'right',
+            title: '{% translate "Line Total" %}', field: 'total_price_row', width: 130, hozAlign: 'right',
             editor: numberEditor, editorParams: {min: 0, step: 0.01},
             formatter: movementMoneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: movementMoneyFormatter,
         },
         {
-            title: 'Line Total (no VAT)', field: 'total_without_vat', width: 150, hozAlign: 'right',
+            title: '{% translate "Line Total (no VAT)" %}', field: 'total_without_vat', width: 150, hozAlign: 'right',
             formatter: movementMoneyFormatter, visible: false, bottomCalc: 'sum', bottomCalcFormatter: movementMoneyFormatter,
         },
         {
-            title: 'Sell Price', field: 'sell_price', width: 120, hozAlign: 'right',
+            title: '{% translate "Sell Price" %}', field: 'sell_price', width: 120, hozAlign: 'right',
             editor: numberEditor, editorParams: {min: 0, step: 0.01}, formatter: moneyFormatter,
         },
         {
-            title: 'Markup %', field: 'markup_percent', width: 110, hozAlign: 'right',
+            title: '{% translate "Markup %" %}', field: 'markup_percent', width: 110, hozAlign: 'right',
             editor: numberEditor, editorParams: {step: 0.1}, formatter: percentFormatter,
         },
         {
-            title: 'Expiry Date', field: 'expiry_date', width: 130,
+            title: '{% translate "Expiry Date" %}', field: 'expiry_date', width: 130,
             editor: dateEditor,
         },
         {% if is_scrap %}
         {
-            title: 'Scrap Reason', field: 'scrap_reason', width: 150,
+            title: '{% translate "Scrap Reason" %}', field: 'scrap_reason', width: 150,
             editor: 'list', editorParams: {values: scrapReasonValues, clearable: true},
             formatter: scrapReasonFormatter,
         },
         {% endif %}
-    ], {placeholder: 'No products added to this delivery yet.'});
+    ], {placeholder: '{% translate "No products added to this delivery yet." %}'});
 
     // -- Selecting a line to delete -- tap its row (same pattern as the
     // Sales cart, see CLAUDE.md "Триене на ред вече не е бутон в самия
@@ -786,7 +784,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     document.getElementById('delivery-delete-line-btn').addEventListener('click', function () {
         if (!selectedRow) {
-            alert('Select a line first (tap its row).');
+            alert('{% translate "Select a line first (tap its row)." %}');
             return;
         }
         if (!confirm('Сигурен ли си, че искаш да изтриеш този ред?')) return;
@@ -831,19 +829,19 @@ document.addEventListener('DOMContentLoaded', function () {
         var type = document.querySelector('input[name="discount-type"]:checked').value;
         var value = parseFloat(document.getElementById('discount-value-input').value);
         if (isNaN(value) || value <= 0) {
-            alert('Enter a discount value greater than 0.');
+            alert('{% translate "Enter a discount value greater than 0." %}');
             return;
         }
 
         var rows = (target === 'line' && selectedRow) ? [selectedRow] : table.getRows();
         if (!rows.length) {
-            alert('No rows to apply a discount to.');
+            alert('{% translate "No rows to apply a discount to." %}');
             return;
         }
 
         if (type === 'percent') {
             if (value >= 100) {
-                alert('Percentage discount must be less than 100.');
+                alert('{% translate "Percentage discount must be less than 100." %}');
                 return;
             }
             rows.forEach(function (row) {
@@ -864,11 +862,11 @@ document.addEventListener('DOMContentLoaded', function () {
                 return sum + qty * (parseFloat(d.price_without_vat) || 0);
             }, 0);
             if (totalWithoutVat <= 0) {
-                alert('Add a price to the affected row(s) first.');
+                alert('{% translate "Add a price to the affected row(s) first." %}');
                 return;
             }
             if (value > totalWithoutVat) {
-                alert('Discount amount is larger than the total it would be applied to.');
+                alert('{% translate "Discount amount is larger than the total it would be applied to." %}');
                 return;
             }
             rows.forEach(function (row) {
@@ -1003,14 +1001,14 @@ document.addEventListener('DOMContentLoaded', function () {
         function renderResults(orders) {
             resultsBox.innerHTML = '';
             if (!orders.length) {
-                resultsBox.innerHTML = '<div class="list-group-item text-muted">No orders found.</div>';
+                resultsBox.innerHTML = '<div class="list-group-item text-muted">{% translate "No orders found." %}</div>';
                 return;
             }
             orders.forEach(function (order) {
                 var item = document.createElement('button');
                 item.type = 'button';
                 item.className = 'list-group-item list-group-item-action';
-                item.textContent = order.order_number + ' -- ' + order.supplier + ' (' + order.order_date + ', ' + order.item_count + ' items)';
+                item.textContent = order.order_number + ' -- ' + order.supplier + ' (' + order.order_date + ', ' + order.item_count + ' {% translate "items" %})';
                 item.addEventListener('click', function () { loadOrder(order.id); });
                 resultsBox.appendChild(item);
             });
@@ -1048,12 +1046,12 @@ document.addEventListener('DOMContentLoaded', function () {
                     var modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
                     modal.hide();
                 })
-                .catch(function () { alert('Could not load that order (network error).'); });
+                .catch(function () { alert('{% translate "Could not load that order (network error)." %}'); });
         }
 
         modalEl.addEventListener('show.bs.modal', function () {
             searchInput.value = '';
-            resultsBox.innerHTML = '<div class="list-group-item text-muted">Loading…</div>';
+            resultsBox.innerHTML = '<div class="list-group-item text-muted">{% translate "Loading…" %}</div>';
             fetch('{% url "order_picker_json" %}')
                 .then(function (r) { return r.json(); })
                 .then(function (data) {
@@ -1061,7 +1059,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     renderResults(allOrders);
                 })
                 .catch(function () {
-                    resultsBox.innerHTML = '<div class="list-group-item text-danger">Could not load orders (network error).</div>';
+                    resultsBox.innerHTML = '<div class="list-group-item text-danger">{% translate "Could not load orders (network error)." %}</div>';
                 });
         });
         searchInput.addEventListener('input', filterResults);
@@ -1091,11 +1089,11 @@ document.addEventListener('DOMContentLoaded', function () {
         submitBtn.addEventListener('click', function () {
             var file = fileInput.files[0];
             if (!file) {
-                statusBox.textContent = 'Choose a file first.';
+                statusBox.textContent = '{% translate "Choose a file first." %}';
                 return;
             }
             submitBtn.disabled = true;
-            statusBox.textContent = 'Importing…';
+            statusBox.textContent = '{% translate "Importing…" %}';
 
             var body = new FormData();
             body.append('file', file);
@@ -1108,7 +1106,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 .then(function (r) { return r.json().then(function (data) { return {ok: r.ok, data: data}; }); })
                 .then(function (result) {
                     if (!result.ok) {
-                        statusBox.textContent = result.data.error || 'Import failed.';
+                        statusBox.textContent = result.data.error || '{% translate "Import failed." %}';
                         return;
                     }
                     var data = result.data;
@@ -1133,10 +1131,10 @@ document.addEventListener('DOMContentLoaded', function () {
                     });
 
                     var messages = [];
-                    if (data.rows && data.rows.length) messages.push(data.rows.length + ' row(s) loaded into the grid.');
-                    if (data.skipped && data.skipped.length) messages.push(data.skipped.length + ' skipped (already exist): ' + data.skipped.join(' '));
+                    if (data.rows && data.rows.length) messages.push(data.rows.length + ' {% translate "row(s) loaded into the grid." %}');
+                    if (data.skipped && data.skipped.length) messages.push(data.skipped.length + ' {% translate "skipped (already exist):" %} ' + data.skipped.join(' '));
                     if (data.errors && data.errors.length) messages.push(data.errors.join(' '));
-                    statusBox.textContent = messages.join(' ') || 'Nothing to import.';
+                    statusBox.textContent = messages.join(' ') || '{% translate "Nothing to import." %}';
 
                     if (!data.errors || !data.errors.length) {
                         var modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
@@ -1144,7 +1142,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     }
                 })
                 .catch(function () {
-                    statusBox.textContent = 'Import failed (network error).';
+                    statusBox.textContent = '{% translate "Import failed (network error)." %}';
                 })
                 .finally(function () {
                     submitBtn.disabled = false;
@@ -1182,7 +1180,7 @@ document.addEventListener('DOMContentLoaded', function () {
             if (!data.results.length) {
                 var empty = document.createElement('div');
                 empty.className = 'global-search-empty';
-                empty.textContent = 'No matches';
+                empty.textContent = '{% translate "No matches" %}';
                 categoryResultsBox.appendChild(empty);
                 categoryResultsBox.classList.add('is-open');
                 return;
@@ -1328,7 +1326,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!data.results.length) {
             var empty = document.createElement('div');
             empty.className = 'global-search-empty';
-            empty.textContent = 'No matches';
+            empty.textContent = '{% translate "No matches" %}';
             resultsBox.appendChild(empty);
             resultsBox.classList.add('is-open');
             return;
@@ -1452,7 +1450,7 @@ document.addEventListener('DOMContentLoaded', function () {
             if (!data.results.length) {
                 var empty = document.createElement('div');
                 empty.className = 'global-search-empty';
-                empty.textContent = 'No matches';
+                empty.textContent = '{% translate "No matches" %}';
                 batchResultsBox.appendChild(empty);
                 batchResultsBox.classList.add('is-open');
                 return;
@@ -1460,7 +1458,7 @@ document.addEventListener('DOMContentLoaded', function () {
             data.results.forEach(function (batch) {
                 var row = document.createElement('div');
                 row.className = 'global-search-result';
-                row.textContent = batch.internal_code + ' — ' + batch.name + ' (exp. ' + batch.expiry_date + ', qty ' + batch.delivery_quantity + ')';
+                row.textContent = batch.internal_code + ' — ' + batch.name + ' ({% translate "exp." %} ' + batch.expiry_date + ', {% translate "qty" %} ' + batch.delivery_quantity + ')';
                 row.addEventListener('click', function () { selectBatch(batch); });
                 batchResultsBox.appendChild(row);
             });
@@ -1500,7 +1498,7 @@ document.addEventListener('DOMContentLoaded', function () {
     })();
     {% endif %}
 
-    attachTableExportToToolbar(table, '#delivery-items-table-card', 'delivery_items.xlsx', 'Delivery Items');
+    attachTableExportToToolbar(table, '#delivery-items-table-card', 'delivery_items.xlsx', '{% translate "Delivery Items" %}');
 
     // -- Sync Tabulator's current data into plain formset hidden inputs
     // right before the real form submit, since Tabulator manages its own

@@ -1,4 +1,5 @@
 from django.db import models
+from django.utils.translation import gettext_lazy as _
 
 from STORA.accounts.models import Employee
 
@@ -16,16 +17,16 @@ class AIReport(models.Model):
     explicitly-updated fields rather than always-fresh computed ones.
     """
 
-    prompt = models.TextField(verbose_name='Question')
+    prompt = models.TextField(verbose_name=_('Question'))
     generated_sql = models.TextField(blank=True)
-    last_answer = models.TextField(blank=True, verbose_name='Last narrative answer')
+    last_answer = models.TextField(blank=True, verbose_name=_('Last narrative answer'))
     created_by = models.ForeignKey(Employee, on_delete=models.SET_NULL, null=True, related_name='ai_reports')
     created_at = models.DateTimeField(auto_now_add=True)
     last_regenerated_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
-        verbose_name = 'AI Report'
-        verbose_name_plural = 'AI Reports'
+        verbose_name = _('AI Report')
+        verbose_name_plural = _('AI Reports')
         ordering = ['-created_at']
 
     def __str__(self):

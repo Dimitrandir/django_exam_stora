@@ -1,15 +1,16 @@
 {% extends 'base.html' %}
+{% load i18n %}
 
 {% block title %}STORA - Delete Document Type{% endblock %}
 
 {% block content %}
 
-<h1>Are you sure you want to delete document type: "{{ document_type.name }}"?</h1>
+<h1>{% blocktranslate with name=document_type.name %}Are you sure you want to delete document type: "{{ name }}"?{% endblocktranslate %}</h1>
 
 <form method="POST">
     {% csrf_token %}
-    <button type="submit" class="delete_button">YES</button>
-    <a href="{% url 'document_type_list' %}" class="button_cancel">NO</a>
+    <button type="submit" class="delete_button">{% translate "YES" %}</button>
+    <a href="{% url 'document_type_list' %}" class="button_cancel">{% translate "NO" %}</a>
 </form>
 
 {% endblock %}

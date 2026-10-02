@@ -1,14 +1,14 @@
 {% extends 'base.html' %}
 
+{% load static i18n %}
 {% block title %}STORA - Deliveries List{% endblock %}
-{% load static %}
 
 {% block content %}
 
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
-        <h1 class="h2 mb-1">Deliveries List</h1>
-        <p class="text-muted mb-0">Overview of all received deliveries.</p>
+        <h1 class="h2 mb-1">{% translate "Deliveries List" %}</h1>
+        <p class="text-muted mb-0">{% translate "Overview of all received deliveries." %}</p>
     </div>
 </div>
 
@@ -16,11 +16,11 @@
     <thead>
         <tr>
             <th>ID</th>
-            <th>Time</th>
-            <th>Supplier</th>
+            <th>{% translate "Time" %}</th>
+            <th>{% translate "Supplier" %}</th>
             <th>
                 {% if perms.deliveries.add_deliveryattributes %}
-                <a href="{% url 'delivery_add' %}" class="add-btn-table" title="New Delivery">+</a>
+                <a href="{% url 'delivery_add' %}" class="add-btn-table" title="{% translate "New Delivery" %}">+</a>
                 {% endif %}
             </th>
         </tr>
@@ -32,14 +32,14 @@
             <td>{{ delivery.time_of_delivery|date:"d.m.Y H:i" }}</td>
             <td>{{ delivery.supplier }}</td>
             <td>
-                <a href="{% url 'delivery_details' delivery.pk %}" title="View delivery">
-                    <img src="{% static 'visibility.png' %}" alt="View" style="width:24px;height:24px;max-width:24px;max-height:24px;object-fit:contain;display:inline-block;vertical-align:middle;">
+                <a href="{% url 'delivery_details' delivery.pk %}" title="{% translate "View delivery" %}">
+                    <img src="{% static 'visibility.png' %}" alt="{% translate "View" %}" style="width:24px;height:24px;max-width:24px;max-height:24px;object-fit:contain;display:inline-block;vertical-align:middle;">
                 </a>
             </td>
         </tr>
         {% empty %}
         <tr>
-            <td colspan="4">No deliveries found.</td>
+            <td colspan="4">{% translate "No deliveries found." %}</td>
         </tr>
         {% endfor %}
     </tbody>
