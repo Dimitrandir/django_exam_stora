@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 
 {% block title %}STORA - Stock As Of Date{% endblock %}
-{% load static cache_bust %}
+{% load static cache_bust i18n %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
@@ -10,8 +10,8 @@
 {% block content %}
 <section class="reports-stock-as-of">
     <header class="page-header mb-4">
-        <h1 class="h2 mb-1">Stock As Of Date</h1>
-        <p class="text-muted mb-0">What each product's stock reportedly was at the end of the chosen day.</p>
+        <h1 class="h2 mb-1">{% translate "Stock As Of Date" %}</h1>
+        <p class="text-muted mb-0">{% translate "What each product's stock reportedly was at the end of the chosen day." %}</p>
     </header>
 
     {% if form.errors %}
@@ -22,7 +22,7 @@
         <div class="card-body">
             <form method="get">
                 <fieldset class="report-filter__fieldset border-0 p-0 m-0">
-                    <legend class="h5 mb-3">Choose date</legend>
+                    <legend class="h5 mb-3">{% translate "Choose date" %}</legend>
 
                     <div class="row g-3">
                         <div class="col-md-6">
@@ -34,7 +34,7 @@
                     </div>
 
                     <div class="mt-3">
-                        <button type="submit" class="btn btn-primary">Show report</button>
+                        <button type="submit" class="btn btn-primary">{% translate "Show report" %}</button>
                     </div>
                 </fieldset>
             </form>
@@ -44,7 +44,7 @@
     <section class="report-section card shadow-sm border-0 rounded-4 mb-4">
         <div class="card-body">
             <header class="section-header mb-3">
-                <h2 class="h4 mb-0">Stock as of {{ as_of_date|date:"Y-m-d" }}</h2>
+                <h2 class="h4 mb-0">{% translate "Stock as of" %} {{ as_of_date|date:"Y-m-d" }}</h2>
             </header>
 
             {{ stock_data|json_script:"stock-as-of-table-data" }}
@@ -72,19 +72,19 @@ document.addEventListener('DOMContentLoaded', function () {
             title: '#', field: 'code', formatter: 'rownum', width: 50, hozAlign: 'center',
             headerFilter: false, hideable: false,
         },
-        {title: 'Code', field: 'code', width: 100},
-        {title: 'Name', field: 'name', width: 250},
-        {title: 'Category', field: 'category', width: 150},
-        {title: 'Sold By', field: 'unit_type', width: 100},
+        {title: '{% translate "Code" %}', field: 'code', width: 100},
+        {title: '{% translate "Name" %}', field: 'name', width: 250},
+        {title: '{% translate "Category" %}', field: 'category', width: 150},
+        {title: '{% translate "Sold By" %}', field: 'unit_type', width: 100},
         {
-            title: 'Quantity as of date', field: 'quantity_as_of', width: 170, hozAlign: 'right',
+            title: '{% translate "Quantity as of date" %}', field: 'quantity_as_of', width: 170, hozAlign: 'right',
             formatter: qtyFormatter,
         },
         {
-            title: 'Current quantity', field: 'current_quantity', width: 150, hozAlign: 'right',
+            title: '{% translate "Current quantity" %}', field: 'current_quantity', width: 150, hozAlign: 'right',
             formatter: qtyFormatter, visible: false,
         },
-    ], {placeholder: 'No products found.'});
+    ], {placeholder: '{% translate "No products found." %}'});
 
     attachTableExportToToolbar(table, '#stock-as-of-table-card', 'stock_as_of_report.xlsx', 'Stock');
 });

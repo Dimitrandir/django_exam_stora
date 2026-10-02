@@ -1,12 +1,13 @@
 {% extends 'base.html' %}
+{% load i18n %}
 
 {% block title %}STORA - Reports Dashboard{% endblock %}
 
 {% block content %}
 <section class="reports-dashboard">
     <header class="page-header mb-4">
-        <h1 class="h2 mb-1">Reports Dashboard</h1>
-        <p class="text-muted mb-0">Pick a period, then open the report you need below.</p>
+        <h1 class="h2 mb-1">{% translate "Reports Dashboard" %}</h1>
+        <p class="text-muted mb-0">{% translate "Pick a period, then open the report you need below." %}</p>
     </header>
 
     {% if form.errors %}
@@ -23,58 +24,58 @@
                 {{ form.end_date.label_tag }}
                 {{ form.end_date }}
             </div>
-            <button type="submit" class="reports-dashboard__filter-submit">Apply period</button>
+            <button type="submit" class="reports-dashboard__filter-submit">{% translate "Apply period" %}</button>
         </form>
     </section>
 
     {% if can_view_ai_reports %}
     <section class="reports-dashboard__hero">
         <div class="reports-dashboard__hero-text">
-            <h2>AI Reports</h2>
-            <p>Ask a question about the shop's data in plain language -- no fixed report covers it? Just ask.</p>
+            <h2>{% translate "AI Reports" %}</h2>
+            <p>{% translate "Ask a question about the shop's data in plain language -- no fixed report covers it? Just ask." %}</p>
         </div>
         <div class="reports-dashboard__hero-actions">
-            <a href="{% url 'ai_report_list' %}" class="reports-dashboard__hero-btn reports-dashboard__hero-btn--ghost">Saved AI reports</a>
-            <a href="{% url 'ai_report_create' %}" class="reports-dashboard__hero-btn reports-dashboard__hero-btn--solid">+ New AI report</a>
+            <a href="{% url 'ai_report_list' %}" class="reports-dashboard__hero-btn reports-dashboard__hero-btn--ghost">{% translate "Saved AI reports" %}</a>
+            <a href="{% url 'ai_report_create' %}" class="reports-dashboard__hero-btn reports-dashboard__hero-btn--solid">{% translate "+ New AI report" %}</a>
         </div>
     </section>
     {% endif %}
 
     <div class="reports-dashboard__grid">
         <section class="reports-dashboard__card">
-            <h3>Products</h3>
+            <h3>{% translate "Products" %}</h3>
             <ul class="reports-dashboard__links">
-                <li><a href="{% url 'stock_as_of_report' %}">Stock as of date</a></li>
-                <li><a href="{% url 'stock_balance_report' %}">Stock balance report</a></li>
-                <li><a href="{% url 'expiring_report' %}">Expiring products</a></li>
+                <li><a href="{% url 'stock_as_of_report' %}">{% translate "Stock as of date" %}</a></li>
+                <li><a href="{% url 'stock_balance_report' %}">{% translate "Stock balance report" %}</a></li>
+                <li><a href="{% url 'expiring_report' %}">{% translate "Expiring products" %}</a></li>
             </ul>
         </section>
 
         <section class="reports-dashboard__card">
-            <h3>Sales</h3>
+            <h3>{% translate "Sales" %}</h3>
             <ul class="reports-dashboard__links">
                 {% if perms.sales.view_saleattributes %}
-                <li><a href="{{ sales_report_url }}">Sales report</a></li>
+                <li><a href="{{ sales_report_url }}">{% translate "Sales report" %}</a></li>
                 {% endif %}
-                <li><a href="{{ sales_quantity_report_url }}">Sales quantity report</a></li>
+                <li><a href="{{ sales_quantity_report_url }}">{% translate "Sales quantity report" %}</a></li>
             </ul>
         </section>
 
         <section class="reports-dashboard__card">
-            <h3>Stock Movements</h3>
+            <h3>{% translate "Stock Movements" %}</h3>
             <ul class="reports-dashboard__links">
-                <li><a href="{{ deliveries_report_url }}">Deliveries, write-offs, scrap</a></li>
+                <li><a href="{{ deliveries_report_url }}">{% translate "Deliveries, write-offs, scrap" %}</a></li>
             </ul>
         </section>
 
         {% if perms.orders.view_orderattributes %}
         <section class="reports-dashboard__card">
-            <h3>Orders</h3>
+            <h3>{% translate "Orders" %}</h3>
             <ul class="reports-dashboard__links">
-                <li><a href="{% url 'order_list' %}">All orders</a></li>
+                <li><a href="{% url 'order_list' %}">{% translate "All orders" %}</a></li>
             </ul>
             {% if perms.orders.add_orderattributes %}
-            <a href="{% url 'order_new' %}" class="reports-dashboard__card-cta">+ New order</a>
+            <a href="{% url 'order_new' %}" class="reports-dashboard__card-cta">{% translate "+ New order" %}</a>
             {% endif %}
         </section>
         {% endif %}

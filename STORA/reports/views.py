@@ -8,6 +8,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.utils.http import urlencode
+from django.utils.translation import gettext as _
 from django.views import View
 from django.views.generic import DeleteView, DetailView, ListView
 
@@ -142,6 +143,11 @@ class SalesReportView(StaffPermissionRequiredMixin, ReportsBaseView):
                 'refunded_amount': float(refunded_amount),
                 'net_amount': float((sale.total_amount or Decimal('0')) - refunded_amount),
                 'refund_status': refund_status,
+                # Translated label for the grid (refund_status stays the
+                # code the cell colour keys off).
+                'refund_status_label': {
+                    'Not': _('Not refunded'), 'Fully': _('Fully refunded'), 'Partial': _('Partially refunded'),
+                }[refund_status],
                 'view_url': reverse('sale_details', args=[sale.pk]),
             })
 
@@ -494,18 +500,18 @@ class AIReportCreateView(LoginRequiredMixin, StaffPermissionRequiredMixin, View)
     def post(self, request, *args, **kwargs):
         prompt = request.POST.get('prompt', '').strip()
         if not prompt:
-            return render(request, self.template_name, {'error': 'Type a question first.'})
+            return render(request, self.template_name, {'error': _('Type a question first.')})
 
         try:
             result = run_ai_report(prompt)
         except AIReportsNotConfigured:
             return render(request, self.template_name, {
-                'error': 'AI mode isn’t set up yet -- ANTHROPIC_API_KEY is missing from .env.',
+                'error': _('AI mode is not set up yet -- ANTHROPIC_API_KEY is missing from .env.'),
                 'prompt': prompt,
             })
         except Exception as exc:
             return render(request, self.template_name, {
-                'error': f'Something went wrong talking to the AI: {exc}',
+                'error': _('Something went wrong talking to the AI: %(error)s') % {'error': exc},
                 'prompt': prompt,
             })
 
@@ -547,10 +553,10 @@ class AIReportRegenerateView(LoginRequiredMixin, StaffPermissionRequiredMixin, V
         try:
             result = run_ai_report(report.prompt)
         except AIReportsNotConfigured:
-            messages.error(request, 'AI mode isn’t set up yet -- ANTHROPIC_API_KEY is missing from .env.')
+            messages.error(request, _('AI mode is not set up yet -- ANTHROPIC_API_KEY is missing from .env.'))
             return redirect('ai_report_detail', pk=report.pk)
         except Exception as exc:
-            messages.error(request, f'Regenerate failed: {exc}')
+            messages.error(request, _('Regenerate failed: %(error)s') % {'error': exc})
             return redirect('ai_report_detail', pk=report.pk)
 
         report.generated_sql = result['sql'] or ''

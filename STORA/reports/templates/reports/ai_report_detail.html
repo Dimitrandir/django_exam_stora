@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 
 {% block title %}STORA - AI Report{% endblock %}
-{% load static cache_bust %}
+{% load static cache_bust i18n %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
@@ -12,8 +12,8 @@
     <header class="page-header mb-4">
         <h1 class="h2 mb-1">{{ ai_report.prompt }}</h1>
         <p class="text-muted mb-0">
-            Asked by {{ ai_report.created_by|default:'—' }} on {{ ai_report.created_at|date:"Y-m-d H:i" }}
-            {% if ai_report.last_regenerated_at %} · answer last regenerated {{ ai_report.last_regenerated_at|date:"Y-m-d H:i" }}{% endif %}
+            {% blocktranslate with who=ai_report.created_by|default:'—' time=ai_report.created_at|date:"Y-m-d H:i" %}Asked by {{ who }} on {{ time }}{% endblocktranslate %}
+            {% if ai_report.last_regenerated_at %} · {% blocktranslate with time=ai_report.last_regenerated_at|date:"Y-m-d H:i" %}answer last regenerated {{ time }}{% endblocktranslate %}{% endif %}
         </p>
     </header>
 
@@ -26,24 +26,24 @@
     <section class="report-section card shadow-sm border-0 rounded-4 mb-4">
         <div class="card-body">
             <header class="section-header d-flex justify-content-between align-items-center mb-3">
-                <h2 class="h5 mb-0">Answer</h2>
+                <h2 class="h5 mb-0">{% translate "Answer" %}</h2>
                 <form method="POST" action="{% url 'ai_report_regenerate' ai_report.pk %}" id="regenerate-form">
                     {% csrf_token %}
-                    <button type="submit" class="btn btn-outline-secondary btn-sm" id="regenerate-btn">Regenerate</button>
+                    <button type="submit" class="btn btn-outline-secondary btn-sm" id="regenerate-btn">{% translate "Regenerate" %}</button>
                 </form>
             </header>
-            <p class="mb-0" style="white-space: pre-wrap;">{{ ai_report.last_answer|default:'No answer yet.' }}</p>
+            <p class="mb-0" style="white-space: pre-wrap;">{% if ai_report.last_answer %}{{ ai_report.last_answer }}{% else %}{% translate "No answer yet." %}{% endif %}</p>
         </div>
     </section>
 
     {% if rerun_error %}
-    <div class="form-errors mb-3">The saved query no longer runs: {{ rerun_error }}. Try Regenerate.</div>
+    <div class="form-errors mb-3">{% blocktranslate %}The saved query no longer runs: {{ rerun_error }}. Try Regenerate.{% endblocktranslate %}</div>
     {% endif %}
 
     <section class="report-section card shadow-sm border-0 rounded-4 mb-4">
         <div class="card-body">
             <header class="section-header mb-3">
-                <h2 class="h5 mb-0">Data (live, re-run just now)</h2>
+                <h2 class="h5 mb-0">{% translate "Data (live, re-run just now)" %}</h2>
             </header>
 
             {{ columns|json_script:"ai-report-columns" }}
@@ -57,15 +57,15 @@
     <section class="report-section card shadow-sm border-0 rounded-4 mb-4">
         <div class="card-body">
             <header class="section-header mb-2">
-                <h2 class="h6 mb-0 text-muted">SQL used</h2>
+                <h2 class="h6 mb-0 text-muted">{% translate "SQL used" %}</h2>
             </header>
             <pre class="mb-0 small text-muted" style="white-space: pre-wrap;">{{ ai_report.generated_sql|default:'—' }}</pre>
         </div>
     </section>
 
     <footer class="report-actions d-flex gap-2">
-        <a href="{% url 'ai_report_list' %}" class="btn btn-outline-primary">Back to AI reports</a>
-        <a href="{% url 'ai_report_delete' ai_report.pk %}" class="btn btn-outline-danger">Delete</a>
+        <a href="{% url 'ai_report_list' %}" class="btn btn-outline-primary">{% translate "Back to AI reports" %}</a>
+        <a href="{% url 'ai_report_delete' ai_report.pk %}" class="btn btn-outline-danger">{% translate "Delete" %}</a>
     </footer>
 </section>
 {% endblock %}
@@ -85,7 +85,7 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     var table = initExcelStyleTable('#ai-report-table', 'ai-report-table-data', columns, {
-        placeholder: 'No rows returned.',
+        placeholder: '{% translate "No rows returned." %}',
     });
 
     attachTableExportToToolbar(table, '#ai-report-table-card', 'ai_report.xlsx', 'AI Report');
@@ -94,7 +94,7 @@ document.addEventListener('DOMContentLoaded', function () {
     var regenerateBtn = document.getElementById('regenerate-btn');
     regenerateForm.addEventListener('submit', function () {
         regenerateBtn.disabled = true;
-        regenerateBtn.textContent = 'Regenerating…';
+        regenerateBtn.textContent = '{% translate "Regenerating…" %}';
     });
 });
 </script>

@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 
 {% block title %}STORA - Stock Balance Report{% endblock %}
-{% load static cache_bust %}
+{% load static cache_bust i18n %}
 {% block main_class %}main-wide{% endblock %}
 {% block container_class %}container-fluid{% endblock %}
 
@@ -12,14 +12,9 @@
 {% block content %}
 <section class="reports-stock-balance">
     <header class="page-header mb-4">
-        <h1 class="h2 mb-1">Stock Balance Report</h1>
+        <h1 class="h2 mb-1">{% translate "Stock Balance Report" %}</h1>
         <p class="text-muted mb-0">
-            Opening balance, every kind of movement, and closing balance -- one row per
-            product that actually moved in the period. Only products with at least one
-            nonzero movement are shown. Both opening and closing stock are also valued at
-            sell and purchase price (Columns &#9662; for the opening and no-VAT versions),
-            each using the price actually in effect as of its own date -- not today's, if
-            you're looking at a past period.
+            {% translate "Opening balance, every kind of movement, and closing balance -- one row per product that actually moved in the period. Only products with at least one nonzero movement are shown. Both opening and closing stock are also valued at sell and purchase price (Columns ▾ for the opening and no-VAT versions), each using the price actually in effect as of its own date -- not today's, if you're looking at a past period." %}
         </p>
     </header>
 
@@ -31,7 +26,7 @@
         <div class="card-body">
             <form method="get">
                 <fieldset class="report-filter__fieldset border-0 p-0 m-0">
-                    <legend class="h5 mb-3">Choose period</legend>
+                    <legend class="h5 mb-3">{% translate "Choose period" %}</legend>
 
                     <div class="row g-3">
                         <div class="col-md-6">
@@ -50,7 +45,7 @@
                     </div>
 
                     <div class="mt-3">
-                        <button type="submit" class="btn btn-primary">Show report</button>
+                        <button type="submit" class="btn btn-primary">{% translate "Show report" %}</button>
                     </div>
                 </fieldset>
             </form>
@@ -60,7 +55,7 @@
     <section class="report-section card shadow-sm border-0 rounded-4 mb-4">
         <div class="card-body">
             <header class="section-header mb-3">
-                <h2 class="h4 mb-0">Movement by Product</h2>
+                <h2 class="h4 mb-0">{% translate "Movement by Product" %}</h2>
             </header>
 
             {{ stock_data|json_script:"stock-balance-table-data" }}
@@ -68,10 +63,7 @@
                 <div id="stock-balance-table" class="table-sm"></div>
             </div>
             <p class="text-muted small mt-2 mb-0">
-                Sold/Scrapped/Written off/Used in recipes reduce stock; Delivered/Refunded add
-                to it; Revised can go either way (a stock-count correction). Opening + Delivered
-                + Refunded &minus; Sold &minus; Scrapped &minus; Written off + Revised &minus;
-                Used in recipes = Closing.
+                {% translate "Sold/Scrapped/Written off/Used in recipes reduce stock; Delivered/Refunded add to it; Revised can go either way (a stock-count correction). Opening + Delivered + Refunded − Sold − Scrapped − Written off + Revised − Used in recipes = Closing." %}
             </p>
         </div>
     </section>
@@ -110,52 +102,52 @@ document.addEventListener('DOMContentLoaded', function () {
 
     var table = initExcelStyleTable('#stock-balance-table', 'stock-balance-table-data', [
         {title: '#', field: 'code', formatter: 'rownum', width: 50, hozAlign: 'center', headerFilter: false, hideable: false},
-        {title: 'Code', field: 'code', width: 110},
-        {title: 'Name', field: 'name', widthGrow: 2, minWidth: 160},
-        {title: 'Category', field: 'category', width: 140},
-        {title: 'Unit', field: 'unit_type', width: 80},
-        {title: 'Opening', field: 'opening', width: 100, hozAlign: 'right', formatter: quantityFormatter},
+        {title: '{% translate "Code" %}', field: 'code', width: 110},
+        {title: '{% translate "Name" %}', field: 'name', widthGrow: 2, minWidth: 160},
+        {title: '{% translate "Category" %}', field: 'category', width: 140},
+        {title: '{% translate "Unit" %}', field: 'unit_type', width: 80},
+        {title: '{% translate "Opening" %}', field: 'opening', width: 100, hozAlign: 'right', formatter: quantityFormatter},
         {
-            title: 'Opening Value (Sell)', field: 'opening_sell_value', width: 140, hozAlign: 'right',
+            title: '{% translate "Opening Value (Sell)" %}', field: 'opening_sell_value', width: 140, hozAlign: 'right',
             formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter, visible: false,
         },
         {
-            title: 'Opening Value (Sell, no VAT)', field: 'opening_sell_value_no_vat', width: 170, hozAlign: 'right',
+            title: '{% translate "Opening Value (Sell, no VAT)" %}', field: 'opening_sell_value_no_vat', width: 170, hozAlign: 'right',
             formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter, visible: false,
         },
         {
-            title: 'Opening Value (Purchase)', field: 'opening_purchase_value', width: 150, hozAlign: 'right',
+            title: '{% translate "Opening Value (Purchase)" %}', field: 'opening_purchase_value', width: 150, hozAlign: 'right',
             formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter, visible: false,
         },
         {
-            title: 'Opening Value (Purchase, no VAT)', field: 'opening_purchase_value_no_vat', width: 190, hozAlign: 'right',
+            title: '{% translate "Opening Value (Purchase, no VAT)" %}', field: 'opening_purchase_value_no_vat', width: 190, hozAlign: 'right',
             formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter, visible: false,
         },
-        {title: 'Delivered', field: 'delivered', width: 100, hozAlign: 'right', formatter: quantityFormatter, bottomCalc: 'sum', bottomCalcFormatter: quantityFormatter},
-        {title: 'Sold', field: 'sold', width: 100, hozAlign: 'right', formatter: quantityFormatter, bottomCalc: 'sum', bottomCalcFormatter: quantityFormatter},
-        {title: 'Refunded', field: 'refunded', width: 100, hozAlign: 'right', formatter: quantityFormatter, bottomCalc: 'sum', bottomCalcFormatter: quantityFormatter},
-        {title: 'Scrapped', field: 'scrapped', width: 100, hozAlign: 'right', formatter: quantityFormatter, bottomCalc: 'sum', bottomCalcFormatter: quantityFormatter},
-        {title: 'Written off', field: 'written_off', width: 100, hozAlign: 'right', formatter: quantityFormatter, bottomCalc: 'sum', bottomCalcFormatter: quantityFormatter},
-        {title: 'Revised', field: 'revised', width: 100, hozAlign: 'right', formatter: signedQuantityFormatter},
-        {title: 'Used in recipes', field: 'recipe_consumed', width: 130, hozAlign: 'right', formatter: quantityFormatter, bottomCalc: 'sum', bottomCalcFormatter: quantityFormatter, visible: false},
-        {title: 'Closing', field: 'closing', width: 100, hozAlign: 'right', formatter: quantityFormatter},
+        {title: '{% translate "Delivered" %}', field: 'delivered', width: 100, hozAlign: 'right', formatter: quantityFormatter, bottomCalc: 'sum', bottomCalcFormatter: quantityFormatter},
+        {title: '{% translate "Sold" %}', field: 'sold', width: 100, hozAlign: 'right', formatter: quantityFormatter, bottomCalc: 'sum', bottomCalcFormatter: quantityFormatter},
+        {title: '{% translate "Refunded" %}', field: 'refunded', width: 100, hozAlign: 'right', formatter: quantityFormatter, bottomCalc: 'sum', bottomCalcFormatter: quantityFormatter},
+        {title: '{% translate "Scrapped" %}', field: 'scrapped', width: 100, hozAlign: 'right', formatter: quantityFormatter, bottomCalc: 'sum', bottomCalcFormatter: quantityFormatter},
+        {title: '{% translate "Written off" %}', field: 'written_off', width: 100, hozAlign: 'right', formatter: quantityFormatter, bottomCalc: 'sum', bottomCalcFormatter: quantityFormatter},
+        {title: '{% translate "Revised" %}', field: 'revised', width: 100, hozAlign: 'right', formatter: signedQuantityFormatter},
+        {title: '{% translate "Used in recipes" %}', field: 'recipe_consumed', width: 130, hozAlign: 'right', formatter: quantityFormatter, bottomCalc: 'sum', bottomCalcFormatter: quantityFormatter, visible: false},
+        {title: '{% translate "Closing" %}', field: 'closing', width: 100, hozAlign: 'right', formatter: quantityFormatter},
         {
-            title: 'Closing Value (Sell)', field: 'closing_sell_value', width: 140, hozAlign: 'right',
+            title: '{% translate "Closing Value (Sell)" %}', field: 'closing_sell_value', width: 140, hozAlign: 'right',
             formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
         },
         {
-            title: 'Closing Value (Sell, no VAT)', field: 'closing_sell_value_no_vat', width: 170, hozAlign: 'right',
+            title: '{% translate "Closing Value (Sell, no VAT)" %}', field: 'closing_sell_value_no_vat', width: 170, hozAlign: 'right',
             formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter, visible: false,
         },
         {
-            title: 'Closing Value (Purchase)', field: 'closing_purchase_value', width: 150, hozAlign: 'right',
+            title: '{% translate "Closing Value (Purchase)" %}', field: 'closing_purchase_value', width: 150, hozAlign: 'right',
             formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
         },
         {
-            title: 'Closing Value (Purchase, no VAT)', field: 'closing_purchase_value_no_vat', width: 190, hozAlign: 'right',
+            title: '{% translate "Closing Value (Purchase, no VAT)" %}', field: 'closing_purchase_value_no_vat', width: 190, hozAlign: 'right',
             formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter, visible: false,
         },
-    ], {placeholder: 'No stock movement in the selected period.'});
+    ], {placeholder: '{% translate "No stock movement in the selected period." %}'});
 
     // fitColumns only fits column widths to the container once, at
     // initial render -- doesn't recalculate on its own if something else
@@ -173,7 +165,7 @@ document.addEventListener('DOMContentLoaded', function () {
         table.redraw(true);
     });
 
-    attachTableExportToToolbar(table, '#stock-balance-table-card', 'stock_balance_report.xlsx', 'Stock Balance');
+    attachTableExportToToolbar(table, '#stock-balance-table-card', 'stock_balance_report.xlsx', '{% translate "Stock Balance" %}');
 });
 </script>
 {% endblock %}

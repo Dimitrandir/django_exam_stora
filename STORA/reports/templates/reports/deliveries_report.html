@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 
 {% block title %}STORA - Stock Movements Report{% endblock %}
-{% load static cache_bust %}
+{% load static cache_bust i18n %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
@@ -10,8 +10,8 @@
 {% block content %}
 <section class="reports-deliveries">
     <header class="page-header mb-4">
-        <h1 class="h2 mb-1">Stock Movements Report</h1>
-        <p class="text-muted mb-0">Deliveries, write-offs and scrap -- pick which one below.</p>
+        <h1 class="h2 mb-1">{% translate "Stock Movements Report" %}</h1>
+        <p class="text-muted mb-0">{% translate "Deliveries, write-offs and scrap -- pick which one below." %}</p>
     </header>
 
     {% if form.errors %}
@@ -22,12 +22,12 @@
         <div class="card-body">
             <form method="get">
                 <fieldset class="report-filter__fieldset border-0 p-0 m-0">
-                    <legend class="h5 mb-3">Choose period</legend>
+                    <legend class="h5 mb-3">{% translate "Choose period" %}</legend>
 
                     <div class="row g-3">
                         <div class="col-12">
                             <div class="report-filter__field">
-                                <label for="id_movement_type">Movement type</label>
+                                <label for="id_movement_type">{% translate "Movement type" %}</label>
                                 <select name="movement_type" id="id_movement_type" class="form-select" style="max-width: 220px;">
                                     {% for value, label in movement_type_choices %}
                                     <option value="{{ value }}" {% if value == movement_type %}selected{% endif %}>{{ label }}</option>
@@ -54,7 +54,7 @@
                             <div class="report-filter__field position-relative" style="max-width: 320px;">
                                 {{ form.supplier.label_tag }}
                                 <input type="text" id="supplier-search-input" class="form-control"
-                                       placeholder="Search supplier by name... (blank = all)" autocomplete="off"
+                                       placeholder="{% translate "Search supplier by name... (blank = all)" %}" autocomplete="off"
                                        value="{{ selected_supplier_name }}">
                                 <div id="supplier-search-results" class="global-search-results"></div>
                                 {{ form.supplier }}
@@ -63,7 +63,7 @@
                     </div>
 
                     <div class="mt-3">
-                        <button type="submit" class="btn btn-primary">Show report</button>
+                        <button type="submit" class="btn btn-primary">{% translate "Show report" %}</button>
                     </div>
                 </fieldset>
             </form>
@@ -73,14 +73,14 @@
     <section class="report-section card shadow-sm border-0 rounded-4 mb-4">
         <div class="card-body">
             <header class="section-header mb-3">
-                <h2 class="h4 mb-0">Movements in Period</h2>
+                <h2 class="h4 mb-0">{% translate "Movements in Period" %}</h2>
             </header>
 
             {{ deliveries_data|json_script:"deliveries-table-data" }}
             <div id="deliveries-table-card" class="data-table-card">
                 <div id="deliveries-table" class="table-sm"></div>
             </div>
-            <p class="text-muted small mt-2 mb-0">Click a row to open that record (edit/delete from there).</p>
+            <p class="text-muted small mt-2 mb-0">{% translate "Click a row to open that record (edit/delete from there)." %}</p>
         </div>
     </section>
 </section>
@@ -102,21 +102,21 @@ document.addEventListener('DOMContentLoaded', function () {
             title: '#', field: 'time_of_delivery', formatter: 'rownum', width: 50, hozAlign: 'center',
             headerFilter: false, hideable: false,
         },
-        {title: 'Date', field: 'time_of_delivery', width: 160},
-        {title: 'Document Type', field: 'document_type', width: 150},
-        {title: 'Document Number', field: 'document_number', width: 150},
-        {title: 'Document Date', field: 'document_date', width: 130},
-        {title: 'Supplier', field: 'supplier', width: 220},
-        {title: 'Comment', field: 'comment', width: 220},
+        {title: '{% translate "Date" %}', field: 'time_of_delivery', width: 160},
+        {title: '{% translate "Document Type" %}', field: 'document_type', width: 150},
+        {title: '{% translate "Document Number" %}', field: 'document_number', width: 150},
+        {title: '{% translate "Document Date" %}', field: 'document_date', width: 130},
+        {title: '{% translate "Supplier" %}', field: 'supplier', width: 220},
+        {title: '{% translate "Comment" %}', field: 'comment', width: 220},
         {
-            title: 'Total (VAT incl.)', field: 'total_amount', width: 160, hozAlign: 'right',
+            title: '{% translate "Total (VAT incl.)" %}', field: 'total_amount', width: 160, hozAlign: 'right',
             formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
         },
         {
-            title: 'Total (no VAT)', field: 'total_amount_without_vat', width: 160, hozAlign: 'right',
+            title: '{% translate "Total (no VAT)" %}', field: 'total_amount_without_vat', width: 160, hozAlign: 'right',
             formatter: moneyFormatter, visible: false, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
         },
-    ], {placeholder: 'No deliveries found for the selected period.'});
+    ], {placeholder: '{% translate "No deliveries found for the selected period." %}'});
 
     // Click a row to open that delivery -- same convention as the Products
     // grid (view/edit/delete live on the detail page, not duplicated here).
@@ -144,7 +144,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             var allOption = document.createElement('div');
             allOption.className = 'global-search-result';
-            allOption.textContent = '— All suppliers —';
+            allOption.textContent = '{% translate "— All suppliers —" %}';
             allOption.addEventListener('click', function () {
                 hiddenInput.value = '';
                 searchInput.value = '';

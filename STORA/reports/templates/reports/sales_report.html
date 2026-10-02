@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 
 {% block title %}STORA - Sales Report{% endblock %}
-{% load static cache_bust %}
+{% load static cache_bust i18n %}
 
 {% block main_class %}main-wide{% endblock %}
 {% block container_class %}container-fluid{% endblock %}
@@ -13,8 +13,8 @@
 {% block content %}
 <section class="reports-sales">
     <header class="page-header mb-4">
-        <h1 class="h2 mb-1">Sales Report</h1>
-        <p class="text-muted mb-0">Browse and filter every sale for the selected period.</p>
+        <h1 class="h2 mb-1">{% translate "Sales Report" %}</h1>
+        <p class="text-muted mb-0">{% translate "Browse and filter every sale for the selected period." %}</p>
     </header>
 
     {% if form.errors %}
@@ -25,7 +25,7 @@
         <div class="card-body">
             <form method="get">
                 <fieldset class="report-filter__fieldset border-0 p-0 m-0">
-                    <legend class="h5 mb-3">Choose period</legend>
+                    <legend class="h5 mb-3">{% translate "Choose period" %}</legend>
 
                     <div class="row g-3">
                         <div class="col-md-6">
@@ -44,7 +44,7 @@
                     </div>
 
                     <div class="mt-3">
-                        <button type="submit" class="btn btn-primary">Show report</button>
+                        <button type="submit" class="btn btn-primary">{% translate "Show report" %}</button>
                     </div>
                 </fieldset>
             </form>
@@ -54,14 +54,14 @@
     <section class="report-section card shadow-sm border-0 rounded-4 mb-4">
         <div class="card-body">
             <header class="section-header mb-3">
-                <h2 class="h4 mb-0">Sales in Period</h2>
+                <h2 class="h4 mb-0">{% translate "Sales in Period" %}</h2>
             </header>
 
             {{ sales_data|json_script:"sales-table-data" }}
             <div id="sales-table-card" class="data-table-card">
                 <div id="sales-table" class="table-sm"></div>
             </div>
-            <p class="text-muted small mt-2 mb-0">Click a row to open that sale.</p>
+            <p class="text-muted small mt-2 mb-0">{% translate "Click a row to open that sale." %}</p>
         </div>
     </section>
 </section>
@@ -80,7 +80,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function refundStatusFormatter(cell) {
         var v = cell.getValue();
-        var cls = v === 'Fully' ? 'refund-status--full' : v === 'Partial' ? 'refund-status--partial' : '';
+        var status = cell.getData().refund_status;
+        var cls = status === 'Fully' ? 'refund-status--full' : status === 'Partial' ? 'refund-status--partial' : '';
         return cls ? '<span class="' + cls + '">' + v + '</span>' : v;
     }
 
@@ -98,25 +99,25 @@ document.addEventListener('DOMContentLoaded', function () {
             title: '#', field: 'id', formatter: 'rownum', width: 50, hozAlign: 'center',
             headerFilter: false, hideable: false,
         },
-        {title: 'ID', field: 'id', width: 80, bottomCalc: 'count'},
-        {title: 'Date', field: 'date', width: 110},
-        {title: 'Time', field: 'time', width: 90},
-        {title: 'Cashier', field: 'cashier', width: 180},
-        {title: 'Items', field: 'item_qty', width: 90, hozAlign: 'right'},
+        {title: '{% translate "ID" %}', field: 'id', width: 80, bottomCalc: 'count'},
+        {title: '{% translate "Date" %}', field: 'date', width: 110},
+        {title: '{% translate "Time" %}', field: 'time', width: 90},
+        {title: '{% translate "Cashier" %}', field: 'cashier', width: 180},
+        {title: '{% translate "Items" %}', field: 'item_qty', width: 90, hozAlign: 'right'},
         {
-            title: 'Total Amount', field: 'total_amount', width: 140, hozAlign: 'right',
+            title: '{% translate "Total Amount" %}', field: 'total_amount', width: 140, hozAlign: 'right',
             formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
         },
         {
-            title: 'Refunded', field: 'refunded_amount', width: 120, hozAlign: 'right',
+            title: '{% translate "Refunded" %}', field: 'refunded_amount', width: 120, hozAlign: 'right',
             formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
         },
         {
-            title: 'Net Amount', field: 'net_amount', width: 140, hozAlign: 'right',
+            title: '{% translate "Net Amount" %}', field: 'net_amount', width: 140, hozAlign: 'right',
             formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
         },
-        {title: 'Refund Status', field: 'refund_status', width: 150, formatter: refundStatusFormatter},
-    ], {placeholder: 'No sales found for the selected period.'});
+        {title: '{% translate "Refund Status" %}', field: 'refund_status_label', width: 150, formatter: refundStatusFormatter},
+    ], {placeholder: '{% translate "No sales found for the selected period." %}'});
 
     // Click a row to open that sale -- same convention as the Products/
     // Deliveries grids (view/refund actions live on the detail page).

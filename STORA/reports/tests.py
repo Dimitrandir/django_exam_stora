@@ -1116,7 +1116,8 @@ class AIReportCreateViewTests(TestCase):
         self.client.force_login(self.manager)
 
     def test_empty_prompt_shows_error_without_creating_report(self):
-        response = self.client.post(reverse('ai_report_create'), {'prompt': '   '})
+        # English pinned -- Bulgarian is the default display language.
+        response = self.client.post(reverse('ai_report_create'), {'prompt': '   '}, HTTP_ACCEPT_LANGUAGE='en')
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Type a question first')
         self.assertEqual(AIReport.objects.count(), 0)
@@ -1175,7 +1176,7 @@ class AIReportDetailViewTests(TestCase):
     @patch('STORA.reports.views.rerun_stored_query')
     def test_detail_shows_rerun_error_when_stored_sql_now_fails(self, mock_rerun):
         mock_rerun.return_value = ([], [], 'relation "x" does not exist')
-        response = self.client.get(reverse('ai_report_detail', args=[self.report.pk]))
+        response = self.client.get(reverse('ai_report_detail', args=[self.report.pk]), HTTP_ACCEPT_LANGUAGE='en')
         self.assertContains(response, 'no longer runs')
 
 

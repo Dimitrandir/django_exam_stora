@@ -340,7 +340,8 @@ class ShopDayScenarioTests(TestCase):
             'reason': RefundAttributes.OPERATOR_ERROR, f'refund_qty_{sale.items.get().pk}': '1'})
 
         self.login(self.manager)
-        response = self.client.post(reverse('sale_delete', args=[sale.pk]))
+        # English pinned -- Bulgarian is the default display language.
+        response = self.client.post(reverse('sale_delete', args=[sale.pk]), HTTP_ACCEPT_LANGUAGE='en')
         self.assertEqual(response.status_code, 200, 'should re-render the confirm page, not 500')
         self.assertContains(response, 'has a refund linked to it')
         self.assertTrue(SaleAttributes.objects.filter(pk=sale.pk).exists())

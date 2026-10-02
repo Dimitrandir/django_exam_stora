@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% load i18n %}
 
 {% block title %}STORA - AI Reports{% endblock %}
 
@@ -6,10 +7,10 @@
 <section class="reports-ai-list">
     <header class="page-header mb-4 d-flex justify-content-between align-items-center">
         <div>
-            <h1 class="h2 mb-1">AI Reports</h1>
-            <p class="text-muted mb-0">Ask a question about the shop's data in plain language.</p>
+            <h1 class="h2 mb-1">{% translate "AI Reports" %}</h1>
+            <p class="text-muted mb-0">{% translate "Ask a question about the shop's data in plain language." %}</p>
         </div>
-        <a href="{% url 'ai_report_create' %}" class="btn btn-primary">+ New AI report</a>
+        <a href="{% url 'ai_report_create' %}" class="btn btn-primary">{% translate "+ New AI report" %}</a>
     </header>
 
     <section class="report-section card shadow-sm border-0 rounded-4 mb-4">
@@ -18,10 +19,10 @@
                 <table class="report-table table table-hover align-middle mb-0">
                     <thead class="table-dark">
                         <tr>
-                            <th>Question</th>
-                            <th>Asked by</th>
-                            <th>Created</th>
-                            <th>Last regenerated</th>
+                            <th>{% translate "Question" %}</th>
+                            <th>{% translate "Asked by" %}</th>
+                            <th>{% translate "Created" %}</th>
+                            <th>{% translate "Last regenerated" %}</th>
                             <th></th>
                         </tr>
                     </thead>
@@ -33,12 +34,12 @@
                             <td>{{ ai_report.created_at|date:"Y-m-d H:i" }}</td>
                             <td>{{ ai_report.last_regenerated_at|date:"Y-m-d H:i"|default:'—' }}</td>
                             <td class="text-end">
-                                <a href="{% url 'ai_report_delete' ai_report.pk %}" class="btn btn-outline-danger btn-sm">Delete</a>
+                                <a href="{% url 'ai_report_delete' ai_report.pk %}" class="btn btn-outline-danger btn-sm">{% translate "Delete" %}</a>
                             </td>
                         </tr>
                         {% empty %}
                         <tr>
-                            <td colspan="5" class="text-center py-4 text-muted">No AI reports saved yet.</td>
+                            <td colspan="5" class="text-center py-4 text-muted">{% translate "No AI reports saved yet." %}</td>
                         </tr>
                         {% endfor %}
                     </tbody>
