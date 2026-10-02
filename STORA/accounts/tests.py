@@ -100,3 +100,19 @@ class EmployeePermissionTests(TestCase):
             reverse('employee_edit', kwargs={'pk': self.cashier.pk})
         )
         self.assertEqual(response.status_code, 200)
+
+    def test_cashier_cannot_see_employee_list_or_details(self):
+        self.client.force_login(self.cashier)
+        self.assertEqual(self.client.get(reverse('employee_list')).status_code, 403)
+        self.assertEqual(
+            self.client.get(reverse('employee_details', kwargs={'pk': self.manager.pk})).status_code, 403
+        )
+
+    def test_cashier_global_search_returns_no_employees(self):
+        self.client.force_login(self.cashier)
+        response = self.client.get(reverse('global_search'), {'q': 'manager1'})
+        self.assertEqual(response.json()['employees'], [])
+
+    def test_manager_can_see_employee_list(self):
+        self.client.force_login(self.manager)
+        self.assertEqual(self.client.get(reverse('employee_list')).status_code, 200)

@@ -85,9 +85,11 @@
 
             <ul class="navbar-nav ms-auto align-items-lg-center">
                 {% if user.is_authenticated %}
+                    {% if perms.accounts.view_employee %}
                     <li class="nav-item">
                         <a class="nav-link" href="{% url 'employee_list' %}">Employees</a>
                     </li>
+                    {% endif %}
                     <li class="nav-item">
                         <form method="post" action="{% url 'logout' %}" class="d-inline">
                             {% csrf_token %}

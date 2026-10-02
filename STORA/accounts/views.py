@@ -24,13 +24,17 @@ class UserLogoutView(LogoutView):
     next_page = reverse_lazy('index')
 
 
-class EmployeeListView(LoginRequiredMixin, ListView):
+class EmployeeListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListView):
+    # Manager-only -- the list shows every colleague's phone/email/role, not
+    # something a Cashier needs at the till (used to be login-only).
+    permission_required = 'accounts.view_employee'
     model = Employee
     template_name = 'accounts/employee_list.html'
     context_object_name = 'employees'
 
 
-class EmployeeDetailView(LoginRequiredMixin, DetailView):
+class EmployeeDetailView(LoginRequiredMixin, StaffPermissionRequiredMixin, DetailView):
+    permission_required = 'accounts.view_employee'
     model = Employee
     template_name = 'accounts/employee_details.html'
     context_object_name = 'employee'
