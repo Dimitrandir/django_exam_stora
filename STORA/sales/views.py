@@ -5,8 +5,8 @@ from django.conf import settings
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db import transaction
-from django.db.models import Max, Sum
-from django.http import JsonResponse
+from django.db.models import Max, ProtectedError, Sum
+from django.http import HttpResponseRedirect, JsonResponse
 from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
@@ -43,6 +43,29 @@ from STORA.sales.tab_state import (
 # products shown first when a category is opened on the POS screen (Фаза 2
 # pinned-shortcuts feature). Arbitrary but reasonable -- easy to tune later.
 POS_RECENT_SALES_DAYS = 7
+
+
+def _can_edit_price(user):
+    return user.role == Employee.MANAGER or user.is_superuser
+
+
+def _enforce_effective_prices(formset):
+    """Overwrites each line's posted price_at_sale with the product's
+    current effective price (price list/promo rule if one applies, else the
+    catalog sell_price) -- for anyone who isn't allowed to change prices
+    (see _can_edit_price). The POS screen already hides price editing from
+    them, but the price still arrives as an ordinary form field, so without
+    this a modified page could post any price it liked."""
+    forms = [
+        f for f in formset.forms
+        if getattr(f, 'cleaned_data', None) and not f.cleaned_data.get('DELETE') and f.cleaned_data.get('sale_item')
+    ]
+    products = [f.cleaned_data['sale_item'] for f in forms]
+    matches = resolve_prices(products)
+    for f in forms:
+        product = f.cleaned_data['sale_item']
+        match = matches.get(product.pk)
+        f.instance.price_at_sale = match['price'] if match else product.sell_price
 
 
 @login_required
@@ -111,6 +134,8 @@ def sales_add(request):
         formset = SaleItemFormSet(request.POST, instance=sale_instance, prefix=formset_prefix)
 
         if form.is_valid() and formset.is_valid():
+            if not _can_edit_price(request.user):
+                _enforce_effective_prices(formset)
             sale = form.save(commit=False)
             sale.cashier = request.user
             sale.save()
@@ -226,7 +251,7 @@ def sales_add(request):
         # keypad (see sale_add.html): everyone sees the Price field there,
         # but only a Manager (or superuser/admin) can actually change it --
         # a Cashier sees it read-only, Qty stays editable for everyone.
-        'can_edit_price': request.user.role == Employee.MANAGER or request.user.is_superuser,
+        'can_edit_price': _can_edit_price(request.user),
     }
     return render(request, 'sales/sale_add.html', context)
 
@@ -324,6 +349,23 @@ class SalesDeleteView(LoginRequiredMixin, StaffPermissionRequiredMixin, DeleteVi
     template_name = 'sales/sale_confirm_delete.html'
     context_object_name = 'sale'
     success_url = reverse_lazy('sales_report')
+
+    def form_valid(self, form):
+        # RefundAttributes/RefundItems point back at the sale with PROTECT
+        # (a refund is a record of money actually handed back) -- deleting
+        # a refunded sale used to surface as a bare 500 page. Same "explain
+        # on the confirm page instead" pattern as ProductDeleteView.
+        try:
+            self.object.delete()
+        except ProtectedError:
+            context = self.get_context_data(
+                protected_error=(
+                    "Cannot delete this sale -- it has a refund linked to it. "
+                    "The refund is a record of money handed back and must stay together with its sale."
+                )
+            )
+            return self.render_to_response(context)
+        return HttpResponseRedirect(self.get_success_url())
 
 
 @login_required

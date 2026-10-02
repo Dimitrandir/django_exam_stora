@@ -23,8 +23,9 @@ class GlobalSearchView(LoginRequiredMixin, View):
 
     Only `LoginRequiredMixin`, no extra permission check: every logged-in
     role already has read access to all four of these (products/suppliers/
-    categories via signals.py, employees via EmployeeListView having no
-    permission gate) -- this endpoint doesn't expose anything new.
+    categories via signals.py; employees only for whoever holds
+    accounts.view_employee, same gate as EmployeeListView) -- this endpoint
+    doesn't expose anything new.
     """
 
     RESULTS_PER_CATEGORY = 5
@@ -39,7 +40,7 @@ class GlobalSearchView(LoginRequiredMixin, View):
             'products': self._search_products(query),
             'suppliers': self._search_suppliers(query),
             'categories': self._search_categories(query),
-            'employees': self._search_employees(query),
+            'employees': self._search_employees(query) if request.user.has_perm('accounts.view_employee') else [],
         })
 
     def _search_products(self, query):

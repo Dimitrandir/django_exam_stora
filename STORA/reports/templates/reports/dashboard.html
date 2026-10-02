@@ -81,7 +81,9 @@
                         <h2 class="h4 mb-0">Sales</h2>
                     </header>
                     <ul class="list-unstyled d-flex flex-column gap-2 mb-0">
+                        {% if perms.sales.view_saleattributes %}
                         <li><a href="{{ sales_report_url }}" class="btn btn-outline-primary w-100 text-start">Sales report</a></li>
+                        {% endif %}
                         <li><a href="{{ sales_quantity_report_url }}" class="btn btn-outline-primary w-100 text-start">Sales quantity report</a></li>
                     </ul>
                 </div>

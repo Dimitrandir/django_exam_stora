@@ -75,11 +75,16 @@ class ReportsDashboardView(ReportsBaseView):
         return render(request, self.template_name, context)
 
 
-class SalesReportView(ReportsBaseView):
+class SalesReportView(StaffPermissionRequiredMixin, ReportsBaseView):
     """Backs the Tabulator-driven sales overview -- also the app's only
     "browse all sales" screen now (the old plain sales_list.html was
-    removed as a redundant, less capable duplicate of this page)."""
+    removed as a redundant, less capable duplicate of this page).
 
+    Same permission as the sale detail page each row opens -- used to be
+    login-only, so Warehouse saw every sale's totals here but got 403 the
+    moment they clicked one."""
+
+    permission_required = 'sales.view_saleattributes'
     template_name = 'reports/sales_report.html'
 
     def get(self, request, *args, **kwargs):
@@ -102,16 +107,23 @@ class SalesReportView(ReportsBaseView):
             SaleItems.objects.filter(sale_id__in=sale_ids)
             .values('sale_id').annotate(total=Sum('sale_quantity')).values_list('sale_id', 'total')
         )
-        refunded_qty_by_sale = dict(
-            RefundItems.objects.filter(refund__original_sale_id__in=sale_ids)
-            .values('refund__original_sale_id').annotate(total=Sum('refund_quantity'))
-            .values_list('refund__original_sale_id', 'total')
-        )
+        refunds_by_sale = {
+            row['refund__original_sale_id']: row
+            for row in (
+                RefundItems.objects.filter(refund__original_sale_id__in=sale_ids)
+                .values('refund__original_sale_id')
+                .annotate(total_qty=Sum('refund_quantity'), total_amount=Sum('total_price_row'))
+            )
+        }
 
         sales_data = []
         for sale in sales:
             item_qty = item_qty_by_sale.get(sale.pk) or Decimal('0')
-            refunded_qty = refunded_qty_by_sale.get(sale.pk) or Decimal('0')
+            refund_row = refunds_by_sale.get(sale.pk) or {}
+            refunded_qty = refund_row.get('total_qty') or Decimal('0')
+            # Money handed back on this sale (any refund against it, whenever
+            # it happened) -- Net Amount is what the sale really brought in.
+            refunded_amount = refund_row.get('total_amount') or Decimal('0')
             if refunded_qty <= 0:
                 refund_status = 'Not'
             elif item_qty and refunded_qty >= item_qty:
@@ -127,6 +139,8 @@ class SalesReportView(ReportsBaseView):
                 'cashier': str(sale.cashier),
                 'item_qty': float(item_qty),
                 'total_amount': float(sale.total_amount or 0),
+                'refunded_amount': float(refunded_amount),
+                'net_amount': float((sale.total_amount or Decimal('0')) - refunded_amount),
                 'refund_status': refund_status,
                 'view_url': reverse('sale_details', args=[sale.pk]),
             })
@@ -409,21 +423,44 @@ class SalesQuantityReportView(StaffPermissionRequiredMixin, ReportsBaseView):
                 .annotate(total_qty=Sum('sale_quantity'), total_amount=Sum('total_price_row'))
             )
         }
+        # Refunds are subtracted from the sale they belong to -- i.e. by the
+        # ORIGINAL sale's date, same as the Sales report's per-sale Net
+        # Amount, so the two reports agree for the same period. Aggregated
+        # separately (not in the same annotate() as the sales above) for the
+        # same join-inflation reason as SalesReportView.
+        refunds_by_product = {
+            row['original_item__sale_item_id']: row
+            for row in (
+                RefundItems.objects
+                .filter(original_item__sale__time_of_sale__date__range=(start_date, end_date))
+                .values('original_item__sale_item_id')
+                .annotate(total_qty=Sum('refund_quantity'), total_amount=Sum('total_price_row'))
+            )
+        }
 
         products = Product.objects.filter(pk__in=totals_by_product.keys()).select_related('category')
 
-        sales_quantity_data = [
-            {
+        sales_quantity_data = []
+        for product in products:
+            sold = totals_by_product[product.pk]
+            refunded = refunds_by_product.get(product.pk, {})
+            sold_qty = sold['total_qty'] or Decimal('0')
+            refunded_qty = refunded.get('total_qty') or Decimal('0')
+            sold_amount = sold['total_amount'] or Decimal('0')
+            refunded_amount = refunded.get('total_amount') or Decimal('0')
+            sales_quantity_data.append({
                 'code': product.internal_code,
                 'name': product.name,
                 'category': product.category.name if product.category else '',
-                'quantity_sold': float(totals_by_product[product.pk]['total_qty'] or 0),
+                'quantity_sold': float(sold_qty),
+                'refunded_qty': float(refunded_qty),
+                'net_quantity': float(sold_qty - refunded_qty),
                 'delivery_price': float(product.delivery_price or 0),
                 'sell_price': float(product.sell_price),
-                'total_amount': float(totals_by_product[product.pk]['total_amount'] or 0),
-            }
-            for product in products
-        ]
+                'refunded_amount': float(refunded_amount),
+                # Net revenue -- what was sold minus what was handed back.
+                'total_amount': float(sold_amount - refunded_amount),
+            })
 
         context = {
             'form': form,

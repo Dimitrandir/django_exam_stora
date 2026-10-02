@@ -5,6 +5,7 @@ from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.postgres.search import TrigramSimilarity
 from django.db.models import F, ProtectedError, Sum
+from django.db.models.functions import Coalesce
 from django.forms.models import model_to_dict
 from django.http import HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -324,7 +325,11 @@ class ProductHistoryView(LoginRequiredMixin, StaffPermissionRequiredMixin, Detai
             product=product,
             revision__status=RevisionAttributes.STATUS_COMPLETED,
             revision__completed_at__date__range=(start_date, end_date),
-        ).exclude(found_quantity=F('system_quantity_at_start')).select_related(
+        ).annotate(
+            # What Complete really changed (see RevisionItems.quantity_before_complete);
+            # older revisions fall back to the start-of-count snapshot.
+            applied_change=F('found_quantity') - Coalesce('quantity_before_complete', 'system_quantity_at_start'),
+        ).exclude(applied_change=0).select_related(
             'revision', 'revision__completed_by'
         )
 
@@ -376,7 +381,7 @@ class ProductHistoryView(LoginRequiredMixin, StaffPermissionRequiredMixin, Detai
             {
                 'date': item.revision.completed_at,
                 'event_type': 'Revised',
-                'quantity_change': item.found_quantity - item.system_quantity_at_start,
+                'quantity_change': item.applied_change,
                 'unit_price': item.price_at_revision,
                 'supplier': None,
                 'cashier': item.revision.completed_by,

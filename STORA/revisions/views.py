@@ -252,6 +252,8 @@ def revision_complete(request, pk):
         )
         for item in revision.items.select_related('product'):
             product = Product.objects.select_for_update().get(pk=item.product_id)
+            item.quantity_before_complete = product.quantity
+            item.save(update_fields=['quantity_before_complete'])
             if product.quantity != item.found_quantity:
                 product.quantity = item.found_quantity
                 product.save(update_fields=['quantity'])

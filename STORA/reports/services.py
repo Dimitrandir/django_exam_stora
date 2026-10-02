@@ -2,6 +2,7 @@ from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 
 from django.db.models import F, Sum
+from django.db.models.functions import Coalesce
 
 from STORA.deliveries.models import DeliveryAttributes, DeliveryItems
 from STORA.products.models import Product, ProductChangeLog, RecipeIngredient
@@ -90,7 +91,10 @@ def stock_as_of(as_of_date):
             revision__status=RevisionAttributes.STATUS_COMPLETED,
             revision__completed_at__date__gt=as_of_date,
         )
-        .annotate(delta=F('found_quantity') - F('system_quantity_at_start'))
+        # quantity_before_complete is the change Complete REALLY applied;
+        # older revisions (completed before that field existed) fall back to
+        # the start-of-count snapshot, the best figure they have.
+        .annotate(delta=F('found_quantity') - Coalesce('quantity_before_complete', 'system_quantity_at_start'))
         .values('product_id')
         .annotate(total=Sum('delta'))
     )
@@ -293,8 +297,11 @@ def stock_movement_totals(start_date, end_date):
             revision__status=RevisionAttributes.STATUS_COMPLETED,
             revision__completed_at__date__range=(start_date, end_date),
         )
-        .exclude(found_quantity=F('system_quantity_at_start'))
-        .annotate(delta=F('found_quantity') - F('system_quantity_at_start'))
+        # Same "what Complete REALLY changed" delta as stock_as_of above --
+        # otherwise opening + movements wouldn't add up to closing whenever
+        # something sold/arrived while a revision was still open.
+        .annotate(delta=F('found_quantity') - Coalesce('quantity_before_complete', 'system_quantity_at_start'))
+        .exclude(delta=0)
         .values('product_id').annotate(total=Sum('delta'))
         .values_list('product_id', 'total')
     )

@@ -861,14 +861,14 @@ Apps: accounts, core, products, deliveries, sales, reports.
   той изключва `is_recipe=True` продукти (направен е за recipe picker-а),
   а рецептурен продукт си е продаваем. Колони: `#`, Име, Кол-во,
   Единична цена, Сума — БЕЗ отделна колона за код/баркод (тя вече не е
-  на ред, а е самото поле за търсене отгоре). `numberEditor` custom
-  editor-ът (същия патърн като Deliveries — вграденият Tabulator
-  `editor:'number'` няма Enter-key логика) взима `editorParams` като
-  ФУНКЦИЯ за Qty колоната (`quantityEditorParams(cell)`), не статичен
-  обект — четe `cell.getData().unit_type` за да превключи `min`/`step`
-  между 0.001 (теглови продукт) и 1 (бройков) динамично на ред по ред.
-  Sum→Unit Price обратното изчисление (Qty фиксирано) е същия "source of
-  truth" патърн като Deliveries "Line Total → Unit Price". Грида е в
+  на ред, а е самото поле за търсене отгоре). **Клетките на количката
+  НЕ са директно редактируеми** (махнато по молба на потребителя след QA,
+  2026-10-02) — всяка корекция минава през бутона "Edit" (Edit Line
+  keypad): количество — всички, цена — само Manager (`can_edit_price`).
+  Сървърът го налага и сам: `_enforce_effective_prices()` в `sales_add`
+  презаписва `price_at_sale` с текущата ефективна цена (промо/ценова
+  листа или каталожна) за всеки, който не е Manager — иначе ограничението
+  би било само визуално (цената идва като обикновено поле от формата). Грида е в
   `.sale-items-table-container` с Tabulator `height` опция (не просто
   CSS overflow на wrapper-а) — само така header-ът остава закачен, а
   скролва единствено тялото. `sale_items_initial` (в `sales_add` view)
@@ -986,6 +986,14 @@ Apps: accounts, core, products, deliveries, sales, reports.
   на този продукт от същия доставчик (изтритият ред може да не е бил
   единствен). Не се пипа при CASCADE триене на цялата доставка (няма от
   кой доставчик да търси в тоя edge case).
+- **Реална доставка обновява `Product.delivery_price` в каталога** (поискано
+  след QA, 2026-10-02) — в `DeliveryItems.save()`, само за
+  `movement_type=DELIVERY`, само ако цената е > 0 и само от НАЙ-НОВАТА
+  доставка на продукта (по `time_of_delivery`) — редакция на по-стара
+  доставка не връща цената назад. Логва се в `ProductChangeLog` с
+  `changed_by` = получателя на доставката. Изписване/брак не пипат цената.
+  Червено/зеленото оцветяване на Unit Price в грида си остава сравнение
+  спрямо каталожната цена в момента на зареждане на реда.
 - **Excel import за доставки (`STORA/deliveries/excel_import.py`) —**
   **двупластово fuzzy matching на продукт/категория/доставчик, Пласт 2 е**
   **AI, включва се само ако има `ANTHROPIC_API_KEY`.** Правилата за
@@ -1716,11 +1724,9 @@ helper в `core/utils.py` (разбива по whitespace, AND между дум
    
  **не през CDN**, защото системата е за реален магазин и не бива да зависи  
    
- от външен интернет за да зареди таблица. (Bootstrap в момента се тегли през  
-   
- CDN в templates/base.html — стар избор отпреди тази конвенция, отделен  
-   
- проблем, не Tabulator-свързан.)  
+ от външен интернет за да зареди таблица. (Bootstrap + Bootstrap Icons вече също са локално в static/vendor/bootstrap/ и
+ static/vendor/bootstrap-icons/ — преди идваха от CDN и без интернет касата
+ не можеше да приключи продажба: checkout модалът ползва bootstrap.Modal.)  
 Споделеният helper е в static/js/data-table.js  
    
  (initExcelStyleTable(selector, jsonScriptId, columns, options)). Патърн за  

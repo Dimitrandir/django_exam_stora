@@ -82,6 +82,9 @@ class GlobalSearchViewTests(TestCase):
         self.assertIn('Beverages', labels)
 
     def test_finds_employee_by_username(self):
+        # Employees are Manager-only in search (same gate as EmployeeListView).
+        self.user.role = Employee.MANAGER
+        self.user.save()
         self.client.force_login(self.user)
         response = self._search('search')
         labels = [item['label'] for item in response.json()['employees']]

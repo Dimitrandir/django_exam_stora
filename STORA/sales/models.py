@@ -123,8 +123,16 @@ class SaleItems(models.Model):
             if self.pk:
                 # Editing an existing sale item: apply only the CHANGE in
                 # quantity, not the new quantity a second time.
-                old_quantity = SaleItems.objects.get(pk=self.pk).sale_quantity
-                delta = self.sale_quantity - old_quantity
+                old = SaleItems.objects.values('sale_item_id', 'sale_quantity').get(pk=self.pk)
+                if old['sale_item_id'] != self.sale_item_id:
+                    # Product swapped on the same row (e.g. via the admin):
+                    # give the old product its stock back, take the full
+                    # quantity from the new one -- same as DeliveryItems.save().
+                    old_product = Product.objects.select_for_update().get(pk=old['sale_item_id'])
+                    adjust_stock_for_sale(old_product, -old['sale_quantity'])
+                    delta = self.sale_quantity
+                else:
+                    delta = self.sale_quantity - old['sale_quantity']
             else:
                 # Brand new item: subtract the full quantity once.
                 delta = self.sale_quantity
