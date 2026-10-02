@@ -47,7 +47,9 @@
                     </a>
                     <ul class="dropdown-menu">
                         <li><a class="dropdown-item" href="{% url 'sale_add' %}">New sale</a></li>
+                        {% if perms.sales.view_saleattributes %}
                         <li><a class="dropdown-item" href="{% url 'sales_report' %}">Sales report</a></li>
+                        {% endif %}
                         <li><a class="dropdown-item" href="{% url 'sales_quantity_report' %}">Sales quantity report</a></li>
                     </ul>
                 </li>

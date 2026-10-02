@@ -489,7 +489,7 @@ class ShopDayScenarioTests(TestCase):
     def test_report_permissions_per_role(self):
         expectations = {
             'reports_dashboard': (200, 200, 200),
-            'sales_report': (200, 200, 200),
+            'sales_report': (200, 403, 200),
             'deliveries_report': (200, 200, 403),
             'sales_quantity_report': (200, 200, 403),
             'stock_as_of_report': (200, 200, 200),

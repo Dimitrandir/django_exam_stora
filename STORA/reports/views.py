@@ -75,11 +75,16 @@ class ReportsDashboardView(ReportsBaseView):
         return render(request, self.template_name, context)
 
 
-class SalesReportView(ReportsBaseView):
+class SalesReportView(StaffPermissionRequiredMixin, ReportsBaseView):
     """Backs the Tabulator-driven sales overview -- also the app's only
     "browse all sales" screen now (the old plain sales_list.html was
-    removed as a redundant, less capable duplicate of this page)."""
+    removed as a redundant, less capable duplicate of this page).
 
+    Same permission as the sale detail page each row opens -- used to be
+    login-only, so Warehouse saw every sale's totals here but got 403 the
+    moment they clicked one."""
+
+    permission_required = 'sales.view_saleattributes'
     template_name = 'reports/sales_report.html'
 
     def get(self, request, *args, **kwargs):
