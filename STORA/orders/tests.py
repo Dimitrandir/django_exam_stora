@@ -5,7 +5,7 @@ from unittest.mock import patch
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.urls import reverse
-from django.utils import timezone
+from django.utils import timezone, translation
 
 from STORA.accounts.models import CompanyProfile
 from STORA.orders.ai_service import _extract_quantities
@@ -131,7 +131,7 @@ class OrderViewTests(TestCase):
         response = self.client.post(reverse('order_new'), {
             'supplier': self.supplier.pk, 'supplier_position': [1],
             'start_date': timezone.localdate() - timedelta(days=7), 'end_date': timezone.localdate(),
-        })
+        }, HTTP_ACCEPT_LANGUAGE='en')  # English pinned -- Bulgarian is the default display language
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Enter at least one requested quantity')
         self.assertFalse(OrderAttributes.objects.exists())
@@ -188,7 +188,8 @@ class OrderMultiPositionTests(TestCase):
         })
         order = OrderAttributes.objects.get()
         self.assertEqual(order.get_position_list(), [1, 2])
-        self.assertEqual(order.get_supplier_position_display(), 'Primary (1st), Secondary (2nd)')
+        with translation.override('en'):  # labels are translated; Bulgarian is the default
+            self.assertEqual(order.get_supplier_position_display(), 'Primary (1st), Secondary (2nd)')
 
 
 class OrderEditTests(TestCase):

@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 
 {% block title %}STORA - New Order{% endblock %}
-{% load static cache_bust %}
+{% load static cache_bust i18n %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
@@ -9,7 +9,7 @@
 
 {% block content %}
 
-<h1 class="h2 mb-3">New Order</h1>
+<h1 class="h2 mb-3">{% translate "New Order" %}</h1>
 
 {% if form.errors %}
 <div class="form-errors">{{ form.errors }}</div>
@@ -20,9 +20,7 @@
 
 {% if preload %}
 <div class="alert alert-info">
-    {{ preload_count }} product{{ preload_count|pluralize }} carried over from the Products list -- pick a
-    supplier and period below, then Load; they'll be added to the grid alongside whatever that supplier's
-    own candidates turn out to be.
+    {% blocktranslate count counter=preload_count %}{{ counter }} product carried over from the Products list -- pick a supplier and period below, then Load; it will be added to the grid alongside whatever that supplier's own candidates turn out to be.{% plural %}{{ counter }} products carried over from the Products list -- pick a supplier and period below, then Load; they will be added to the grid alongside whatever that supplier's own candidates turn out to be.{% endblocktranslate %}
 </div>
 {% endif %}
 
@@ -34,7 +32,7 @@
                 <div class="report-filter__field position-relative" style="max-width: 320px;">
                     {{ form.supplier.label_tag }}
                     <input type="text" id="supplier-search-input" class="form-control"
-                           placeholder="Search supplier by name..." autocomplete="off"
+                           placeholder="{% translate "Search supplier by name..." %}" autocomplete="off"
                            value="{{ selected_supplier_name }}">
                     <div id="supplier-search-results" class="global-search-results"></div>
                     {{ form.supplier }}
@@ -53,7 +51,7 @@
             </div>
 
             <div class="d-flex flex-wrap align-items-end gap-3 mt-3">
-                <span class="fw-semibold">Load sales for period:</span>
+                <span class="fw-semibold">{% translate "Load sales for period:" %}</span>
                 <div class="report-filter__field">
                     {{ form.start_date.label_tag }}
                     {{ form.start_date }}
@@ -63,11 +61,11 @@
                     {{ form.end_date }}
                 </div>
                 <div class="report-filter__field">
-                    <label for="days-back-input">Days back</label>
+                    <label for="days-back-input">{% translate "Days back" %}</label>
                     <input type="number" id="days-back-input" class="form-control" min="0"
-                           placeholder="e.g. 7" style="width: 110px;">
+                           placeholder="{% translate "e.g. 7" %}" style="width: 110px;">
                 </div>
-                <button type="submit" class="btn btn-primary">Load</button>
+                <button type="submit" class="btn btn-primary">{% translate "Load" %}</button>
             </div>
         </form>
     </div>

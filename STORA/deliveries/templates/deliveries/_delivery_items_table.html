@@ -787,7 +787,7 @@ document.addEventListener('DOMContentLoaded', function () {
             alert('{% translate "Select a line first (tap its row)." %}');
             return;
         }
-        if (!confirm('Сигурен ли си, че искаш да изтриеш този ред?')) return;
+        if (!confirm('{% translate "Are you sure you want to delete this line?" %}')) return;
         var data = selectedRow.getData();
         if (data.id) pendingDeletions.push(data);
         selectedRow.delete();
