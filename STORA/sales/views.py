@@ -5,8 +5,8 @@ from django.conf import settings
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db import transaction
-from django.db.models import Max, Sum
-from django.http import JsonResponse
+from django.db.models import Max, ProtectedError, Sum
+from django.http import HttpResponseRedirect, JsonResponse
 from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
@@ -324,6 +324,23 @@ class SalesDeleteView(LoginRequiredMixin, StaffPermissionRequiredMixin, DeleteVi
     template_name = 'sales/sale_confirm_delete.html'
     context_object_name = 'sale'
     success_url = reverse_lazy('sales_report')
+
+    def form_valid(self, form):
+        # RefundAttributes/RefundItems point back at the sale with PROTECT
+        # (a refund is a record of money actually handed back) -- deleting
+        # a refunded sale used to surface as a bare 500 page. Same "explain
+        # on the confirm page instead" pattern as ProductDeleteView.
+        try:
+            self.object.delete()
+        except ProtectedError:
+            context = self.get_context_data(
+                protected_error=(
+                    "Cannot delete this sale -- it has a refund linked to it. "
+                    "The refund is a record of money handed back and must stay together with its sale."
+                )
+            )
+            return self.render_to_response(context)
+        return HttpResponseRedirect(self.get_success_url())
 
 
 @login_required
