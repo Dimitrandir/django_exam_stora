@@ -71,6 +71,7 @@ MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.middleware.locale.LocaleMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -92,6 +93,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'django.template.context_processors.i18n',
             ],
         },
     },
@@ -158,7 +160,25 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/6.0/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+# Bulgarian is the default (shown to a browser that's never picked a
+# language here before), but the BG/EN switcher in base.html's navbar
+# (django.views.i18n.set_language, wired in STORA/urls.py) lets each
+# person pick English instead -- their choice is remembered in a cookie,
+# not tied to the URL. LANGUAGES restricts Django to just these two --
+# without it, the switcher would need to offer every locale Django ships
+# translations for, not just the one (bg) this project actually writes.
+# Source strings in templates/Python stay in English ({% translate %}/
+# gettext_lazy) either way -- translations live in
+# locale/bg/LC_MESSAGES/django.po, filled in module by module (see
+# CLAUDE.md).
+LANGUAGE_CODE = 'bg'
+
+LANGUAGES = [
+    ('bg', 'Български'),
+    ('en', 'English'),
+]
+
+LOCALE_PATHS = [BASE_DIR / 'locale']
 
 TIME_ZONE = 'UTC'
 

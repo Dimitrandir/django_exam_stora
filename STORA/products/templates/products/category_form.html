@@ -1,14 +1,14 @@
 {% extends 'base.html' %}
-{% load static cache_bust %}
+{% load static cache_bust i18n %}
 
-{% block title %}STORA - {% if category %}Edit Category{% else %}New Category{% endif %}{% endblock %}
+{% block title %}STORA - {% if category %}{% translate "Edit Category" %}{% else %}{% translate "New Category" %}{% endif %}{% endblock %}
 
 {% block content %}
 
     {% if category %}
-        <h1>Edit category: {{ category.name }}</h1>
+        <h1>{% blocktranslate with name=category.name %}Edit category: {{ name }}{% endblocktranslate %}</h1>
     {% else %}
-        <h1>Add new category</h1>
+        <h1>{% translate "Add new category" %}</h1>
     {% endif %}
 
     <form method="post">
@@ -27,23 +27,23 @@
             {{ form.parent.label_tag }}
             <span style="position:relative; display:inline-block; max-width: 320px;">
                 <input type="text" id="parent-search-input" autocomplete="off"
-                       placeholder="Search category by name..."
+                       placeholder="{% translate 'Search category by name...' %}"
                        value="{% if form.instance.parent_id %}{{ form.instance.parent.name }}{% endif %}">
                 <div id="parent-search-results" class="global-search-results"></div>
             </span>
-            <button type="button" id="parent-tree-btn">Browse</button>
+            <button type="button" id="parent-tree-btn">{% translate "Browse" %}</button>
             {{ form.parent }}
             {{ form.parent.errors }}
         </p>
         <p>
             <label>{{ form.show_on_pos }} {{ form.show_on_pos.label }}</label>
         </p>
-        <button type="submit">Save</button>
+        <button type="submit">{% translate "Save" %}</button>
     </form>
 
     <hr>
 
-    <a href="{% url 'category_list' %}">Cancel</a>
+    <a href="{% url 'category_list' %}">{% translate "Cancel" %}</a>
 
 {{ excluded_category_ids|json_script:"excluded-category-ids" }}
 <script src="{% static_v 'js/category-tree-picker.js' %}"></script>
@@ -60,7 +60,7 @@
         resultsBox.innerHTML = '';
         var allOption = document.createElement('div');
         allOption.className = 'global-search-result';
-        allOption.textContent = '— No parent (top-level) —';
+        allOption.textContent = '{% translate "— No parent (top-level) —" %}';
         allOption.addEventListener('click', function () {
             hiddenInput.value = '';
             searchInput.value = '';

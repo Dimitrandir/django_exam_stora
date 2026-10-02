@@ -12,6 +12,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.utils.http import urlencode
+from django.utils.translation import gettext as _
 from django.views import View
 from django.views.decorators.http import require_POST
 from django.views.generic import CreateView, ListView, DetailView, UpdateView, DeleteView
@@ -132,14 +133,14 @@ class ProductInlineUpdateView(LoginRequiredMixin, StaffPermissionRequiredMixin, 
         value = request.POST.get('value', '')
 
         if field not in ProductInlineEditForm.base_fields:
-            return JsonResponse({'error': 'That field cannot be edited here.'}, status=400)
+            return JsonResponse({'error': _('That field cannot be edited here.')}, status=400)
 
         data = model_to_dict(product, fields=list(ProductInlineEditForm.base_fields))
 
         if field == 'category':
             category = Category.objects.filter(name=value).first() if value else None
             if value and not category:
-                return JsonResponse({'error': 'Unknown category.'}, status=400)
+                return JsonResponse({'error': _('Unknown category.')}, status=400)
             data['category'] = category.pk if category else ''
         else:
             data[field] = value
@@ -172,38 +173,38 @@ class ProductBulkActionView(LoginRequiredMixin, View):
         ids = request.POST.getlist('ids')
 
         if not ids:
-            return JsonResponse({'error': 'No products selected.'}, status=400)
+            return JsonResponse({'error': _('No products selected.')}, status=400)
 
         products = Product.objects.filter(pk__in=ids)
 
         if action == 'set_category':
             if not request.user.has_perm('products.change_product'):
-                return JsonResponse({'error': 'You do not have permission to do this.'}, status=403)
+                return JsonResponse({'error': _('You do not have permission to do this.')}, status=403)
             value = request.POST.get('value', '')
             category = None
             if value:
                 category = Category.objects.filter(name=value).first()
                 if not category:
-                    return JsonResponse({'error': 'Unknown category.'}, status=400)
+                    return JsonResponse({'error': _('Unknown category.')}, status=400)
             updated = products.update(category=category)
             return JsonResponse({'updated': updated})
 
         if action == 'set_sell_price':
             if not request.user.has_perm('products.change_product'):
-                return JsonResponse({'error': 'You do not have permission to do this.'}, status=403)
+                return JsonResponse({'error': _('You do not have permission to do this.')}, status=403)
             value = request.POST.get('value', '')
             try:
                 price = Decimal(value)
             except (InvalidOperation, ValueError):
-                return JsonResponse({'error': 'Enter a valid price.'}, status=400)
+                return JsonResponse({'error': _('Enter a valid price.')}, status=400)
             if price < Decimal('0.01'):
-                return JsonResponse({'error': 'Price must be at least 0.01.'}, status=400)
+                return JsonResponse({'error': _('Price must be at least 0.01.')}, status=400)
             updated = products.update(sell_price=price)
             return JsonResponse({'updated': updated})
 
         if action == 'delete':
             if not request.user.has_perm('products.delete_product'):
-                return JsonResponse({'error': 'You do not have permission to do this.'}, status=403)
+                return JsonResponse({'error': _('You do not have permission to do this.')}, status=403)
             # Delete one at a time -- a single protected product in a bulk
             # QuerySet.delete() would abort the whole batch and leave
             # nothing deleted, even the unprotected ones. A product blocked
@@ -223,11 +224,11 @@ class ProductBulkActionView(LoginRequiredMixin, View):
             response = {'deleted': deleted, 'archived': len(archived)}
             if archived:
                 response['message'] = (
-                    'Archived instead (has sale/delivery history): ' + ', '.join(archived)
+                    _('Archived instead (has sale/delivery history): ') + ', '.join(archived)
                 )
             return JsonResponse(response)
 
-        return JsonResponse({'error': 'Unknown action.'}, status=400)
+        return JsonResponse({'error': _('Unknown action.')}, status=400)
 
 
 class ProductDetailView(LoginRequiredMixin, StaffPermissionRequiredMixin, DetailView):
@@ -725,7 +726,7 @@ class ProductDeleteView(LoginRequiredMixin, StaffPermissionRequiredMixin, Delete
             self.object.delete()
         except ProtectedError:
             context = self.get_context_data(
-                protected_error=(
+                protected_error=_(
                     "Cannot delete this product -- it has delivery or sale "
                     "history linked to it. Archive it instead to hide it "
                     "from the Products list without losing that history."
@@ -804,7 +805,7 @@ class CategoryBulkDeleteView(LoginRequiredMixin, StaffPermissionRequiredMixin, V
     def post(self, request):
         ids = request.POST.getlist('ids')
         if not ids:
-            return JsonResponse({'error': 'No categories selected.'}, status=400)
+            return JsonResponse({'error': _('No categories selected.')}, status=400)
 
         deleted = 0
         for category in Category.objects.filter(pk__in=ids):

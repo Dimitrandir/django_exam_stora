@@ -1,78 +1,78 @@
 {% extends 'base.html' %}
 
 {% block title %}STORA - {{ product.name }}{% endblock %}
-{% load currency_filters %}
+{% load currency_filters i18n %}
 
 {% block content %}
 <h1>{{ product.name }}</h1>
 
 <div class="info">
-    <p><strong>ID: </strong>{{ product.internal_code }}</p>
-    <p><strong>Category: </strong>{{ product.category }}</p>
-    <p><strong>Sold by: </strong>{{ product.get_unit_type_display }}</p>
+    <p><strong>{% translate "ID:" %} </strong>{{ product.internal_code }}</p>
+    <p><strong>{% translate "Category:" %} </strong>{{ product.category }}</p>
+    <p><strong>{% translate "Sold by:" %} </strong>{{ product.get_unit_type_display }}</p>
     {% if not product.is_recipe %}
-    <p><strong>Available Qty: </strong>{{ product.quantity|quantity_display:product.unit_type }}</p>
+    <p><strong>{% translate "Available Qty:" %} </strong>{{ product.quantity|quantity_display:product.unit_type }}</p>
     {% endif %}
     {% if product.tax_group %}
-    <p><strong>Tax Group: </strong>{{ product.tax_group.name }} ({{ product.tax_group.rate }}%)</p>
+    <p><strong>{% translate "Tax Group:" %} </strong>{{ product.tax_group.name }} ({{ product.tax_group.rate }}%)</p>
     {% endif %}
     <p>
-        <strong>Delivery Price: </strong>{{ product.delivery_price|currency}}
-        {% if delivery_price_without_vat is not None %}<span class="text-muted">({{ delivery_price_without_vat|currency }} without VAT)</span>{% endif %}
+        <strong>{% translate "Delivery Price:" %} </strong>{{ product.delivery_price|currency}}
+        {% if delivery_price_without_vat is not None %}<span class="text-muted">({% blocktranslate with value=delivery_price_without_vat|currency %}{{ value }} without VAT{% endblocktranslate %})</span>{% endif %}
     </p>
     <p>
-        <strong>Selling Price: </strong>{{ product.sell_price|currency }}
-        {% if sell_price_without_vat is not None %}<span class="text-muted">({{ sell_price_without_vat|currency }} without VAT)</span>{% endif %}
-        {% if markup_percent is not None %}<span class="text-muted">&mdash; Markup: {{ markup_percent }}%</span>{% endif %}
+        <strong>{% translate "Selling Price:" %} </strong>{{ product.sell_price|currency }}
+        {% if sell_price_without_vat is not None %}<span class="text-muted">({% blocktranslate with value=sell_price_without_vat|currency %}{{ value }} without VAT{% endblocktranslate %})</span>{% endif %}
+        {% if markup_percent is not None %}<span class="text-muted">&mdash; {% translate "Markup:" %} {{ markup_percent }}%</span>{% endif %}
     </p>
 
-    <h3>Associated Suppliers:</h3>
+    <h3>{% translate "Associated Suppliers:" %}</h3>
     <ul>
         {% for link in product.product_suppliers.all %}
-            <li>{{ link.supplier.name }}{% if forloop.first %} (Primary){% endif %}</li>
+            <li>{{ link.supplier.name }}{% if forloop.first %} ({% translate "Primary" %}){% endif %}</li>
         {% empty %}
-            <li> No suppliers are associated to this product.</li>
+            <li> {% translate "No suppliers are associated to this product." %}</li>
         {% endfor %}
     </ul>
 
-    <h3>Associated Barcodes:</h3>
+    <h3>{% translate "Associated Barcodes:" %}</h3>
     <ul>
         {% for barcode in product.barcode.all %}
-            <li>{{ barcode.code }}{% if forloop.first %} (Primary){% endif %}</li>
+            <li>{{ barcode.code }}{% if forloop.first %} ({% translate "Primary" %}){% endif %}</li>
         {% empty %}
-            <li> No barcode is associated to this product.</li>
+            <li> {% translate "No barcode is associated to this product." %}</li>
         {% endfor %}
     </ul>
 
     {% if product.is_recipe %}
-    <h3>Recipe Ingredients:</h3>
+    <h3>{% translate "Recipe Ingredients:" %}</h3>
     <ul>
         {% for link in product.recipe_ingredients.all %}
             <li>{{ link.quantity|quantity_display:link.ingredient.unit_type }} {{ link.ingredient.name }}</li>
         {% empty %}
-            <li> No ingredients defined yet.</li>
+            <li> {% translate "No ingredients defined yet." %}</li>
         {% endfor %}
     </ul>
     {% if not product.ingredients_backfilled_at %}
-        <p style="color: #b8860b;">Ingredient stock for past sales of this product is being backfilled in the background.</p>
+        <p style="color: #b8860b;">{% translate "Ingredient stock for past sales of this product is being backfilled in the background." %}</p>
     {% endif %}
     {% endif %}
 
-    <h3>Recent Activity:</h3>
+    <h3>{% translate "Recent Activity:" %}</h3>
     <ul>
         {% for event in recent_events %}
             <li>{{ event.date|date:"Y-m-d H:i" }} &mdash; {{ event.event_type }}: {{ event.quantity_change|quantity_display:product.unit_type }}</li>
         {% empty %}
-            <li>No sales or deliveries yet.</li>
+            <li>{% translate "No sales or deliveries yet." %}</li>
         {% endfor %}
     </ul>
 
 </div>
 
 <div>
-    {% if perms.products.change_product %}<a href="{% url 'product_edit' product.pk %}" class="button_edit">EDIT</a>{% endif %}
-    {% if perms.products.delete_product %}<a href="{% url 'product_delete' product.pk %}" class="button_delete">DELETE</a>{% endif %}
-    <a href="{% url 'product_history' product.pk %}" class="button_history">HISTORY</a>
+    {% if perms.products.change_product %}<a href="{% url 'product_edit' product.pk %}" class="button_edit">{% translate "EDIT" %}</a>{% endif %}
+    {% if perms.products.delete_product %}<a href="{% url 'product_delete' product.pk %}" class="button_delete">{% translate "DELETE" %}</a>{% endif %}
+    <a href="{% url 'product_history' product.pk %}" class="button_history">{% translate "HISTORY" %}</a>
 </div>
 
 

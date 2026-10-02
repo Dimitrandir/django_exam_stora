@@ -1,8 +1,8 @@
-<!doctype html>
+{% load i18n %}<!doctype html>
 <html>
-<head><title>Done</title></head>
+<head><title>{% translate "Done" %}</title></head>
 <body style="font-family: sans-serif; padding: 20px;">
-<p id="popup-close-message">Saved -- sending it back to the product form...</p>
+<p id="popup-close-message">{% translate "Saved -- sending it back to the product form..." %}</p>
 <script>
 if (window.opener) {
     window.opener.postMessage(
@@ -19,7 +19,7 @@ window.close();
 // went through either way, so just tell the user it's safe to close this
 // tab manually and go back.
 setTimeout(function () {
-    document.getElementById('popup-close-message').textContent = 'Saved -- you can close this tab and go back.';
+    document.getElementById('popup-close-message').textContent = '{% translate "Saved -- you can close this tab and go back." %}';
 }, 300);
 </script>
 </body>

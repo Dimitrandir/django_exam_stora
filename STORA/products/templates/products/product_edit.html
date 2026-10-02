@@ -1,12 +1,12 @@
 {% extends 'base.html' %}
-{% load static cache_bust %}
+{% load static cache_bust i18n %}
 
 {% block title %}STORA - Edit Product: {{ product.name }}{% endblock %}
 
 
 {% block content %}
 
-<h1>Edit product: {{ product.name }}</h1>
+<h1>{% blocktranslate with name=product.name %}Edit product: {{ name }}{% endblocktranslate %}</h1>
 
 <form method="post" class="product-form">
     {% csrf_token %}
@@ -17,15 +17,15 @@
     {% endcomment %}
     <section class="product-form__section">
         <header class="product-form__section-header">
-            <h2>Product</h2>
+            <h2>{% translate "Product" %}</h2>
             {% comment %}
             Try both -- switches ONLY how this one row lays out (real
             fields either way, nothing duplicated), so comparing them
             costs nothing.
             {% endcomment %}
             <div class="product-form__layout-toggle" role="group" aria-label="Field layout" id="layout-toggle">
-                <button type="button" data-layout="grouped">Side by side</button>
-                <button type="button" data-layout="stacked">Stacked</button>
+                <button type="button" data-layout="grouped">{% translate "Side by side" %}</button>
+                <button type="button" data-layout="stacked">{% translate "Stacked" %}</button>
             </div>
         </header>
 
@@ -34,7 +34,7 @@
                 {{ form.internal_code.label_tag }}
                 <div class="field__row">
                     {{ form.internal_code }}
-                    <button type="button" id="suggest-next-free-code-btn" class="field__chip">Next free ({{ next_free_code }})</button>
+                    <button type="button" id="suggest-next-free-code-btn" class="field__chip">{% blocktranslate with code=next_free_code %}Next free ({{ code }}){% endblocktranslate %}</button>
                 </div>
                 {{ form.internal_code.errors }}
             </div>
@@ -62,15 +62,15 @@
             <div class="field">
                 {{ form.category.label_tag }}
                 <div class="field__row">
-                    <div class="pill-search-wrapper pill-search-wrapper--with-browse category-search-wrapper" style="max-width: 320px;">
+                    <div class="pill-search-wrapper pill-search-wrapper--with-browse category-search-wrapper" style="max-width: 380px;">
                         <span class="pill-search-wrapper__icon"></span>
-                        <input type="text" id="category-search-input" class="pill-input" placeholder="Search category by name..." autocomplete="off"
+                        <input type="text" id="category-search-input" class="pill-input" placeholder="{% translate 'Search category by name...' %}" autocomplete="off"
                                value="{% if form.instance.category_id %}{{ form.instance.category.name }}{% endif %}">
-                        <button type="button" id="category-tree-btn" class="pill-search-wrapper__browse-btn" title="Browse categories as a tree">Browse</button>
+                        <button type="button" id="category-tree-btn" class="pill-search-wrapper__browse-btn" title="{% translate 'Browse categories as a tree' %}">{% translate "Browse" %}</button>
                         <div id="category-search-results" class="global-search-results"></div>
                     </div>
                     {{ form.category }}
-                    <a href="{% url 'category_create' %}?popup=1" target="_blank" class="field__aux-link">+ New category</a>
+                    <a href="{% url 'category_create' %}?popup=1" target="_blank" class="field__aux-link">{% translate "+ New category" %}</a>
                 </div>
                 {{ form.category.errors }}
             </div>
@@ -98,7 +98,7 @@
                         </span>
                     </span>
                     {% if product.is_recipe and not product.ingredients_backfilled_at %}
-                    <span class="field__hint" style="color: #b8860b;">Ingredient stock for past sales of this product is being backfilled in the background.</span>
+                    <span class="field__hint" style="color: #b8860b;">{% translate "Ingredient stock for past sales of this product is being backfilled in the background." %}</span>
                     {% endif %}
                     {{ form.is_recipe.errors }}
                 </div>
@@ -125,16 +125,16 @@
     </section>
 
     <section class="product-form__section">
-        <header class="product-form__section-header"><h2>Barcode</h2></header>
+        <header class="product-form__section-header"><h2>{% translate "Barcode" %}</h2></header>
         {% include 'products/_barcode_formset.html' %}
     </section>
 
     <section class="product-form__section">
         <header class="product-form__section-header">
-            <h2>Price</h2>
+            <h2>{% translate "Price" %}</h2>
             <div class="product-form__layout-toggle" role="group" aria-label="Field layout" id="price-layout-toggle">
-                <button type="button" data-layout="grouped">Side by side</button>
-                <button type="button" data-layout="stacked">Stacked</button>
+                <button type="button" data-layout="grouped">{% translate "Side by side" %}</button>
+                <button type="button" data-layout="stacked">{% translate "Stacked" %}</button>
             </div>
         </header>
 
@@ -148,7 +148,7 @@
             <div class="field field--money">
                 {{ form.delivery_price.label_tag }}
                 {{ form.delivery_price }}
-                <span id="delivery-price-recipe-hint" class="field__hint" style="display:none;">Auto-calculated from ingredient costs.</span>
+                <span id="delivery-price-recipe-hint" class="field__hint" style="display:none;">{% translate "Auto-calculated from ingredient costs." %}</span>
                 {{ form.delivery_price.errors }}
             </div>
 
@@ -160,10 +160,10 @@
 
             <div class="field field--tiny">
                 <span class="field__label-row">
-                    <label for="markup-percent-input">Markup %</label>
+                    <label for="markup-percent-input">{% translate "Markup %" %}</label>
                     <span class="popup-tip popup-tip--left">
                         <button type="button" class="popup-tip__trigger" aria-label="Explanation">?</button>
-                        <span class="popup-tip__bubble">Type either Selling Price or Markup % -- the other fills in, based on Last Delivery Price.</span>
+                        <span class="popup-tip__bubble">{% translate "Type either Selling Price or Markup % -- the other fills in, based on Last Delivery Price." %}</span>
                     </span>
                 </span>
                 <div class="product-form__markup">
@@ -174,16 +174,16 @@
 
         <div class="product-form__stack">
             <label class="product-form__vat-row">
-                <input type="checkbox" id="show-prices-without-vat"> Show prices without VAT too
+                <input type="checkbox" id="show-prices-without-vat"> {% translate "Show prices without VAT too" %}
             </label>
 
             <div class="product-form__without-vat" id="without-vat-fields" style="display:none;">
                 <div class="field field--money">
-                    <label for="delivery-price-without-vat-input">Delivery Price (without VAT)</label>
+                    <label for="delivery-price-without-vat-input">{% translate "Delivery Price (without VAT)" %}</label>
                     <input type="number" id="delivery-price-without-vat-input" step="0.01">
                 </div>
                 <div class="field field--money">
-                    <label for="sell-price-without-vat-input">Selling Price (without VAT)</label>
+                    <label for="sell-price-without-vat-input">{% translate "Selling Price (without VAT)" %}</label>
                     <input type="number" id="sell-price-without-vat-input" step="0.01">
                 </div>
             </div>
@@ -192,17 +192,17 @@
 
     <section class="product-form__section">
         <header class="product-form__section-header">
-            <h2>Supplier</h2>
-            <a href="{% url 'suppliers_create' %}?popup=1" target="_blank" class="field__aux-link">+ New supplier</a>
+            <h2>{% translate "Supplier" %}</h2>
+            <a href="{% url 'suppliers_create' %}?popup=1" target="_blank" class="field__aux-link">{% translate "+ New supplier" %}</a>
         </header>
         {% include 'products/_supplier_formset.html' %}
     </section>
 
     <div class="product-form__actions">
-        <button type="submit">Update Product</button>
+        <button type="submit">{% translate "Update Product" %}</button>
         <a href="{% url 'product_list'%}"
-           onclick="return confirm('Cancel these changes? Anything edited on this page will be discarded.');">Cancel and back to Products</a>
-        {% if perms.products.delete_product %}<a href="{% url 'product_delete' product.pk %}" class="button_delete">DELETE this product</a>{% endif %}
+           onclick="return confirm('{% translate "Cancel these changes? Anything edited on this page will be discarded." %}');">{% translate "Cancel and back to Products" %}</a>
+        {% if perms.products.delete_product %}<a href="{% url 'product_delete' product.pk %}" class="button_delete">{% translate "DELETE this product" %}</a>{% endif %}
     </div>
 </form>
 
@@ -257,7 +257,7 @@ wireLayoutToggle('price-layout-toggle', 'price-fields-grid');
         if (!data.results.length) {
             var empty = document.createElement('div');
             empty.className = 'global-search-empty';
-            empty.textContent = 'No matches';
+            empty.textContent = '{% translate "No matches" %}';
             resultsBox.appendChild(empty);
             resultsBox.classList.add('is-open');
             return;

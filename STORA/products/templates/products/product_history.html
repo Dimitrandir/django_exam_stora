@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 
 {% block title %}STORA - History: {{ product.name }}{% endblock %}
-{% load static cache_bust %}
+{% load static cache_bust i18n %}
 
 {% block main_class %}main-wide{% endblock %}
 {% block container_class %}container-fluid{% endblock %}
@@ -12,12 +12,12 @@
 
 {% block content %}
 
-<h1>History: {{ product.name }}</h1>
+<h1>{% blocktranslate with name=product.name %}History: {{ name }}{% endblocktranslate %}</h1>
 
 <form method="get" class="mb-3">
     {{ form.start_date.label_tag }} {{ form.start_date }}
     {{ form.end_date.label_tag }} {{ form.end_date }}
-    <button type="submit" class="btn btn-primary btn-sm">Filter</button>
+    <button type="submit" class="btn btn-primary btn-sm">{% translate "Filter" %}</button>
     {{ form.non_field_errors }}
 </form>
 
@@ -26,14 +26,14 @@
     <div id="history-table" class="table-sm"></div>
 </div>
 
-<h3 class="mt-4">Product edits (name, price, category, ...)</h3>
+<h3 class="mt-4">{% translate "Product edits (name, price, category, ...)" %}</h3>
 {{ changes_data|json_script:"changes-table-data" }}
 <div id="changes-table-card" class="data-table-card">
     <div id="changes-table" class="table-sm"></div>
 </div>
 
 <hr>
-<a href="{% url 'product_details' product.pk %}">Cancel and back to product</a>
+<a href="{% url 'product_details' product.pk %}">{% translate "Cancel and back to product" %}</a>
 
 {% endblock %}
 
@@ -44,10 +44,10 @@
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     var table = initExcelStyleTable('#history-table', 'history-table-data', [
-        {title: 'Date', field: 'date', width: 160},
-        {title: 'Event', field: 'event_type', width: 100},
+        {title: '{% translate "Date" %}', field: 'date', width: 160},
+        {title: '{% translate "Event" %}', field: 'event_type', width: 100},
         {
-            title: 'Quantity', field: 'quantity_change', width: 110, hozAlign: 'right', sorter: 'number',
+            title: '{% translate "Quantity" %}', field: 'quantity_change', width: 110, hozAlign: 'right', sorter: 'number',
             formatter: function (cell) {
                 var v = cell.getValue();
                 return v > 0 ? ('+' + v) : v;
@@ -55,11 +55,11 @@ document.addEventListener('DOMContentLoaded', function () {
             bottomCalc: 'sum',
             bottomCalcFormatter: function (cell) {
                 var v = cell.getValue();
-                return (v > 0 ? '+' : '') + v + ' net';
+                return (v > 0 ? '+' : '') + v + ' {% translate "net" %}';
             },
         },
         {
-            title: 'Unit Price', field: 'unit_price', width: 120, hozAlign: 'right', sorter: 'number',
+            title: '{% translate "Unit Price" %}', field: 'unit_price', width: 120, hozAlign: 'right', sorter: 'number',
             formatter: function (cell) {
                 var v = Number(cell.getValue());
                 return isNaN(v) ? '' : v.toFixed(2) + ' eur';
@@ -67,22 +67,22 @@ document.addEventListener('DOMContentLoaded', function () {
             bottomCalc: 'avg',
             bottomCalcFormatter: function (cell) {
                 var v = Number(cell.getValue());
-                return isNaN(v) ? '' : v.toFixed(2) + ' eur avg';
+                return isNaN(v) ? '' : v.toFixed(2) + ' {% translate "eur avg" %}';
             },
         },
-        {title: 'Supplier', field: 'supplier', width: 180},
-        {title: 'Cashier', field: 'cashier', width: 200},
-    ], {placeholder: 'No sales or deliveries for {{ product.name|escapejs }} in this period.'});
+        {title: '{% translate "Supplier" %}', field: 'supplier', width: 180},
+        {title: '{% translate "Cashier" %}', field: 'cashier', width: 200},
+    ], {placeholder: '{% blocktranslate with name=product.name|escapejs %}No sales or deliveries for {{ name }} in this period.{% endblocktranslate %}'});
 
     attachTableExportToToolbar(table, '#history-table-card', 'product-history.xlsx', 'History');
 
     var changesTable = initExcelStyleTable('#changes-table', 'changes-table-data', [
-        {title: 'Date', field: 'date', width: 160},
-        {title: 'Field', field: 'field_name', width: 130},
-        {title: 'Old Value', field: 'old_value', width: 180},
-        {title: 'New Value', field: 'new_value', width: 180},
-        {title: 'Changed By', field: 'changed_by', width: 160},
-    ], {placeholder: 'No tracked edits for {{ product.name|escapejs }} in this period.'});
+        {title: '{% translate "Date" %}', field: 'date', width: 160},
+        {title: '{% translate "Field" %}', field: 'field_name', width: 130},
+        {title: '{% translate "Old Value" %}', field: 'old_value', width: 180},
+        {title: '{% translate "New Value" %}', field: 'new_value', width: 180},
+        {title: '{% translate "Changed By" %}', field: 'changed_by', width: 160},
+    ], {placeholder: '{% blocktranslate with name=product.name|escapejs %}No tracked edits for {{ name }} in this period.{% endblocktranslate %}'});
 
     attachTableExportToToolbar(changesTable, '#changes-table-card', 'product-changes.xlsx', 'Changes');
 });

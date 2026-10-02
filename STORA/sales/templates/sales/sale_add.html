@@ -229,14 +229,15 @@
 
             {% comment %}
             Only shown when the open category's own content doesn't fit on
-            one page -- click advances to the next page (wraps back to 1
-            after the last). Same idea as tapping an already-open pinned
-            folder again (see the script below). No separate "current
+            one page -- one button per page, current one highlighted,
+            click jumps straight there. Tapping an already-open pinned
+            folder again still cycles to the next page too (see
+            openCategory in the script below). No separate "current
             folder" label here -- the open pin's own .is-open styling
             (a slightly different color) is the only "you are here" cue.
             {% endcomment %}
             <div class="category-breadcrumb">
-                <button type="button" id="category-page-indicator" class="category-page-indicator" style="display:none;"></button>
+                <div id="category-pages" class="category-pages"></div>
             </div>
             <div id="category-folders" class="category-grid"></div>
             <div id="category-products" class="category-grid"></div>
@@ -1643,7 +1644,7 @@
 
             const foldersEl = document.getElementById('category-folders');
             const productsEl = document.getElementById('category-products');
-            const pageIndicator = document.getElementById('category-page-indicator');
+            const pagesEl = document.getElementById('category-pages');
             const pinnedBarEl = document.getElementById('category-pinned-bar');
             const editModeBtn = document.getElementById('category-edit-mode-btn');
             const pinPickerEl = document.getElementById('category-pin-picker');
@@ -1738,8 +1739,7 @@
                 const pages = totalPagesFor(currentParentId);
                 if (currentPage >= pages) currentPage = 0;
 
-                pageIndicator.style.display = pages > 1 ? '' : 'none';
-                pageIndicator.textContent = `Page ${currentPage + 1}/${pages} →`;
+                renderPageButtons(pages);
 
                 folders.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE).forEach(cat => {
                     const btn = document.createElement('button');
@@ -1762,7 +1762,30 @@
                 renderPinnedBar();
             }
 
-            pageIndicator.addEventListener('click', () => openCategory(currentParentId));
+            // One button per page, current one highlighted -- replaces the
+            // old single "Page X/Y →" cycling button now that there's
+            // enough room to show them all directly (tapping an already-
+            // open pinned folder still cycles pages too, via openCategory
+            // above).
+            function renderPageButtons(pages) {
+                pagesEl.innerHTML = '';
+                if (pages <= 1) {
+                    pagesEl.style.display = 'none';
+                    return;
+                }
+                pagesEl.style.display = '';
+                for (let i = 0; i < pages; i++) {
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'category-page-btn' + (i === currentPage ? ' is-active' : '');
+                    btn.textContent = String(i + 1);
+                    btn.addEventListener('click', () => {
+                        currentPage = i;
+                        render();
+                    });
+                    pagesEl.appendChild(btn);
+                }
+            }
 
             // -- Fixed shortcut bar (PosPin rows) -- stays visible no
             // matter how deep currentParentId has drilled in. --

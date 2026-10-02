@@ -1,19 +1,19 @@
+{% load i18n %}
 {{ recipe_formset.management_form }}
 
-<p><strong>Ingredients</strong></p>
+<p><strong>{% translate "Ingredients" %}</strong></p>
 <p class="text-muted">
-    Search below to add an ingredient, then set how much of it goes into one
-    unit sold (kg for a weight ingredient, pcs for a piece one).
+    {% translate "Search below to add an ingredient, then set how much of it goes into one unit sold (kg for a weight ingredient, pcs for a piece one)." %}
 </p>
 
 <div class="d-flex gap-2 mb-2">
     <select id="ingredient-category-filter" class="form-select form-select-sm" style="max-width: 220px;">
-        <option value="">All categories</option>
+        <option value="">{% translate "All categories" %}</option>
     </select>
-    <button type="button" id="ingredient-category-tree-btn" class="btn btn-outline-secondary btn-sm" title="Browse categories as a tree">Browse</button>
+    <button type="button" id="ingredient-category-tree-btn" class="btn btn-outline-secondary btn-sm" title="{% translate 'Browse categories as a tree' %}">{% translate "Browse" %}</button>
     <div class="position-relative flex-grow-1" style="max-width: 360px;">
         <input type="search" id="ingredient-search-input" class="form-control form-control-sm"
-               placeholder="Search ingredient by name or code..." autocomplete="off">
+               placeholder="{% translate 'Search ingredient by name or code...' %}" autocomplete="off">
         <div id="ingredient-search-results" class="global-search-results"></div>
     </div>
 </div>
@@ -34,9 +34,9 @@
         </span>
         {{ ingredient_form.quantity.errors }}
         {% if ingredient_form.instance.pk %}
-        <label class="ms-3">{{ ingredient_form.DELETE }} Remove this ingredient</label>
+        <label class="ms-3">{{ ingredient_form.DELETE }} {% translate "Remove this ingredient" %}</label>
         {% else %}
-        <button type="button" class="btn btn-sm btn-outline-danger ms-3 remove-recipe-row">Remove</button>
+        <button type="button" class="btn btn-sm btn-outline-danger ms-3 remove-recipe-row">{% translate "Remove" %}</button>
         {% endif %}
     </div>
     {% endfor %}
@@ -54,7 +54,7 @@
             {{ recipe_formset.empty_form.quantity.label_tag }}
             {{ recipe_formset.empty_form.quantity }}
         </span>
-        <button type="button" class="btn btn-sm btn-outline-danger ms-3 remove-recipe-row">Remove</button>
+        <button type="button" class="btn btn-sm btn-outline-danger ms-3 remove-recipe-row">{% translate "Remove" %}</button>
     </div>
 </template>
 
@@ -160,7 +160,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (sellPrice > 0) {
             var margin = sellPrice - total;
             var marginPct = margin / sellPrice * 100;
-            text = 'Margin vs Selling Price: ' + margin.toFixed(2) + ' (' + marginPct.toFixed(0) + '%)';
+            text = '{% translate "Margin vs Selling Price:" %} ' + margin.toFixed(2) + ' (' + marginPct.toFixed(0) + '%)';
         }
         costSummary.textContent = text;
     }
@@ -220,7 +220,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!data.results.length) {
             var empty = document.createElement('div');
             empty.className = 'global-search-empty';
-            empty.textContent = 'No matches';
+            empty.textContent = '{% translate "No matches" %}';
             resultsBox.appendChild(empty);
             resultsBox.classList.add('is-open');
             return;
@@ -231,7 +231,7 @@ document.addEventListener('DOMContentLoaded', function () {
             row.className = 'global-search-result';
             var label = product.internal_code + ' — ' + product.name;
             if (product.category) label += ' (' + product.category + ')';
-            if (already.indexOf(String(product.id)) !== -1) label += ' ✓ added';
+            if (already.indexOf(String(product.id)) !== -1) label += ' {% translate "✓ added" %}';
             row.textContent = label;
             row.addEventListener('click', function () {
                 addIngredientRow(product);

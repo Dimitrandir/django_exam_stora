@@ -1,23 +1,24 @@
 {% extends 'base.html' %}
+{% load i18n %}
 
-{% block title %}STORA - {% if tax_group %}Edit Tax Group{% else %}New Tax Group{% endif %}{% endblock %}
+{% block title %}STORA - {% if tax_group %}{% translate "Edit Tax Group" %}{% else %}{% translate "New Tax Group" %}{% endif %}{% endblock %}
 
 {% block content %}
 
     {% if tax_group %}
-        <h1>Edit tax group: {{ tax_group.name }}</h1>
+        <h1>{% blocktranslate with name=tax_group.name %}Edit tax group: {{ name }}{% endblocktranslate %}</h1>
     {% else %}
-        <h1>Add new tax group</h1>
+        <h1>{% translate "Add new tax group" %}</h1>
     {% endif %}
 
     <form method="post">
         {% csrf_token %}
         {{ form.as_p }}
-        <button type="submit">Save</button>
+        <button type="submit">{% translate "Save" %}</button>
     </form>
 
     <hr>
 
-    <a href="{% url 'tax_group_list' %}">Cancel</a>
+    <a href="{% url 'tax_group_list' %}">{% translate "Cancel" %}</a>
 
 {% endblock %}

@@ -1,17 +1,18 @@
 {% extends 'base.html' %}
+{% load i18n %}
 
 {% block title %}STORA - Tax Groups{% endblock %}
 
 {% block content %}
 
-<h1>Tax Groups</h1>
+<h1>{% translate "Tax Groups" %}</h1>
 
 <table>
     <thead>
         <tr>
-            <th>Name</th>
-            <th>VAT Rate</th>
-            <th>{% if perms.products.add_taxgroup %}<a href="{% url 'tax_group_create' %}" class="add-btn-table" title="Add a new tax group">+</a>{% endif %}</th>
+            <th>{% translate "Name" %}</th>
+            <th>{% translate "VAT Rate" %}</th>
+            <th>{% if perms.products.add_taxgroup %}<a href="{% url 'tax_group_create' %}" class="add-btn-table" title="{% translate 'Add a new tax group' %}">+</a>{% endif %}</th>
         </tr>
     </thead>
     <tbody>
@@ -20,14 +21,14 @@
             <td>{{ tax_group.name }}</td>
             <td>{{ tax_group.rate }}%</td>
             <td>
-                {% if perms.products.change_taxgroup %}<a href="{% url 'tax_group_edit' tax_group.pk %}">Edit</a>{% endif %}
+                {% if perms.products.change_taxgroup %}<a href="{% url 'tax_group_edit' tax_group.pk %}">{% translate "Edit" %}</a>{% endif %}
                 {% if perms.products.change_taxgroup and perms.products.delete_taxgroup %}|{% endif %}
-                {% if perms.products.delete_taxgroup %}<a href="{% url 'tax_group_delete' tax_group.pk %}">Delete</a>{% endif %}
+                {% if perms.products.delete_taxgroup %}<a href="{% url 'tax_group_delete' tax_group.pk %}">{% translate "Delete" %}</a>{% endif %}
             </td>
         </tr>
         {% empty %}
         <tr>
-            <td colspan="3">No tax groups found.</td>
+            <td colspan="3">{% translate "No tax groups found." %}</td>
         </tr>
         {% endfor %}
     </tbody>

@@ -44,6 +44,40 @@ nav a:hover {
     color: var(--accent-color);
 }
 
+/* BG/EN language switcher (navbar, see base.html) -- a small stadium-pill
+   pair, same shape language as the rest of the app's toggles
+   (.position-chip, .pos-toggle-btn), just compact enough to sit quietly
+   in the navbar next to Login/Logout. */
+.lang-switch {
+    display: flex;
+    gap: 2px;
+    padding: 2px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.lang-switch__btn {
+    border: none;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.75);
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    padding: 0.3rem 0.65rem;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.lang-switch__btn:hover {
+    color: #ffffff;
+}
+
+.lang-switch__btn.is-active {
+    background: var(--brand-cyan-mid);
+    color: #ffffff;
+}
+
 /* Main Content */
 main {
     max-width: 1100px;
@@ -1520,8 +1554,15 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
     font-weight: 600;
 }
 
-.category-page-indicator {
+.category-pages {
     margin-left: auto;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+}
+
+.category-page-btn {
+    min-width: 2rem;
     background: none;
     border: 1px solid #ced4da;
     border-radius: 0.4rem;
@@ -1530,6 +1571,12 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
     font-weight: 400;
     color: #212529;
     cursor: pointer;
+}
+
+.category-page-btn.is-active {
+    background: #0b3d91;
+    border-color: #0b3d91;
+    color: #ffffff;
 }
 
 
@@ -1796,6 +1843,231 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
 .reports-sales,
 .reports-deliveries {
     padding: 0.5rem 0 1rem;
+}
+
+/* ===== Reports Dashboard redesign (STYLES.md palette) =====
+   Scoped entirely to .reports-dashboard__* classes, new to this page --
+   .report-filter__field/.report-card__value/.report-link above are left
+   untouched since sales_report.html/deliveries_report.html still use them
+   (redesign is dashboard-only, confirmed with the user; those two pages
+   keep their current look). */
+
+/* Period filter -- a quick, forgettable control, not a destination, so it
+   reads as a slim inline bar instead of a bordered card competing with
+   the actual report links below it. */
+.reports-dashboard__filter-bar {
+    margin-bottom: 1.5rem;
+}
+
+.reports-dashboard__filter-form {
+    display: flex;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.reports-dashboard__filter-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.reports-dashboard__filter-field label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #5f6a70;
+}
+
+.reports-dashboard__filter-field input {
+    height: 44px;
+    padding: 0 0.9rem;
+    border: 1px solid #d7dee3;
+    border-radius: 999px;
+    background: #ffffff;
+    font-size: 0.9rem;
+}
+
+.reports-dashboard__filter-field input:focus {
+    outline: none;
+    border-color: var(--brand-cyan-mid);
+    box-shadow: 0 0 0 3px rgba(59, 184, 232, 0.2);
+}
+
+.reports-dashboard__filter-submit {
+    height: 44px;
+    padding: 0 1.4rem;
+    border: none;
+    border-radius: 999px;
+    background: linear-gradient(135deg, var(--brand-cyan-mid), var(--brand-blue-deep));
+    color: #ffffff;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    box-shadow: 0 4px 10px rgba(43, 111, 209, 0.25);
+    transition: box-shadow 0.15s ease;
+}
+
+.reports-dashboard__filter-submit:hover {
+    box-shadow: 0 6px 14px rgba(43, 111, 209, 0.35);
+}
+
+/* AI Reports -- the one bold moment on this screen (natural-language
+   reports is the newest, most distinctive capability here), everything
+   else below stays quiet white cards. Real gradient, not a decorative
+   wash on every card. */
+.reports-dashboard__hero {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1.25rem;
+    margin-bottom: 1.5rem;
+    padding: 1.5rem 1.75rem;
+    border-radius: 1.5rem;
+    background: linear-gradient(135deg, var(--brand-cyan-mid), var(--brand-blue-deep));
+    box-shadow: 0 10px 26px rgba(43, 111, 209, 0.3);
+}
+
+.reports-dashboard__hero-text h2 {
+    margin: 0 0 0.3rem;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #ffffff;
+}
+
+.reports-dashboard__hero-text p {
+    margin: 0;
+    max-width: 46ch;
+    color: rgba(255, 255, 255, 0.88);
+    font-size: 0.9rem;
+}
+
+.reports-dashboard__hero-actions {
+    display: flex;
+    gap: 0.6rem;
+    flex-shrink: 0;
+}
+
+.reports-dashboard__hero-btn {
+    padding: 0.55rem 1.2rem;
+    border-radius: 999px;
+    font-weight: 600;
+    font-size: 0.875rem;
+    text-decoration: none;
+    text-align: center;
+    transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.reports-dashboard__hero-btn--ghost {
+    background: rgba(255, 255, 255, 0.16);
+    color: #ffffff;
+    border: 1.5px solid rgba(255, 255, 255, 0.55);
+}
+
+.reports-dashboard__hero-btn--ghost:hover {
+    background: rgba(255, 255, 255, 0.26);
+}
+
+.reports-dashboard__hero-btn--solid {
+    background: #ffffff;
+    color: var(--brand-blue-deep);
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+}
+
+.reports-dashboard__hero-btn--solid:hover {
+    box-shadow: 0 6px 14px rgba(0, 0, 0, 0.2);
+}
+
+/* Category cards -- same soft-shadow/radius language as .data-table-card
+   elsewhere in the app, so this page reads as part of the same family
+   instead of introducing a third card style. */
+.reports-dashboard__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 1rem;
+}
+
+.reports-dashboard__card {
+    display: flex;
+    flex-direction: column;
+    background: #ffffff;
+    border-radius: 1.25rem;
+    padding: 1.25rem 1.4rem;
+    box-shadow: 0 4px 18px rgba(43, 111, 209, 0.08);
+}
+
+.reports-dashboard__card h3 {
+    margin: 0 0 0.75rem;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--primary-color);
+}
+
+/* Links read as a navigable list (Material/iOS table-row language), not
+   four identical stacked buttons repeating the same outline/shadow --
+   the row's own hover background + chevron is what says "this
+   navigates". */
+.reports-dashboard__links {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.reports-dashboard__links a {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.6rem 0.5rem;
+    margin: 0 -0.5rem;
+    border-radius: 0.75rem;
+    color: var(--primary-color);
+    text-decoration: none;
+    font-size: 0.9rem;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.reports-dashboard__links a::after {
+    content: '\203A';
+    color: #b7c0c7;
+    font-size: 1.1rem;
+    line-height: 1;
+    transition: transform 0.15s ease, color 0.15s ease;
+}
+
+.reports-dashboard__links a:hover {
+    background: rgba(59, 184, 232, 0.1);
+    color: var(--brand-blue-deep);
+}
+
+.reports-dashboard__links a:hover::after {
+    color: var(--brand-blue-deep);
+    transform: translateX(2px);
+}
+
+/* "+ New order" -- the one real create action on this screen (everything
+   else here navigates, this one adds something) -- green, matching the
+   create-action language already established by .formset-add-btn/
+   .icon-btn--add. */
+.reports-dashboard__card-cta {
+    display: block;
+    width: fit-content;
+    margin: 0.85rem 0 0;
+    padding: 0.5rem 1.1rem;
+    border-radius: 999px;
+    background: linear-gradient(135deg, var(--brand-green-light), var(--brand-green-deep));
+    color: #ffffff;
+    font-weight: 600;
+    font-size: 0.85rem;
+    text-decoration: none;
+    box-shadow: 0 4px 10px rgba(30, 122, 76, 0.28);
+    transition: box-shadow 0.15s ease;
+}
+
+.reports-dashboard__card-cta:hover {
+    box-shadow: 0 6px 14px rgba(30, 122, 76, 0.38);
 }
 
 .report-filter__field label {
@@ -2111,6 +2383,94 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
     gap: 1rem;
 }
 
+/* Barcode #N label, the code input, and the scale-barcode checkbox+tooltip
+   (first row only) all on one line -- wraps to a second line only if the
+   row genuinely doesn't fit (narrow screen), not by default. */
+.barcode-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 8px 12px;
+    margin-bottom: 8px;
+}
+
+.barcode-row__label {
+    flex-shrink: 0;
+}
+
+.barcode-row__code {
+    flex: 1 1 200px;
+    min-width: 160px;
+}
+
+.barcode-row__code input {
+    width: 100%;
+}
+
+.barcode-row__scale,
+.barcode-row__remove {
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+/* Same idea for the supplier row -- the position label ("Primary" etc.)
+   and the search box on one line. */
+.supplier-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 8px 12px;
+    margin-bottom: 8px;
+}
+
+.supplier-row .supplier-search-wrapper {
+    flex: 1 1 220px;
+    max-width: 320px;
+}
+
+.supplier-row__remove {
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+/* "+ Add another barcode"/"+ Add alternative supplier" -- STYLES.md pill
+   language (rounded, soft shadow, brand gradient), not the plain full-
+   width Bootstrap-blue button these used to inherit from the bare global
+   `button` rule. Green, not cyan/blue -- matches the "green = create,
+   blue = confirm/apply, red = destructive" color system already
+   established for .icon-btn (adding a row is a create action). Centered
+   under its row list, not full width -- it's a small secondary action,
+   not the thing the eye should land on first in the section. */
+.formset-add-btn {
+    display: block;
+    width: fit-content;
+    margin: 0.75rem auto 0;
+    padding: 0.55rem 1.4rem;
+    border: none;
+    border-radius: 999px;
+    background: linear-gradient(135deg, var(--brand-green-light), var(--brand-green-deep));
+    color: #ffffff;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    box-shadow: 0 4px 10px rgba(30, 122, 76, 0.28);
+    transition: box-shadow 0.15s ease, transform 0.1s ease;
+}
+
+.formset-add-btn:hover {
+    box-shadow: 0 6px 14px rgba(30, 122, 76, 0.38);
+}
+
+.formset-add-btn:active {
+    transform: translateY(1px);
+}
+
 .product-form__grid.is-grouped {
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 }
@@ -2377,6 +2737,16 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
    comment above for why these two specifically). */
 .field--tiny {
     max-width: 100px;
+}
+
+/* The Bulgarian labels for these two ("Мерна ед.", "Надценка %") sit right
+   next to the little "?" popup-tip circle in the same flex row, leaving
+   less width for the text itself than the English originals needed --
+   "Надценка %" wrapped onto two lines in the 100px box at the normal
+   0.82rem label size (flagged live, with a screenshot). Scoped to just
+   these two tiny-field labels, not every .field label in the app. */
+.field--tiny .field__label-row label {
+    font-size: 0.72rem;
 }
 
 .field--narrow {

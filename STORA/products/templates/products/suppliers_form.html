@@ -1,23 +1,24 @@
 {% extends 'base.html' %}
+{% load i18n %}
 
-{% block title %}STORA - {% if supplier %}Edit Supplier{% else %}New Supplier{% endif %}{% endblock %}
+{% block title %}STORA - {% if supplier %}{% translate "Edit Supplier" %}{% else %}{% translate "New Supplier" %}{% endif %}{% endblock %}
 
 {% block content %}
 
     {% if supplier %}
-        <h1>Edit supplier: {{ supplier.name }}</h1>
+        <h1>{% blocktranslate with name=supplier.name %}Edit supplier: {{ name }}{% endblocktranslate %}</h1>
     {% else %}
-        <h1>Add new supplier</h1>
+        <h1>{% translate "Add new supplier" %}</h1>
     {% endif %}
 
     <form method="post">
         {% csrf_token %}
         {{ form.as_p }}
-        <button type="submit">Save</button>
+        <button type="submit">{% translate "Save" %}</button>
     </form>
 
     <hr>
 
-    <a href="{% url 'suppliers_list' %}">Cancel</a>
+    <a href="{% url 'suppliers_list' %}">{% translate "Cancel" %}</a>
 
 {% endblock %}

@@ -4,6 +4,15 @@
 // front. Builds its own modal DOM on first use (appended to <body>) so no
 // template has to carry a copy of the markup -- window.openCategoryTreePicker(onSelect) is the entire public API.
 (function () {
+    // Same window.DataTableI18n blob data-table.js reads (see its own
+    // comment) -- base.html renders it once with real {% translate %}
+    // tags, every static .js file that needs a translated string just
+    // reads a key off it, English literal as the fallback.
+    var i18n = window.DataTableI18n || {};
+    function t(key, fallback) {
+        return i18n[key] || fallback;
+    }
+
     var cachedCategories = null;
     var modalEl = null;
 
@@ -18,11 +27,11 @@
             '<div class="modal-dialog">' +
                 '<div class="modal-content">' +
                     '<div class="modal-header">' +
-                        '<h5 class="modal-title">Choose a category</h5>' +
-                        '<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>' +
+                        '<h5 class="modal-title">' + t('chooseACategory', 'Choose a category') + '</h5>' +
+                        '<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="' + t('close', 'Close') + '"></button>' +
                     '</div>' +
                     '<div class="modal-body category-tree-picker">' +
-                        '<input type="text" class="form-control form-control-sm category-tree-picker__search" placeholder="Filter categories...">' +
+                        '<input type="text" class="form-control form-control-sm category-tree-picker__search" placeholder="' + t('filterCategories', 'Filter categories...') + '">' +
                         '<ul class="category-tree" role="tree"></ul>' +
                     '</div>' +
                 '</div>' +

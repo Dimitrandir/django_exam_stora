@@ -1,11 +1,11 @@
 {% extends 'base.html' %}
+{% load i18n %}
 
 {% block title %}STORA - Delete Product{% endblock %}
 
 {% block content %}
 
-<h1>Are you sure you want to delete:
-    "{{ product.name }}"?</h1>
+<h1>{% blocktranslate with name=product.name %}Are you sure you want to delete: "{{ name }}"?{% endblocktranslate %}</h1>
 
 {% if protected_error %}
 <div style="color: red;">{{ protected_error }}</div>
@@ -13,18 +13,18 @@
 {% if perms.products.change_product %}
 <form method="POST" action="{% url 'product_archive' product.pk %}">
     {% csrf_token %}
-    <button type="submit" class="button-save">Archive instead</button>
-    <a href="{% url 'product_list' %}" class="button_cancel">Cancel</a>
+    <button type="submit" class="button-save">{% translate "Archive instead" %}</button>
+    <a href="{% url 'product_list' %}" class="button_cancel">{% translate "Cancel" %}</a>
 </form>
 {% else %}
-<a href="{% url 'product_list' %}" class="button_cancel">Back to Products</a>
+<a href="{% url 'product_list' %}" class="button_cancel">{% translate "Back to Products" %}</a>
 {% endif %}
 
 {% else %}
 <form method="POST">
     {% csrf_token %}
-    <button type="submit" class="delete_button">YES</button>
-    <a href="{% url 'product_list' %}" class="button_cancel">NO</a>
+    <button type="submit" class="delete_button">{% translate "YES" %}</button>
+    <a href="{% url 'product_list' %}" class="button_cancel">{% translate "NO" %}</a>
 
 </form>
 {% endif %}
