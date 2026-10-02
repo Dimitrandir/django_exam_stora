@@ -861,14 +861,14 @@ Apps: accounts, core, products, deliveries, sales, reports.
   той изключва `is_recipe=True` продукти (направен е за recipe picker-а),
   а рецептурен продукт си е продаваем. Колони: `#`, Име, Кол-во,
   Единична цена, Сума — БЕЗ отделна колона за код/баркод (тя вече не е
-  на ред, а е самото поле за търсене отгоре). `numberEditor` custom
-  editor-ът (същия патърн като Deliveries — вграденият Tabulator
-  `editor:'number'` няма Enter-key логика) взима `editorParams` като
-  ФУНКЦИЯ за Qty колоната (`quantityEditorParams(cell)`), не статичен
-  обект — четe `cell.getData().unit_type` за да превключи `min`/`step`
-  между 0.001 (теглови продукт) и 1 (бройков) динамично на ред по ред.
-  Sum→Unit Price обратното изчисление (Qty фиксирано) е същия "source of
-  truth" патърн като Deliveries "Line Total → Unit Price". Грида е в
+  на ред, а е самото поле за търсене отгоре). **Клетките на количката
+  НЕ са директно редактируеми** (махнато по молба на потребителя след QA,
+  2026-10-02) — всяка корекция минава през бутона "Edit" (Edit Line
+  keypad): количество — всички, цена — само Manager (`can_edit_price`).
+  Сървърът го налага и сам: `_enforce_effective_prices()` в `sales_add`
+  презаписва `price_at_sale` с текущата ефективна цена (промо/ценова
+  листа или каталожна) за всеки, който не е Manager — иначе ограничението
+  би било само визуално (цената идва като обикновено поле от формата). Грида е в
   `.sale-items-table-container` с Tabulator `height` опция (не просто
   CSS overflow на wrapper-а) — само така header-ът остава закачен, а
   скролва единствено тялото. `sale_items_initial` (в `sales_add` view)

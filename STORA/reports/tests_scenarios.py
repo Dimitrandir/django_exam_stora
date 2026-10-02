@@ -245,6 +245,34 @@ class ShopDayScenarioTests(TestCase):
         self.assertAlmostEqual(qty_rows['1002']['quantity_sold'], 0.35)
         self.assertAlmostEqual(qty_rows['1005']['quantity_sold'], 3)
 
+    def test_cashier_cannot_change_price_through_post(self):
+        """The cart has no inline price editing and Edit Line's price is
+        Manager-only -- the server must not trust a lower price posted by
+        a modified page either."""
+        self.receive_morning_delivery(timezone.localdate())
+        sale = self.ring_up([{'product': self.cola, 'qty': 1, 'price': '0.01'}], method='CASH', paid=D('0.01'))
+        item = sale.items.get()
+        self.assertEqual(item.price_at_sale, D('2.00'),
+                         'a cashier posted 0.01 for a 2.00 product and the server accepted it')
+        self.assertEqual(SaleAttributes.objects.get(pk=sale.pk).total_amount, D('2.00'))
+
+    def test_cashier_gets_active_promo_price(self):
+        from STORA.pricelists.models import PriceList, PriceListRule
+        today = timezone.localdate()
+        promo = PriceList.objects.create(name='Promo', start_date=today, end_date=today, created_by=self.manager)
+        PriceListRule.objects.create(price_list=promo, scope_type='PRODUCT', product=self.cola, fixed_price=D('1.50'))
+        self.receive_morning_delivery(today)
+        sale = self.ring_up([{'product': self.cola, 'qty': 2, 'price': '2.00'}], method='CARD')
+        self.assertEqual(sale.items.get().price_at_sale, D('1.50'))
+
+    def test_manager_can_override_price(self):
+        self.receive_morning_delivery(timezone.localdate())
+        self.login(self.manager)
+        response = self.client.post(reverse('sale_add'), sale_post(
+            [{'product': self.cola, 'qty': 1, 'price': '1.80'}], method='CARD'))
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(SaleAttributes.objects.latest('pk').items.get().price_at_sale, D('1.80'))
+
     # ------------------------------------------------------------------
     # 3. Refunds
     # ------------------------------------------------------------------

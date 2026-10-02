@@ -705,71 +705,16 @@
             document.getElementById('header-change-due').textContent = '0.00';
         }
 
-        // A weight product (e.g. loose fruit, sold in kg) needs a
-        // fractional quantity like 0.350 -- the Qty column's default
-        // step/min (whole pieces) rejects that. Read dynamically per row
-        // from its own unit_type, carried in the row data.
-        function quantityEditorParams(cell) {
-            return cell.getData().unit_type === 'weight'
-                ? {min: 0.001, step: 0.001}
-                : {min: 1, step: 1};
-        }
-
-        // Tabulator's built-in editor:'number' has no Enter-key handling at
-        // all (confirmed against the vendored build -- its keybinding table
-        // only maps Tab/Shift-Tab/arrows, never Enter/13). A custom editor
-        // gives explicit control: Enter commits via `success()`, Escape
-        // cancels. type="text" + inputmode="decimal", not type="number" --
-        // used to be type="number" for the free native up/down-arrow
-        // increment/decrement, but a number input silently clears its own
-        // .value if it's ever SET (not typed by a real keystroke) to a
-        // string that isn't yet a complete valid number, e.g. "0." mid-way
-        // through "0.350" -- exactly what the on-screen keyboard does (see
-        // CLAUDE.md). Losing the native spinner arrows is the tradeoff;
-        // real min/step enforcement for sale quantity happens server-side
-        // regardless, same as before this change.
-        function numberEditor(cell, onRendered, success, cancel, editorParams) {
-            const input = document.createElement('input');
-            input.type = 'text';
-            input.inputMode = 'decimal';
-            input.style.padding = '4px';
-            input.style.width = '100%';
-            input.style.boxSizing = 'border-box';
-            input.style.height = '100%';
-            input.value = cell.getValue();
-            onRendered(() => { input.focus(); input.select(); });
-
-            function commit() {
-                success(input.value === '' ? 0 : parseFloat(input.value));
-            }
-
-            input.addEventListener('blur', commit);
-            input.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    commit();
-                } else if (e.key === 'Escape') {
-                    cancel();
-                }
-            });
-            return input;
-        }
-
-        // Qty/Unit Price/Sum are linked two ways, same "source of truth"
-        // idea as the Deliveries items grid: editing Qty or Unit Price
-        // recomputes the Sum; editing the Sum directly (e.g. the cashier
-        // was told a flat total for this line) recomputes the Unit Price
-        // instead, with Qty held fixed.
-        function recalcRow(row, source) {
+        // Recomputes a line's Sum after the Edit Line keypad (see below)
+        // changes its Qty or Unit Price. The cart cells themselves are NOT
+        // directly editable -- every correction goes through Edit Line, so
+        // the Manager-only price rule (can_edit_price) can't be sidestepped
+        // by tapping the Price/Sum cell.
+        function recalcRow(row) {
             const data = row.getData();
             const qty = parseFloat(data.sale_quantity) || 0;
-            if (source === 'total_price_row') {
-                const total = parseFloat(data.total_price_row) || 0;
-                row.update({price_at_sale: round2(qty > 0 ? total / qty : 0)});
-            } else {
-                const price = parseFloat(data.price_at_sale) || 0;
-                row.update({total_price_row: round2(qty * price)});
-            }
+            const price = parseFloat(data.price_at_sale) || 0;
+            row.update({total_price_row: round2(qty * price)});
             updateTransactionTotal();
         }
 
@@ -893,7 +838,6 @@
                     // still keeps its real entered precision (e.g. 0.125),
                     // only the aggregate at the bottom rounds for display.
                     title: 'Qty', field: 'sale_quantity', width: 66, minWidth: 54, hozAlign: 'right',
-                    editor: numberEditor, editorParams: quantityEditorParams,
                     bottomCalc: 'sum', bottomCalcFormatter: (cell) => Number(cell.getValue() || 0).toFixed(2),
                 },
                 {
@@ -901,7 +845,6 @@
                     // size was the widest header label in the row, forcing
                     // the column wider than the numbers in it actually need.
                     title: 'Price', field: 'price_at_sale', width: 68, minWidth: 55, hozAlign: 'right',
-                    editor: numberEditor, editorParams: {min: 0.01, step: 0.01},
                     formatter: (cell) => Number(cell.getValue() || 0).toFixed(2),
                 },
                 {
@@ -912,7 +855,6 @@
                     // shrink genuinely hard (very narrow viewport) before
                     // the overflow-x:hidden backstop needs to clip anything.
                     title: 'Sum', field: 'total_price_row', width: 92, minWidth: 78, hozAlign: 'right',
-                    editor: numberEditor, editorParams: {min: 0, step: 0.01},
                     formatter: (cell) => Number(cell.getValue() || 0).toFixed(2),
                     bottomCalc: 'sum', bottomCalcFormatter: (cell) => Number(cell.getValue() || 0).toFixed(2),
                 },
@@ -1055,10 +997,8 @@
             }, 150);
         });
 
-        // -- Selecting a line to delete -- tap its row (the Qty/Unit
-        // Price/Sum cells each swallow their own click to open an editor,
-        // per Tabulator's usual behavior, so in practice this fires from
-        // tapping the # or Name cell). "Delete Line"/"Void Sale" live in
+        // -- Selecting a line to delete/edit -- tap anywhere on its row
+        // (no cell has an inline editor, so no cell swallows the click). "Delete Line"/"Void Sale" live in
         // the page footer, not as a per-row button -- see below. --
         let selectedRowForDelete = null;
 
@@ -1128,7 +1068,7 @@
             const data = selectedRowForDelete.getData();
             const newQty = (parseFloat(data.sale_quantity) || 0) + 1;
             selectedRowForDelete.update({sale_quantity: newQty});
-            recalcRow(selectedRowForDelete, 'sale_quantity');
+            recalcRow(selectedRowForDelete);
             saveDraft();
         });
 
@@ -1207,7 +1147,7 @@
                 updates.price_at_sale = newPrice;
             }
             selectedRowForDelete.update(updates);
-            recalcRow(selectedRowForDelete, 'price_at_sale');
+            recalcRow(selectedRowForDelete);
             saveDraft();
             bootstrap.Modal.getInstance(editLineModalEl).hide();
         });
@@ -1220,11 +1160,6 @@
             saleItemsTable.clearData();
             clearRowSelection();
             updateTransactionTotal();
-            saveDraft();
-        });
-
-        saleItemsTable.on('cellEdited', (cell) => {
-            recalcRow(cell.getRow(), cell.getField());
             saveDraft();
         });
 
@@ -1251,7 +1186,7 @@
             if (existing) {
                 const newQty = (parseFloat(existing.getData().sale_quantity) || 0) + 1;
                 existing.update({sale_quantity: newQty});
-                recalcRow(existing, 'sale_quantity');
+                recalcRow(existing);
                 scrollToRowSafely(existing);
             } else {
                 saleItemsTable.addRow(buildRow(product)).then((row) => {
@@ -1505,7 +1440,7 @@
                     .find(r => String(r.getData().sale_item) === String(product.id));
                 if (existing) {
                     existing.update({sale_quantity: scaleQuantity});
-                    recalcRow(existing, 'sale_quantity');
+                    recalcRow(existing);
                 } else {
                     saleItemsTable.addRow(buildRow(product, {sale_quantity: scaleQuantity})).then(updateTransactionTotal);
                 }
