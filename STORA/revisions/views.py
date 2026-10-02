@@ -8,6 +8,7 @@ from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.translation import gettext as _
 from django.views.decorators.http import require_POST
 from django.views.generic import ListView
 
@@ -142,7 +143,7 @@ def revision_add_item(request, pk):
     try:
         revision = RevisionAttributes.objects.get(pk=pk, status=RevisionAttributes.STATUS_OPEN)
     except RevisionAttributes.DoesNotExist:
-        return JsonResponse({'error': 'This revision is no longer open.'}, status=409)
+        return JsonResponse({'error': _('This revision is no longer open.')}, status=409)
 
     product_id = request.POST.get('product_id')
     product = get_object_or_404(Product, pk=product_id)
@@ -150,14 +151,14 @@ def revision_add_item(request, pk):
     try:
         quantity = Decimal(request.POST.get('quantity', ''))
     except InvalidOperation:
-        return JsonResponse({'error': 'Invalid quantity.'}, status=400)
+        return JsonResponse({'error': _('Invalid quantity.')}, status=400)
     if quantity <= 0:
-        return JsonResponse({'error': 'Quantity must be positive.'}, status=400)
+        return JsonResponse({'error': _('Quantity must be positive.')}, status=400)
 
     try:
         item = RevisionItems.objects.add_count(revision, product, quantity)
     except RevisionAttributes.DoesNotExist:
-        return JsonResponse({'error': 'This revision is no longer open.'}, status=409)
+        return JsonResponse({'error': _('This revision is no longer open.')}, status=409)
 
     item.product = product  # already have it -- skip the extra select_related query
     return JsonResponse(_serialize_item(item))
@@ -176,7 +177,7 @@ def revision_set_item(request, pk):
     try:
         revision = RevisionAttributes.objects.get(pk=pk, status=RevisionAttributes.STATUS_OPEN)
     except RevisionAttributes.DoesNotExist:
-        return JsonResponse({'error': 'This revision is no longer open.'}, status=409)
+        return JsonResponse({'error': _('This revision is no longer open.')}, status=409)
 
     product_id = request.POST.get('product_id')
     product = get_object_or_404(Product, pk=product_id)
@@ -184,9 +185,9 @@ def revision_set_item(request, pk):
     try:
         quantity = Decimal(request.POST.get('quantity', ''))
     except InvalidOperation:
-        return JsonResponse({'error': 'Invalid quantity.'}, status=400)
+        return JsonResponse({'error': _('Invalid quantity.')}, status=400)
     if quantity < 0:
-        return JsonResponse({'error': 'Quantity cannot be negative.'}, status=400)
+        return JsonResponse({'error': _('Quantity cannot be negative.')}, status=400)
 
     item = RevisionItems.objects.set_count(revision, product, quantity)
     item.product = product  # already have it -- skip the extra select_related query
@@ -200,11 +201,11 @@ def revision_remove_item(request, pk, item_id):
     try:
         revision = RevisionAttributes.objects.get(pk=pk, status=RevisionAttributes.STATUS_OPEN)
     except RevisionAttributes.DoesNotExist:
-        return JsonResponse({'error': 'This revision is no longer open.'}, status=409)
+        return JsonResponse({'error': _('This revision is no longer open.')}, status=409)
 
-    deleted, _ = RevisionItems.objects.filter(pk=item_id, revision=revision).delete()
+    deleted, _per_model = RevisionItems.objects.filter(pk=item_id, revision=revision).delete()
     if not deleted:
-        return JsonResponse({'error': 'That row is already gone.'}, status=404)
+        return JsonResponse({'error': _('That row is already gone.')}, status=404)
     return JsonResponse({'ok': True})
 
 
@@ -283,7 +284,7 @@ class RevisionListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListVie
             {
                 'id': revision.pk,
                 'name': revision.name,
-                'status': revision.status,
+                'status': revision.get_status_display(),
                 'started_by': str(revision.started_by),
                 'started_at': revision.started_at.strftime('%Y-%m-%d %H:%M'),
                 'completed_by': str(revision.completed_by) if revision.completed_by else '',

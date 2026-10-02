@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 
 {% block title %}STORA - Stock Revision #{{ revision.pk }}{% endblock %}
-{% load static cache_bust %}
+{% load static cache_bust i18n %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
@@ -12,17 +12,17 @@
 <h1>
     <span id="revision-name-display">{{ revision.name|default:"" }}</span>
     <span class="text-muted">#{{ revision.pk }}</span>
-    {% if revision.status == 'CANCELLED' %} <span class="text-danger">(Cancelled)</span>{% endif %}
+    {% if revision.status == 'CANCELLED' %} <span class="text-danger">{% translate "(Cancelled)" %}</span>{% endif %}
 </h1>
 {% if perms.revisions.change_revisionattributes %}
-<button type="button" id="revision-rename-btn" class="btn btn-sm btn-outline-secondary mb-2">Rename</button>
+<button type="button" id="revision-rename-btn" class="btn btn-sm btn-outline-secondary mb-2">{% translate "Rename" %}</button>
 {% endif %}
 <p class="text-muted">
-    Started by {{ revision.started_by }} at {{ revision.started_at|date:"d.m.Y H:i" }}.
+    {% blocktranslate with who=revision.started_by time=revision.started_at|date:"d.m.Y H:i" %}Started by {{ who }} at {{ time }}.{% endblocktranslate %}
     {% if revision.status == 'CANCELLED' %}
-    Cancelled by {{ revision.completed_by }} at {{ revision.completed_at|date:"d.m.Y H:i" }} -- no stock was changed.
+    {% blocktranslate with who=revision.completed_by time=revision.completed_at|date:"d.m.Y H:i" %}Cancelled by {{ who }} at {{ time }} -- no stock was changed.{% endblocktranslate %}
     {% else %}
-    Completed by {{ revision.completed_by }} at {{ revision.completed_at|date:"d.m.Y H:i" }}.
+    {% blocktranslate with who=revision.completed_by time=revision.completed_at|date:"d.m.Y H:i" %}Completed by {{ who }} at {{ time }}.{% endblocktranslate %}
     {% endif %}
 </p>
 
@@ -83,36 +83,36 @@ document.addEventListener('DOMContentLoaded', function () {
             title: '#', field: 'internal_code', formatter: 'rownum', width: 50, hozAlign: 'center',
             headerFilter: false, hideable: false,
         },
-        {title: 'Code', field: 'internal_code', width: 110},
-        {title: 'Name', field: 'name', width: 250},
-        {title: 'Found Qty', field: 'found_quantity', width: 110, hozAlign: 'right', bottomCalc: 'sum'},
-        {title: 'System Qty', field: 'system_quantity_at_start', width: 120, hozAlign: 'right', bottomCalc: 'sum'},
+        {title: '{% translate "Code" %}', field: 'internal_code', width: 110},
+        {title: '{% translate "Name" %}', field: 'name', width: 250},
+        {title: '{% translate "Found Qty" %}', field: 'found_quantity', width: 110, hozAlign: 'right', bottomCalc: 'sum'},
+        {title: '{% translate "System Qty" %}', field: 'system_quantity_at_start', width: 120, hozAlign: 'right', bottomCalc: 'sum'},
         {
-            title: 'Diff Qty', field: 'quantity_diff', width: 110, hozAlign: 'right',
+            title: '{% translate "Diff Qty" %}', field: 'quantity_diff', width: 110, hozAlign: 'right',
             formatter: quantityDiffFormatter, bottomCalc: 'sum', bottomCalcFormatter: quantityDiffCalcFormatter,
         },
-        {title: 'Unit Price', field: 'price_at_revision', width: 110, hozAlign: 'right', formatter: moneyFormatter},
+        {title: '{% translate "Unit Price" %}', field: 'price_at_revision', width: 110, hozAlign: 'right', formatter: moneyFormatter},
         {
-            title: 'Found Sum', field: 'found_sum', width: 120, hozAlign: 'right',
+            title: '{% translate "Found Sum" %}', field: 'found_sum', width: 120, hozAlign: 'right',
             formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
         },
         {
-            title: 'System Sum', field: 'system_sum', width: 120, hozAlign: 'right',
+            title: '{% translate "System Sum" %}', field: 'system_sum', width: 120, hozAlign: 'right',
             formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
         },
         {
-            title: 'Diff Sum', field: 'sum_diff', width: 120, hozAlign: 'right',
+            title: '{% translate "Diff Sum" %}', field: 'sum_diff', width: 120, hozAlign: 'right',
             formatter: moneyDiffFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
         },
-    ], {placeholder: 'No items were counted in this revision.'});
+    ], {placeholder: '{% translate "No items were counted in this revision." %}'});
 
-    attachTableExportToToolbar(table, '#revision-items-table-card', 'revision_{{ revision.pk }}_items.xlsx', 'Revision Items');
+    attachTableExportToToolbar(table, '#revision-items-table-card', 'revision_{{ revision.pk }}_items.xlsx', '{% translate "Revision Items" %}');
 
     var renameBtn = document.getElementById('revision-rename-btn');
     if (renameBtn) {
         renameBtn.addEventListener('click', function () {
             var current = document.getElementById('revision-name-display').textContent.trim();
-            var name = prompt('Revision name:', current);
+            var name = prompt('{% translate "Revision name:" %}', current);
             if (name === null) return;
             fetch('{% url "revision_rename" revision.pk %}', {
                 method: 'POST',

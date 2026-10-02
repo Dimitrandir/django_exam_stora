@@ -5,7 +5,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: STORA\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-02 21:23+0000\n"
+"POT-Creation-Date: 2026-10-02 21:26+0000\n"
 "PO-Revision-Date: 2026-10-02 00:00+0000\n"
 "Language-Team: Bulgarian\n"
 "Language: bg\n"
@@ -646,6 +646,8 @@ msgstr "Новата продажна цена не можа да бъде за�
 #: STORA/deliveries/templates/deliveries/_delivery_items_table.html:687
 #: STORA/deliveries/templates/deliveries/delivery_details.html:110
 #: STORA/products/templates/products/products_list.html:274
+#: STORA/revisions/templates/revisions/revision_detail.html:187
+#: STORA/revisions/templates/revisions/revision_details.html:86
 msgid "Code"
 msgstr "Код"
 
@@ -657,7 +659,11 @@ msgstr "Код"
 #: STORA/products/templates/products/products_list.html:282
 #: STORA/products/templates/products/suppliers_list.html:18
 #: STORA/products/templates/products/tax_group_list.html:13
-#: STORA/revisions/models.py:23 STORA/sales/templates/sales/sale_add.html:835
+#: STORA/revisions/models.py:23
+#: STORA/revisions/templates/revisions/revision_detail.html:188
+#: STORA/revisions/templates/revisions/revision_details.html:87
+#: STORA/revisions/templates/revisions/revision_list.html:32
+#: STORA/sales/templates/sales/sale_add.html:835
 msgid "Name"
 msgstr "Име"
 
@@ -674,6 +680,8 @@ msgstr "К-во"
 #: STORA/deliveries/templates/deliveries/_delivery_items_table.html:720
 #: STORA/deliveries/templates/deliveries/delivery_details.html:114
 #: STORA/products/templates/products/product_history.html:62
+#: STORA/revisions/templates/revisions/revision_detail.html:200
+#: STORA/revisions/templates/revisions/revision_details.html:94
 #: STORA/sales/forms.py:43
 msgid "Unit Price"
 msgstr "Единична цена"
@@ -714,6 +722,7 @@ msgid "No products added to this delivery yet."
 msgstr "Все още няма добавени продукти в тази доставка."
 
 #: STORA/deliveries/templates/deliveries/_delivery_items_table.html:787
+#: STORA/revisions/templates/revisions/revision_detail.html:244
 #: STORA/sales/templates/sales/sale_add.html:1068
 #: STORA/sales/templates/sales/sale_add.html:1086
 #: STORA/sales/templates/sales/sale_add.html:1142
@@ -1065,6 +1074,7 @@ msgid "Confirmed"
 msgstr "Потвърдена"
 
 #: STORA/orders/models.py:62
+#: STORA/revisions/templates/revisions/revision_list.html:33
 msgid "Status"
 msgstr "Статус"
 
@@ -1562,6 +1572,7 @@ msgstr "Премахни тази съставка"
 
 #: STORA/products/templates/products/_recipe_formset.html:39
 #: STORA/products/templates/products/_recipe_formset.html:57
+#: STORA/revisions/templates/revisions/revision_detail.html:315
 msgid "Remove"
 msgstr "Премахни"
 
@@ -2328,14 +2339,18 @@ msgid "Cancelled"
 msgstr "Анулирана"
 
 #: STORA/revisions/models.py:25
+#: STORA/revisions/templates/revisions/revision_list.html:34
 msgid "Started By"
 msgstr "Започната от"
 
 #: STORA/revisions/models.py:33
+#: STORA/revisions/templates/revisions/revision_list.html:36
 msgid "Completed By"
 msgstr "Приключена от"
 
-#: STORA/revisions/models.py:37 templates/base.html:120
+#: STORA/revisions/models.py:37
+#: STORA/revisions/templates/revisions/revision_home.html:9
+#: templates/base.html:120
 msgid "Stock Revision"
 msgstr "Ревизия на наличности"
 
@@ -2348,8 +2363,224 @@ msgid "Revision Item"
 msgstr "Ред от ревизия"
 
 #: STORA/revisions/models.py:125
+#: STORA/revisions/templates/revisions/revision_detail.html:288
+#: STORA/revisions/templates/revisions/revision_details.html:109
 msgid "Revision Items"
 msgstr "Редове от ревизия"
+
+#: STORA/revisions/templates/revisions/revision_detail.html:22
+#, python-format
+msgid "started by %(who)s at %(time)s"
+msgstr "започната от %(who)s в %(time)s"
+
+#: STORA/revisions/templates/revisions/revision_detail.html:24
+#: STORA/revisions/templates/revisions/revision_details.html:18
+msgid "Rename"
+msgstr "Преименувай"
+
+#: STORA/revisions/templates/revisions/revision_detail.html:31
+msgid ""
+"This revision was just completed on another screen. Reload the page to see "
+"the final result."
+msgstr ""
+"Тази ревизия току-що беше приключена на друг екран. Презареди страницата, за "
+"да видиш крайния резултат."
+
+#: STORA/revisions/templates/revisions/revision_detail.html:37
+msgid "Search or scan a product..."
+msgstr "Търси или сканирай продукт..."
+
+#: STORA/revisions/templates/revisions/revision_detail.html:48
+msgid "Remove Line"
+msgstr "Премахни ред"
+
+#: STORA/revisions/templates/revisions/revision_detail.html:50
+msgid ""
+"Tap a row to select it, then Remove Line to take it out of this revision."
+msgstr ""
+"Цъкни ред, за да го избереш, после „Премахни ред“, за да го извадиш от "
+"ревизията."
+
+#: STORA/revisions/templates/revisions/revision_detail.html:55
+msgid "Complete Revision"
+msgstr "Приключи ревизията"
+
+#: STORA/revisions/templates/revisions/revision_detail.html:56
+msgid "Cancel Revision"
+msgstr "Анулирай ревизията"
+
+#: STORA/revisions/templates/revisions/revision_detail.html:190
+#: STORA/revisions/templates/revisions/revision_details.html:88
+msgid "Found Qty"
+msgstr "Намерено к-во"
+
+#: STORA/revisions/templates/revisions/revision_detail.html:194
+#: STORA/revisions/templates/revisions/revision_details.html:89
+msgid "System Qty"
+msgstr "К-во в системата"
+
+#: STORA/revisions/templates/revisions/revision_detail.html:196
+#: STORA/revisions/templates/revisions/revision_details.html:91
+msgid "Diff Qty"
+msgstr "Разлика к-во"
+
+#: STORA/revisions/templates/revisions/revision_detail.html:204
+#: STORA/revisions/templates/revisions/revision_details.html:96
+msgid "Found Sum"
+msgstr "Сума намерено"
+
+#: STORA/revisions/templates/revisions/revision_detail.html:208
+#: STORA/revisions/templates/revisions/revision_details.html:100
+msgid "System Sum"
+msgstr "Сума в системата"
+
+#: STORA/revisions/templates/revisions/revision_detail.html:212
+#: STORA/revisions/templates/revisions/revision_details.html:104
+msgid "Diff Sum"
+msgstr "Разлика сума"
+
+#: STORA/revisions/templates/revisions/revision_detail.html:215
+msgid "Search or scan a product above to start counting."
+msgstr "Потърси или сканирай продукт отгоре, за да започнеш броенето."
+
+#: STORA/revisions/templates/revisions/revision_detail.html:283
+msgid "Could not save this count -- check your connection and try again."
+msgstr "Броят не можа да бъде записан -- провери връзката и опитай отново."
+
+#: STORA/revisions/templates/revisions/revision_detail.html:315
+msgid "from this revision? This cannot be undone."
+msgstr "от тази ревизия? Това не може да бъде отменено."
+
+#: STORA/revisions/templates/revisions/revision_detail.html:329
+msgid "Could not remove this row -- check your connection and try again."
+msgstr "Редът не можа да бъде премахнат -- провери връзката и опитай отново."
+
+#: STORA/revisions/templates/revisions/revision_detail.html:561
+#: STORA/sales/templates/sales/sale_add.html:1451
+msgid "Product not found"
+msgstr "Продуктът не е намерен"
+
+#: STORA/revisions/templates/revisions/revision_detail.html:589
+#: STORA/revisions/templates/revisions/revision_details.html:115
+msgid "Revision name:"
+msgstr "Име на ревизията:"
+
+#: STORA/revisions/templates/revisions/revision_detail.html:604
+msgid ""
+"Complete this revision? Product quantities will be corrected to match the "
+"found counts. This cannot be undone."
+msgstr ""
+"Да се приключи ли ревизията? Наличностите ще бъдат коригирани според "
+"преброеното. Това не може да бъде отменено."
+
+#: STORA/revisions/templates/revisions/revision_detail.html:610
+msgid "Could not complete the revision."
+msgstr "Ревизията не можа да бъде приключена."
+
+#: STORA/revisions/templates/revisions/revision_detail.html:615
+msgid ""
+"Cancel this revision? All counted quantities will be discarded and nothing "
+"will be applied to stock. This cannot be undone."
+msgstr ""
+"Да се анулира ли ревизията? Всички преброени количества ще бъдат изгубени и "
+"наличностите няма да се променят. Това не може да бъде отменено."
+
+#: STORA/revisions/templates/revisions/revision_detail.html:621
+msgid "Could not cancel the revision."
+msgstr "Ревизията не можа да бъде анулирана."
+
+#: STORA/revisions/templates/revisions/revision_details.html:15
+msgid "(Cancelled)"
+msgstr "(Анулирана)"
+
+#: STORA/revisions/templates/revisions/revision_details.html:21
+#, python-format
+msgid "Started by %(who)s at %(time)s."
+msgstr "Започната от %(who)s в %(time)s."
+
+#: STORA/revisions/templates/revisions/revision_details.html:23
+#, python-format
+msgid "Cancelled by %(who)s at %(time)s -- no stock was changed."
+msgstr "Анулирана от %(who)s в %(time)s -- наличностите не са променени."
+
+#: STORA/revisions/templates/revisions/revision_details.html:25
+#, python-format
+msgid "Completed by %(who)s at %(time)s."
+msgstr "Приключена от %(who)s в %(time)s."
+
+#: STORA/revisions/templates/revisions/revision_details.html:107
+msgid "No items were counted in this revision."
+msgstr "В тази ревизия не са преброени артикули."
+
+#: STORA/revisions/templates/revisions/revision_home.html:15
+#, python-format
+msgid ""
+"There is already an open revision, started by <strong>%(who)s</strong> at "
+"%(time)s. Only one revision can be open at a time."
+msgstr ""
+"Вече има отворена ревизия, започната от <strong>%(who)s</strong> в %(time)s. "
+"Само една ревизия може да е отворена наведнъж."
+
+#: STORA/revisions/templates/revisions/revision_home.html:17
+msgid "Join open revision"
+msgstr "Включи се в отворената ревизия"
+
+#: STORA/revisions/templates/revisions/revision_home.html:20
+msgid "No revision is currently open."
+msgstr "В момента няма отворена ревизия."
+
+#: STORA/revisions/templates/revisions/revision_home.html:23
+msgid "Revision name (optional)"
+msgstr "Име на ревизията (по избор)"
+
+#: STORA/revisions/templates/revisions/revision_home.html:24
+msgid "Start New Revision"
+msgstr "Започни нова ревизия"
+
+#: STORA/revisions/templates/revisions/revision_home.html:28
+msgid "View revision history"
+msgstr "История на ревизиите"
+
+#: STORA/revisions/templates/revisions/revision_list.html:12
+msgid "Revision History"
+msgstr "История на ревизиите"
+
+#: STORA/revisions/templates/revisions/revision_list.html:35
+msgid "Started At"
+msgstr "Започната на"
+
+#: STORA/revisions/templates/revisions/revision_list.html:37
+msgid "Completed At"
+msgstr "Приключена на"
+
+#: STORA/revisions/templates/revisions/revision_list.html:38
+msgid "Items Counted"
+msgstr "Преброени артикули"
+
+#: STORA/revisions/templates/revisions/revision_list.html:39
+msgid "No revisions yet."
+msgstr "Все още няма ревизии."
+
+#: STORA/revisions/views.py:146 STORA/revisions/views.py:161
+#: STORA/revisions/views.py:180 STORA/revisions/views.py:204
+msgid "This revision is no longer open."
+msgstr "Тази ревизия вече не е отворена."
+
+#: STORA/revisions/views.py:154 STORA/revisions/views.py:188
+msgid "Invalid quantity."
+msgstr "Невалидно количество."
+
+#: STORA/revisions/views.py:156
+msgid "Quantity must be positive."
+msgstr "Количеството трябва да е положително."
+
+#: STORA/revisions/views.py:190
+msgid "Quantity cannot be negative."
+msgstr "Количеството не може да е отрицателно."
+
+#: STORA/revisions/views.py:208
+msgid "That row is already gone."
+msgstr "Този ред вече е премахнат."
 
 #: STORA/sales/forms.py:30
 msgid "Product Code / Barcode"
@@ -2826,10 +3057,6 @@ msgstr "Въведи количество, по-голямо от 0."
 #: STORA/sales/templates/sales/sale_add.html:1179
 msgid "Are you sure you want to delete the whole bill?"
 msgstr "Сигурен ли си, че искаш да изтриеш цялата сметка?"
-
-#: STORA/sales/templates/sales/sale_add.html:1451
-msgid "Product not found"
-msgstr "Продуктът не е намерен"
 
 #: STORA/sales/templates/sales/sale_add.html:1551 templates/base.html:44
 msgid "Switch keyboard language"

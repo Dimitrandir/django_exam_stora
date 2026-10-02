@@ -209,7 +209,10 @@ class RevisionViewTests(TestCase):
         revision = RevisionAttributes.objects.create(started_by=self.warehouse)
         revision.status = RevisionAttributes.STATUS_CANCELLED
         revision.save(update_fields=['status'])
-        response = self.client.get(reverse('revision_view', args=[revision.pk]))
+        # Explicit English -- Bulgarian is the default display language
+        # (see STORA/settings.py LANGUAGE_CODE); this test checks which
+        # template/branch renders, not the translation.
+        response = self.client.get(reverse('revision_view', args=[revision.pk]), HTTP_ACCEPT_LANGUAGE='en')
         self.assertTemplateUsed(response, 'revisions/revision_details.html')
         self.assertContains(response, 'Cancelled by')
 
