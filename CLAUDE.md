@@ -1598,11 +1598,9 @@ helper в `core/utils.py` (разбива по whitespace, AND между дум
    
  **не през CDN**, защото системата е за реален магазин и не бива да зависи  
    
- от външен интернет за да зареди таблица. (Bootstrap в момента се тегли през  
-   
- CDN в templates/base.html — стар избор отпреди тази конвенция, отделен  
-   
- проблем, не Tabulator-свързан.)  
+ от външен интернет за да зареди таблица. (Bootstrap + Bootstrap Icons вече също са локално в static/vendor/bootstrap/ и
+ static/vendor/bootstrap-icons/ — преди идваха от CDN и без интернет касата
+ не можеше да приключи продажба: checkout модалът ползва bootstrap.Modal.)  
 Споделеният helper е в static/js/data-table.js  
    
  (initExcelStyleTable(selector, jsonScriptId, columns, options)). Патърн за  
