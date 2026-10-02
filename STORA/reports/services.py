@@ -5,7 +5,7 @@ from django.db.models import F, Sum
 from STORA.deliveries.models import DeliveryAttributes, DeliveryItems
 from STORA.products.models import Product, RecipeIngredient
 from STORA.revisions.models import RevisionAttributes, RevisionItems
-from STORA.sales.models import SaleItems
+from STORA.sales.models import RefundItems, SaleItems
 
 
 def stock_as_of(as_of_date):
@@ -15,8 +15,9 @@ def stock_as_of(as_of_date):
     There's no day-by-day snapshot table -- Product.quantity is just
     "whatever it currently is". So instead this starts from the CURRENT
     quantity and undoes every dated stock movement that happened strictly
-    AFTER `as_of_date`: sales, deliveries/write-offs/scrap, completed
-    revisions, and recipe-ingredient consumption. Every one of those has a
+    AFTER `as_of_date`: sales, refunds (сторно -- gives stock back),
+    deliveries/write-offs/scrap, completed revisions, and recipe-ingredient
+    consumption. Every one of those has a
     well-defined signed effect on Product.quantity (the forward version of
     the same events is in products/views.py::ProductHistoryView), so
     "as-of quantity" = current - sum(signed effect of events after the date).
@@ -79,6 +80,21 @@ def stock_as_of(as_of_date):
         if product_id in net_change_after:
             net_change_after[product_id] += row['total']
 
+    # A refund (RefundItems.save()) gives stock back the same way a sale
+    # takes it -- missing this made every product refunded after the chosen
+    # date show too much stock "as of" that date (the sale was undone, the
+    # refund wasn't). Dated by the refund itself, not the original sale.
+    refunds_after = (
+        RefundItems.objects
+        .filter(original_item__sale_item__is_recipe=False, refund__time_of_refund__date__gt=as_of_date)
+        .values('original_item__sale_item_id')
+        .annotate(total=Sum('refund_quantity'))
+    )
+    for row in refunds_after:
+        product_id = row['original_item__sale_item_id']
+        if product_id in net_change_after:
+            net_change_after[product_id] += row['total']
+
     recipe_sales_after = dict(
         SaleItems.objects
         .filter(sale_item__is_recipe=True, sale__time_of_sale__date__gt=as_of_date)
@@ -86,14 +102,26 @@ def stock_as_of(as_of_date):
         .annotate(total=Sum('sale_quantity'))
         .values_list('sale_item_id', 'total')
     )
-    if recipe_sales_after:
+    # Net recipe units consumed after the date: sold minus refunded (a
+    # refunded cappuccino puts its milk/coffee back, see RefundItems.save()).
+    recipe_refunds_after = (
+        RefundItems.objects
+        .filter(original_item__sale_item__is_recipe=True, refund__time_of_refund__date__gt=as_of_date)
+        .values_list('original_item__sale_item_id')
+        .annotate(total=Sum('refund_quantity'))
+    )
+    recipe_net_after = dict(recipe_sales_after)
+    for recipe_id, refunded in recipe_refunds_after:
+        recipe_net_after[recipe_id] = recipe_net_after.get(recipe_id, Decimal('0')) - refunded
+
+    if recipe_net_after:
         ingredient_links = RecipeIngredient.objects.filter(
-            recipe_id__in=recipe_sales_after.keys()
+            recipe_id__in=recipe_net_after.keys()
         ).values_list('recipe_id', 'ingredient_id', 'quantity')
         for recipe_id, ingredient_id, quantity_per_unit in ingredient_links:
             if ingredient_id not in net_change_after:
                 continue
-            net_change_after[ingredient_id] -= quantity_per_unit * recipe_sales_after[recipe_id]
+            net_change_after[ingredient_id] -= quantity_per_unit * recipe_net_after[recipe_id]
 
     return [
         {
