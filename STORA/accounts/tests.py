@@ -116,3 +116,14 @@ class EmployeePermissionTests(TestCase):
     def test_manager_can_see_employee_list(self):
         self.client.force_login(self.manager)
         self.assertEqual(self.client.get(reverse('employee_list')).status_code, 200)
+
+    def test_warehouse_cannot_see_employee_list_or_details(self):
+        warehouse = Employee.objects.create_user(
+            username='warehouse1', password='pass12345', role=Employee.WAREHOUSE
+        )
+        self.client.force_login(warehouse)
+        self.assertEqual(self.client.get(reverse('employee_list')).status_code, 403)
+        self.assertEqual(
+            self.client.get(reverse('employee_details', kwargs={'pk': self.manager.pk})).status_code, 403
+        )
+        self.assertEqual(self.client.get(reverse('global_search'), {'q': 'manager1'}).json()['employees'], [])
