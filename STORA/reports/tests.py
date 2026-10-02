@@ -330,6 +330,8 @@ class SalesReportViewTests(TestCase):
         response = self._get()
         row = next(r for r in response.context['sales_data'] if r['id'] == self.sale.pk)
         self.assertEqual(row['refund_status'], 'Partial')
+        self.assertEqual(row['refunded_amount'], 5.0)
+        self.assertEqual(row['net_amount'], row['total_amount'] - 5.0)
 
     def test_full_refund_shows_fully_status(self):
         refund = RefundAttributes.objects.create(
@@ -591,6 +593,20 @@ class SalesQuantityReportViewTests(TestCase):
         self.assertEqual(row['delivery_price'], 4.0)
         self.assertEqual(row['sell_price'], 7.0)
         self.assertEqual(row['total_amount'], 21.0)
+
+    def test_refund_is_subtracted_from_quantity_and_revenue(self):
+        refund = RefundAttributes.objects.create(
+            original_sale=self.sale, cashier=self.manager, reason=RefundAttributes.RETURN_COMPLAINT,
+        )
+        RefundItems.objects.create(
+            refund=refund, original_item=self.sale.items.get(), refund_quantity=Decimal('1.000'),
+            price_at_refund=Decimal('7.00'),
+        )
+        row = next(r for r in self._get().context['sales_quantity_data'] if r['code'] == self.product.internal_code)
+        self.assertEqual(row['quantity_sold'], 3.0)
+        self.assertEqual(row['refunded_qty'], 1.0)
+        self.assertEqual(row['net_quantity'], 2.0)
+        self.assertEqual(row['total_amount'], 14.0)
 
     def test_product_with_no_sales_in_period_not_listed(self):
         other = Product.objects.create(internal_code='SQ002', name='Butter', sell_price=Decimal('3.00'))
