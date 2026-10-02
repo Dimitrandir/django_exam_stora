@@ -208,7 +208,27 @@ class DeliveryItems(models.Model):
                 delta = self.delivery_quantity
 
             product.quantity += sign * delta
-            product.save(update_fields=['quantity'])
+            update_fields = ['quantity']
+
+            # A real delivery also refreshes the catalog's delivery_price to
+            # what was actually paid this time -- but only from the product's
+            # LATEST delivery (editing an older delivery must not roll the
+            # price back), and never from a 0.00 fallback (no price known).
+            if (self.delivery.movement_type == DeliveryAttributes.MOVEMENT_DELIVERY
+                    and self.price_at_delivery and self.price_at_delivery != product.delivery_price):
+                newer_delivery_exists = DeliveryItems.objects.filter(
+                    delivery_item_id=product.pk,
+                    delivery__movement_type=DeliveryAttributes.MOVEMENT_DELIVERY,
+                    delivery__time_of_delivery__gt=self.delivery.time_of_delivery,
+                ).exclude(pk=self.pk).exists()
+                if not newer_delivery_exists:
+                    product.delivery_price = self.price_at_delivery
+                    update_fields.append('delivery_price')
+                    # Shows up in the product's History as changed by whoever
+                    # received the delivery (see ProductChangeLog signals).
+                    product._changed_by = self.delivery.receiver
+
+            product.save(update_fields=update_fields)
 
             # A real delivery (not write-off/scrap -- those aren't "this
             # supplier brought this product", see OUTGOING_MOVEMENT_TYPES)

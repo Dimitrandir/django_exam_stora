@@ -208,6 +208,36 @@ class ShopDayScenarioTests(TestCase):
         self.assertEqual(self.qty(self.milk), D('0'), 'milk was swapped out of the delivery -- its 10 kg must go back out')
         self.assertEqual(self.qty(self.cheese), D('15.250'), 'cheese should now have its 5.25 + the swapped-in 10')
 
+    def test_delivery_at_new_price_updates_catalog_delivery_price(self):
+        from STORA.products.models import ProductChangeLog
+        self.login(self.warehouse)
+        today = timezone.localdate()
+        self.client.post(reverse('delivery_add'), delivery_post(
+            self.supplier2, self.invoice, 'INV-A', today, [{'product': self.milk, 'qty': '5', 'price': '1.95'}]))
+        self.assertEqual(Product.objects.get(pk=self.milk.pk).delivery_price, D('1.95'))
+        log = ProductChangeLog.objects.filter(product=self.milk, field_name='delivery_price').latest('pk')
+        self.assertEqual((log.old_value, log.new_value, log.changed_by), ('1.80', '1.95', self.warehouse))
+
+        # A newer delivery at 2.10, then a correction to the OLDER one --
+        # the catalog must keep the latest price, not roll back.
+        older = DeliveryAttributes.objects.latest('pk')
+        DeliveryAttributes.objects.filter(pk=older.pk).update(time_of_delivery=timezone.now() - timedelta(hours=2))
+        self.client.post(reverse('delivery_add'), delivery_post(
+            self.supplier2, self.invoice, 'INV-B', today, [{'product': self.milk, 'qty': '5', 'price': '2.10'}]))
+        row = older.items.get()
+        data = delivery_post(self.supplier2, self.invoice, 'INV-A', today,
+                             [{'id': row.pk, 'product': self.milk, 'qty': '5', 'price': '1.90'}])
+        data['receiver'] = str(self.warehouse.pk)
+        older.refresh_from_db()
+        data['time_of_delivery'] = timezone.localtime(older.time_of_delivery).strftime('%Y-%m-%d %H:%M:%S')
+        self.client.post(reverse('delivery_edit', args=[older.pk]), data)
+        self.assertEqual(Product.objects.get(pk=self.milk.pk).delivery_price, D('2.10'))
+
+        # Write-offs never touch the catalog price.
+        self.client.post(reverse('writeoff_add'), delivery_post(
+            self.supplier2, None, '', today, [{'product': self.milk, 'qty': '1', 'price': '0.50'}]))
+        self.assertEqual(Product.objects.get(pk=self.milk.pk).delivery_price, D('2.10'))
+
     # ------------------------------------------------------------------
     # 2. Sales: piece, weight, recipe, payment methods, report numbers
     # ------------------------------------------------------------------
