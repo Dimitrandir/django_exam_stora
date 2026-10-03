@@ -3378,3 +3378,31 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
     padding: 6px 10px;
     text-align: left;
 }
+/* Site navbar search (base.html) -- flexible instead of a fixed 280px
+   min-width, so the whole top bar fits on one row down to the -xl
+   breakpoint (1200px): grows up to 320px when there's room, shrinks to
+   120px when there isn't (measured: at 1200px in Bulgarian, the longest
+   labels, anything wider pushed the Touch Mode icon off-screen).
+   Collapsed (hamburger) layout: full width. */
+.site-navbar .pill-search-wrapper {
+    flex: 1 1 220px;
+    min-width: 120px;
+    max-width: 320px;
+}
+
+@media (max-width: 1199.98px) {
+    .site-navbar .pill-search-wrapper {
+        max-width: none;
+    }
+}
+
+.site-navbar .nav-link,
+.site-navbar .navbar-brand {
+    white-space: nowrap;
+}
+
+/* In the collapsed (hamburger) navbar the items stack in a column and
+   stretch to full width -- keep the BG/EN pill its natural size. */
+.site-navbar .lang-switch {
+    width: fit-content;
+}

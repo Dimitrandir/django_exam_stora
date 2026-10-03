@@ -48,21 +48,19 @@
 </head>
 <body class="bg-light d-flex flex-column min-vh-100 {% block body_class %}{% endblock %}">
 
-<nav class="navbar navbar-expand-xxl navbar-dark bg-dark">
+<nav class="navbar navbar-expand-xl navbar-dark bg-dark site-navbar">
     {% comment %}
-    Bumped from navbar-expand-xl (collapses below 1200px) to -xxl (collapses
-    below 1400px) -- flagged live with a screenshot at a normal ~1280px
-    window: Products/Sales/Stock Movements/Reports + the 280px-min-width
-    search box + BG/EN + Employees + Logout + the Touch Mode icon no longer
-    fit on one row at that width (worse now that some labels are longer in
-    Bulgarian than the English originals they replaced), clipping the
-    right-most icon instead of wrapping. `.container` inside this nav also
-    caps at 1140px at that viewport tier (Bootstrap's own breakpoint
-    max-widths), tighter than the 1280px window itself. Below the new
-    threshold the items now properly collapse into the hamburger menu
-    (stacked vertically, nothing clipped) instead of cramming into one row.
+    Full width (container-fluid), not the centered `.container` -- per the
+    shop owner: STORA sits at the far left and everything else fits on ONE
+    row, instead of a 1140-1320px centered strip that wasted the screen's
+    edges and (with navbar-expand-xxl) collapsed into the hamburger menu
+    below 1400px, i.e. on the common 1280/1366px till screens. The search
+    box is flexible (.site-navbar .pill-search-wrapper in style.css) and
+    the logout button never wraps, so the row fits down to the -xl
+    breakpoint (1200px); below that it still collapses into the hamburger
+    menu (stacked, nothing clipped).
     {% endcomment %}
-    <div class="container">
+    <div class="container-fluid px-3">
         <a class="navbar-brand fw-bold" href="{% url 'index' %}">STORA</a>
 
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNavbar">
@@ -70,7 +68,7 @@
         </button>
 
         <div class="collapse navbar-collapse" id="mainNavbar">
-            <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+            <ul class="navbar-nav me-auto mb-2 mb-xl-0">
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
                         {% translate "Products" %}
@@ -126,7 +124,7 @@
             </ul>
 
             {% if user.is_authenticated %}
-            <div class="pill-search-wrapper position-relative mx-lg-3 my-2 my-lg-0" style="min-width: 280px;">
+            <div class="pill-search-wrapper position-relative mx-xl-2 my-2 my-xl-0">
                 <span class="pill-search-wrapper__icon"></span>
                 <input type="search" id="global-search-input" class="pill-input"
                        placeholder="{% translate 'Search products, suppliers, categories, employees...' %}" autocomplete="off">
@@ -134,7 +132,7 @@
             </div>
             {% endif %}
 
-            <ul class="navbar-nav ms-auto align-items-lg-center">
+            <ul class="navbar-nav align-items-xl-center">
                 <li class="nav-item me-2">
                     {% comment %}
                     Visible regardless of login state -- even the login
@@ -161,7 +159,7 @@
                     <li class="nav-item">
                         <form method="post" action="{% url 'logout' %}" class="d-inline">
                             {% csrf_token %}
-                            <button type="submit" class="btn btn-outline-light btn-sm">{% translate "Logout" %} {{ user.username }}</button>
+                            <button type="submit" class="btn btn-outline-light btn-sm text-nowrap">{% translate "Logout" %} {{ user.username }}</button>
                         </form>
                     </li>
                     <li class="nav-item">
