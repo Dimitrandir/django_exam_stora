@@ -1662,6 +1662,8 @@ Apps: accounts, core, products, deliveries, sales, reports.
 темплейтите, `gettext_lazy as _` в models/forms, `gettext as _` във views),
 преводите са в `locale/bg/LC_MESSAGES/django.po` (+ компилиран `.mo`,
 комитва се и той). Превключвателят BG/EN в navbar-а пази избора в cookie.
+Ред на избор на език: cookie от менюто → езикът на браузъра → `bg`
+(нарочно, потвърдено с потребителя — не принуждавай BG над браузъра).
 - **Работен процес за нов текст:** обвий го → `python manage.py
   makemessages -l bg --ignore=.venv --ignore=static --no-obsolete` →
   попълни празните/`fuzzy` `msgstr` (fuzzy е само предположение на gettext,

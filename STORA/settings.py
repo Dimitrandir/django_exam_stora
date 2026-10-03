@@ -160,11 +160,13 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/6.0/topics/i18n/
 
-# Bulgarian is the default (shown to a browser that's never picked a
-# language here before), but the BG/EN switcher in base.html's navbar
-# (django.views.i18n.set_language, wired in STORA/urls.py) lets each
-# person pick English instead -- their choice is remembered in a cookie,
-# not tied to the URL. LANGUAGES restricts Django to just these two --
+# Which language a request gets (LocaleMiddleware): the BG/EN switcher's
+# cookie first (base.html's navbar -> django.views.i18n.set_language, wired
+# in STORA/urls.py), then the browser's own language (Accept-Language),
+# and only then LANGUAGE_CODE below. So an English-language browser opens
+# in English until someone picks BG once -- deliberately kept that way
+# (confirmed with the user: the menu choice is what should stick). The
+# choice is per browser, not tied to the URL. LANGUAGES restricts Django to just these two --
 # without it, the switcher would need to offer every locale Django ships
 # translations for, not just the one (bg) this project actually writes.
 # Source strings in templates/Python stay in English ({% translate %}/
