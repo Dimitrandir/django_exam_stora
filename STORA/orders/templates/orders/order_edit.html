@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
+{% load static cache_bust i18n %}
 
-{% block title %}STORA - Edit Order {{ order.order_number }}{% endblock %}
-{% load static cache_bust %}
+{% block title %}STORA - {% translate "Edit Order" %} {{ order.order_number }}{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
@@ -10,8 +10,8 @@
 {% block content %}
 
 <div class="d-flex justify-content-between align-items-center mb-3">
-    <h1 class="h2 mb-0">Edit Order {{ order.order_number }}</h1>
-    <a href="{% url 'order_details' order.pk %}" class="btn btn-outline-secondary">Cancel</a>
+    <h1 class="h2 mb-0">{% translate "Edit Order" %} {{ order.order_number }}</h1>
+    <a href="{% url 'order_details' order.pk %}" class="btn btn-outline-secondary">{% translate "Cancel" %}</a>
 </div>
 
 {% if error %}
@@ -19,10 +19,10 @@
 {% endif %}
 
 <p class="text-muted">
-    Supplier: <strong>{{ order.supplier.name }}</strong> --
-    {{ order.get_supplier_position_display }} supplier --
-    period {{ order.period_start|date:"d.m.Y" }} -- {{ order.period_end|date:"d.m.Y" }}
-    <br>Supplier and period can't be changed here -- only quantities. Start a new order to build against a different supplier/period.
+    {% translate "Supplier:" %} <strong>{{ order.supplier.name }}</strong> --
+    {% blocktranslate with position=order.get_supplier_position_display %}{{ position }} supplier{% endblocktranslate %} --
+    {% translate "period" %} {{ order.period_start|date:"d.m.Y" }} -- {{ order.period_end|date:"d.m.Y" }}
+    <br>{% translate "Supplier and period can't be changed here -- only quantities. Start a new order to build against a different supplier/period." %}
 </p>
 
 <form method="post" id="order-form">

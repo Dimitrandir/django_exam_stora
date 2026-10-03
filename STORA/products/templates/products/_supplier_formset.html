@@ -1,41 +1,38 @@
+{% load i18n %}
 {{ supplier_formset.management_form }}
 
 <div id="supplier-forms-container">
     {% for supplier_form in supplier_formset %}
-    <div class="supplier-row" style="border:1px solid #ddd; border-radius:4px; padding:8px 12px; margin-bottom:8px;">
-        <strong class="supplier-index">{% if forloop.first %}Primary{% elif forloop.counter0 == 1 %}Secondary{% elif forloop.counter0 == 2 %}Tertiary{% else %}Alternate #{{ forloop.counter0 }}{% endif %}</strong>
+    <div class="supplier-row">
+        <strong class="supplier-index">{% if forloop.first %}{% translate "Primary" %}{% elif forloop.counter0 == 1 %}{% translate "Secondary" %}{% elif forloop.counter0 == 2 %}{% translate "Tertiary" %}{% else %}{% translate "Alternate #" %}{{ forloop.counter0 }}{% endif %}</strong>
         {{ supplier_form.id }}
         {{ supplier_form.position }}
         {{ supplier_form.supplier }}
-        <p>
-            <div class="position-relative supplier-search-wrapper" style="max-width: 320px;">
-                <input type="text" class="form-control form-control-sm supplier-search-input" placeholder="Search supplier by name..." autocomplete="off"
-                       value="{% if supplier_form.instance.supplier_id %}{{ supplier_form.instance.supplier.name }}{% endif %}">
-                <div class="global-search-results supplier-search-results"></div>
-            </div>
-            {{ supplier_form.supplier.errors }}
-        </p>
+        <div class="position-relative supplier-search-wrapper">
+            <input type="text" class="form-control form-control-sm supplier-search-input" placeholder="{% translate 'Search supplier by name...' %}" autocomplete="off"
+                   value="{% if supplier_form.instance.supplier_id %}{{ supplier_form.instance.supplier.name }}{% endif %}">
+            <div class="global-search-results supplier-search-results"></div>
+        </div>
+        {{ supplier_form.supplier.errors }}
         {% if supplier_form.instance.pk %}
-        <label>{{ supplier_form.DELETE }} Remove this supplier</label>
+        <label class="supplier-row__remove">{{ supplier_form.DELETE }} {% translate "Remove this supplier" %}</label>
         {% endif %}
     </div>
     {% endfor %}
 </div>
 
-<button type="button" id="add-supplier-btn">+ Add another supplier</button>
+<button type="button" id="add-supplier-btn" class="formset-add-btn">{% translate "+ Add alternative supplier" %}</button>
 
 <template id="empty-supplier-form">
-    <div class="supplier-row" style="border:1px solid #ddd; border-radius:4px; padding:8px 12px; margin-bottom:8px;">
+    <div class="supplier-row">
         <strong class="supplier-index"></strong>
         {{ supplier_formset.empty_form.id }}
         {{ supplier_formset.empty_form.position }}
         {{ supplier_formset.empty_form.supplier }}
-        <p>
-            <div class="position-relative supplier-search-wrapper" style="max-width: 320px;">
-                <input type="text" class="form-control form-control-sm supplier-search-input" placeholder="Search supplier by name..." autocomplete="off">
-                <div class="global-search-results supplier-search-results"></div>
-            </div>
-        </p>
+        <div class="position-relative supplier-search-wrapper">
+            <input type="text" class="form-control form-control-sm supplier-search-input" placeholder="{% translate 'Search supplier by name...' %}" autocomplete="off">
+            <div class="global-search-results supplier-search-results"></div>
+        </div>
     </div>
 </template>
 
@@ -50,12 +47,12 @@
     // Same idea as the barcode formset: position 1 = primary, matching
     // whatever's first in the list; renumbering keeps the hidden position
     // input in sync with what's displayed.
-    var POSITION_LABELS = ['Primary', 'Secondary', 'Tertiary'];
+    var POSITION_LABELS = ['{% translate "Primary" %}', '{% translate "Secondary" %}', '{% translate "Tertiary" %}'];
 
     function renumber() {
         container.querySelectorAll('.supplier-row').forEach(function (row, i) {
             var label = row.querySelector('.supplier-index');
-            label.textContent = POSITION_LABELS[i] || ('Alternate #' + i);
+            label.textContent = POSITION_LABELS[i] || ('{% translate "Alternate #" %}' + i);
             var positionInput = row.querySelector('input[name$="-position"]');
             if (positionInput) positionInput.value = i + 1;
         });
@@ -79,7 +76,7 @@
             if (!data.results.length) {
                 var empty = document.createElement('div');
                 empty.className = 'global-search-empty';
-                empty.textContent = 'No matches';
+                empty.textContent = '{% translate "No matches" %}';
                 resultsBox.appendChild(empty);
                 resultsBox.classList.add('is-open');
                 return;

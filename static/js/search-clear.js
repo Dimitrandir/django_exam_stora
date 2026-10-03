@@ -61,7 +61,11 @@
             var clearBtn = document.createElement('button');
             clearBtn.type = 'button';
             clearBtn.className = 'search-clear-btn';
-            clearBtn.setAttribute('aria-label', 'Clear');
+            // Same window.DataTableI18n blob data-table.js reads (see its
+            // own comment) -- base.html renders it once with real
+            // {% translate %} tags, every static .js file that needs a
+            // translated string just reads a key off it.
+            clearBtn.setAttribute('aria-label', (window.DataTableI18n && window.DataTableI18n.clear) || 'Clear');
             clearBtn.textContent = '×';
             parent.insertBefore(clearBtn, input.nextSibling);
 

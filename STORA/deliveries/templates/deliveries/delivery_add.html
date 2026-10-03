@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
+{% load static cache_bust i18n %}
 
-{% block title %}STORA - {% if is_write_off %}New Write-off{% elif is_scrap %}New Scrap{% else %}New Delivery{% endif %}{% endblock %}
-{% load static cache_bust %}
+{% block title %}STORA - {% if is_write_off %}{% translate "New Write-off" %}{% elif is_scrap %}{% translate "New Scrap" %}{% else %}{% translate "New Delivery" %}{% endif %}{% endblock %}
 
 {% block main_class %}main-wide{% endblock %}
 {% block container_class %}container-fluid{% endblock %}
@@ -13,7 +13,7 @@
 {% block content %}
 <section class="delivery-form{% if is_write_off or is_scrap %} delivery-form--writeoff{% endif %}">
     <header class="page-header">
-        <h1>{% if is_write_off %}New Write-off{% elif is_scrap %}New Scrap{% else %}New Delivery{% endif %}</h1>
+        <h1>{% if is_write_off %}{% translate "New Write-off" %}{% elif is_scrap %}{% translate "New Scrap" %}{% else %}{% translate "New Delivery" %}{% endif %}</h1>
     </header>
 
     {% if form.errors %}
@@ -32,7 +32,7 @@
         {% for item_form in formset %}
             {% if item_form.errors %}
                 <div class="form-errors">
-                    Product row {{ forloop.counter }}: {{ item_form.errors }}
+                    {% blocktranslate with row=forloop.counter %}Product row {{ row }}:{% endblocktranslate %} {{ item_form.errors }}
                 </div>
             {% endif %}
         {% endfor %}
@@ -43,7 +43,7 @@
 
         <section class="delivery-form__general">
             <header class="section-header">
-                <h2>General Information</h2>
+                <h2>{% translate "General Information" %}</h2>
             </header>
 
             <div class="delivery-form__fields">
@@ -65,7 +65,7 @@
                             <div class="pill-search-wrapper flex-grow-1">
                                 <span class="pill-search-wrapper__icon"></span>
                                 <input type="text" id="supplier-search-input" class="pill-input"
-                                       placeholder="Search supplier by name..." autocomplete="off"
+                                       placeholder="{% translate "Search supplier by name..." %}" autocomplete="off"
                                        value="{{ selected_supplier_name }}">
                                 <div id="supplier-search-results" class="global-search-results"></div>
                             </div>
@@ -73,7 +73,7 @@
                             {% if not is_write_off %}
                             <a href="{% url 'suppliers_create' %}?popup=1" target="_blank" class="icon-btn icon-btn--add icon-btn--sm">
                                 <span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--add"></span></span>
-                                <span class="icon-btn__label">New supplier</span>
+                                <span class="icon-btn__label">{% translate "New supplier" %}</span>
                             </a>
                             {% endif %}
                         </div>
@@ -106,16 +106,16 @@
 
         <section class="delivery-form__items">
             <header class="section-header">
-                <h2>Products</h2>
+                <h2>{% translate "Products" %}</h2>
             </header>
 
             {% include 'deliveries/_delivery_items_table.html' %}
         </section>
 
         <footer class="page-actions">
-            <button type="submit" class="button-save">{% if is_write_off %}Complete Write-off{% elif is_scrap %}Complete Scrap{% else %}Complete Delivery{% endif %}</button>
+            <button type="submit" class="button-save">{% if is_write_off %}{% translate "Complete Write-off" %}{% elif is_scrap %}{% translate "Complete Scrap" %}{% else %}{% translate "Complete Delivery" %}{% endif %}</button>
             <a href="{% url 'clear_cashier_operation' %}" class="button-cancel"
-               onclick="return confirm('Cancel this delivery? Everything entered so far will be discarded.');">Cancel</a>
+               onclick="return confirm('{% translate "Cancel this delivery? Everything entered so far will be discarded." %}');">{% translate "Cancel" %}</a>
         </footer>
     </form>
 
@@ -159,7 +159,7 @@
                 if (!data.results.length) {
                     var empty = document.createElement('div');
                     empty.className = 'global-search-empty';
-                    empty.textContent = 'No matches';
+                    empty.textContent = '{% translate "No matches" %}';
                     resultsBox.appendChild(empty);
                     resultsBox.classList.add('is-open');
                     return;

@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
+{% load static cache_bust i18n %}
 
-{% block title %}STORA - Stock Revision #{{ revision.pk }}{% endblock %}
-{% load static cache_bust %}
+{% block title %}STORA - {% translate "Stock Revision" %} #{{ revision.pk }}{% endblock %}
 
 {% block main_class %}main-wide{% endblock %}
 {% block container_class %}container-fluid{% endblock %}
@@ -19,23 +19,22 @@
                 <span class="text-muted">#{{ revision.pk }}</span>
             </h1>
             <p class="pos-header__meta">
-                <span id="live-clock"></span> — started by {{ revision.started_by }}
-                at {{ revision.started_at|date:"d.m.Y H:i" }}
+                <span id="live-clock"></span> — {% blocktranslate with who=revision.started_by time=revision.started_at|date:"d.m.Y H:i" %}started by {{ who }} at {{ time }}{% endblocktranslate %}
                 {% if perms.revisions.change_revisionattributes %}
-                <button type="button" id="revision-rename-btn" class="btn btn-sm btn-outline-secondary ms-2">Rename</button>
+                <button type="button" id="revision-rename-btn" class="btn btn-sm btn-outline-secondary ms-2">{% translate "Rename" %}</button>
                 {% endif %}
             </p>
         </div>
     </header>
 
     <div id="revision-closed-banner" class="form-errors" style="display:none;">
-        This revision was just completed on another screen. Reload the page to see the final result.
+        {% translate "This revision was just completed on another screen. Reload the page to see the final result." %}
     </div>
 
     <div class="sale-item-search-row">
         <div class="position-relative sale-item-search-wrapper">
             <input type="search" id="revision-item-search-input" class="form-control"
-                   placeholder="Search or scan a product..." autocomplete="off">
+                   placeholder="{% translate "Search or scan a product..." %}" autocomplete="off">
             <div id="revision-item-search-results" class="global-search-results"></div>
         </div>
     </div>
@@ -46,15 +45,15 @@
 
     {% if can_complete %}
     <div class="d-flex align-items-center gap-2 mt-2">
-        <button type="button" id="revision-remove-line-btn" class="button-delete-line pill-btn">Remove Line</button>
+        <button type="button" id="revision-remove-line-btn" class="button-delete-line pill-btn">{% translate "Remove Line" %}</button>
     </div>
-    <p class="text-muted small mt-1 mb-0">Tap a row to select it, then Remove Line to take it out of this revision.</p>
+    <p class="text-muted small mt-1 mb-0">{% translate "Tap a row to select it, then Remove Line to take it out of this revision." %}</p>
     {% endif %}
 
     {% if can_complete %}
     <footer class="page-actions">
-        <button type="button" id="revision-complete-btn" class="button-save">Complete Revision</button>
-        <button type="button" id="revision-cancel-btn" class="btn btn-outline-danger">Cancel Revision</button>
+        <button type="button" id="revision-complete-btn" class="button-save">{% translate "Complete Revision" %}</button>
+        <button type="button" id="revision-cancel-btn" class="btn btn-outline-danger">{% translate "Cancel Revision" %}</button>
     </footer>
     {% endif %}
 </section>
@@ -185,35 +184,35 @@
     // (upsertRow/setData below) rather than a static one-shot listing.
     const table = initExcelStyleTable('#revision-items-table', 'revision-items-data', [
         {title: '#', field: 'internal_code', formatter: 'rownum', width: 50, hozAlign: 'center', headerFilter: false, hideable: false},
-        {title: 'Code', field: 'internal_code', width: 110},
-        {title: 'Name', field: 'name', widthGrow: 3},
+        {title: '{% translate "Code" %}', field: 'internal_code', width: 110},
+        {title: '{% translate "Name" %}', field: 'name', widthGrow: 3},
         {
-            title: 'Found Qty', field: 'found_quantity', width: 110, hozAlign: 'right', bottomCalc: 'sum',
+            title: '{% translate "Found Qty" %}', field: 'found_quantity', width: 110, hozAlign: 'right', bottomCalc: 'sum',
             editor: numberEditor,
             editorParams: function (cell) { return {min: quantityStep(cell.getData()), step: quantityStep(cell.getData())}; },
         },
-        {title: 'System Qty', field: 'system_quantity_at_start', width: 120, hozAlign: 'right', bottomCalc: 'sum'},
+        {title: '{% translate "System Qty" %}', field: 'system_quantity_at_start', width: 120, hozAlign: 'right', bottomCalc: 'sum'},
         {
-            title: 'Diff Qty', field: 'quantity_diff', width: 110, hozAlign: 'right',
+            title: '{% translate "Diff Qty" %}', field: 'quantity_diff', width: 110, hozAlign: 'right',
             formatter: quantityDiffFormatter, bottomCalc: 'sum', bottomCalcFormatter: quantityDiffCalcFormatter,
         },
         {
-            title: 'Unit Price', field: 'price_at_revision', width: 110, hozAlign: 'right',
+            title: '{% translate "Unit Price" %}', field: 'price_at_revision', width: 110, hozAlign: 'right',
             formatter: moneyFormatter,
         },
         {
-            title: 'Found Sum', field: 'found_sum', width: 120, hozAlign: 'right',
+            title: '{% translate "Found Sum" %}', field: 'found_sum', width: 120, hozAlign: 'right',
             formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
         },
         {
-            title: 'System Sum', field: 'system_sum', width: 120, hozAlign: 'right',
+            title: '{% translate "System Sum" %}', field: 'system_sum', width: 120, hozAlign: 'right',
             formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
         },
         {
-            title: 'Diff Sum', field: 'sum_diff', width: 120, hozAlign: 'right',
+            title: '{% translate "Diff Sum" %}', field: 'sum_diff', width: 120, hozAlign: 'right',
             formatter: moneyDiffFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
         },
-    ], {placeholder: 'Search or scan a product above to start counting.'});
+    ], {placeholder: '{% translate "Search or scan a product above to start counting." %}'});
 
     // -- Selecting a line to remove -- tap its row (same pattern as the
     // Deliveries/Sales grids, see CLAUDE.md "Триене на ред вече не е бутон
@@ -242,7 +241,7 @@
     if (removeLineBtn) {
         removeLineBtn.addEventListener('click', function () {
             if (!selectedRow) {
-                alert('Select a line first (tap its row).');
+                alert('{% translate "Select a line first (tap its row)." %}');
                 return;
             }
             var data = selectedRow.getData();
@@ -281,12 +280,12 @@
             }
             upsertRow(result);
         }).catch(function () {
-            alert('Could not save this count -- check your connection and try again.');
+            alert('{% translate "Could not save this count -- check your connection and try again." %}');
             cell.setValue(previousValue);
         });
     });
 
-    attachTableExportToToolbar(table, '#revision-items-table-card', 'revision_{{ revision.pk }}_items.xlsx', 'Revision Items');
+    attachTableExportToToolbar(table, '#revision-items-table-card', 'revision_{{ revision.pk }}_items.xlsx', '{% translate "Revision Items" %}');
 
     // While a cell (only Found Qty is editable) is actively being edited,
     // the 4s poll below must NOT call table.setData() -- that fully
@@ -313,7 +312,7 @@
     // deletes a real, already-persisted count (shared with every other
     // computer looking at this revision), not just a local draft row.
     function removeItem(id, name) {
-        if (!confirm('Remove "' + name + '" from this revision? This cannot be undone.')) return;
+        if (!confirm('{% translate "Remove" %} „' + name + '“ {% translate "from this revision? This cannot be undone." %}')) return;
         fetch('{% url "revision_view" revision.pk %}remove-item/' + id + '/', {
             method: 'POST',
             headers: {'X-CSRFToken': csrfToken},
@@ -327,7 +326,7 @@
                 var row = table.getRow(id);
                 if (row) row.delete();
             });
-        }).catch(function () { alert('Could not remove this row -- check your connection and try again.'); });
+        }).catch(function () { alert('{% translate "Could not remove this row -- check your connection and try again." %}'); });
     }
 
     // -- Search-to-add, same client-side pattern as the cashier screen
@@ -559,7 +558,7 @@
                 scaleQuantity = decoded.quantity;
             }
         }
-        if (!product) { alert('Product not found'); return; }
+        if (!product) { alert('{% translate "Product not found" %}'); return; }
         addCount(product, scaleQuantity !== null ? scaleQuantity : 1);
         resultsBox.classList.remove('is-open');
         searchInput.value = '';
@@ -587,7 +586,7 @@
     if (renameBtn) {
         renameBtn.addEventListener('click', function () {
             var current = document.getElementById('revision-name-display').textContent.trim();
-            var name = prompt('Revision name:', current);
+            var name = prompt('{% translate "Revision name:" %}', current);
             if (name === null) return;
             fetch('{% url "revision_rename" revision.pk %}', {
                 method: 'POST',
@@ -602,24 +601,24 @@
 
     {% if can_complete %}
     document.getElementById('revision-complete-btn').addEventListener('click', function () {
-        if (!confirm('Complete this revision? Product quantities will be corrected to match the found counts. This cannot be undone.')) return;
+        if (!confirm('{% translate "Complete this revision? Product quantities will be corrected to match the found counts. This cannot be undone." %}')) return;
         fetch('{% url "revision_complete" revision.pk %}', {
             method: 'POST',
             headers: {'X-CSRFToken': csrfToken},
         }).then(function (r) {
             if (r.redirected) { window.location = r.url; return; }
-            return r.json().then(function (data) { alert(data.error || 'Could not complete the revision.'); });
+            return r.json().then(function (data) { alert(data.error || '{% translate "Could not complete the revision." %}'); });
         });
     });
 
     document.getElementById('revision-cancel-btn').addEventListener('click', function () {
-        if (!confirm('Cancel this revision? All counted quantities will be discarded and nothing will be applied to stock. This cannot be undone.')) return;
+        if (!confirm('{% translate "Cancel this revision? All counted quantities will be discarded and nothing will be applied to stock. This cannot be undone." %}')) return;
         fetch('{% url "revision_cancel" revision.pk %}', {
             method: 'POST',
             headers: {'X-CSRFToken': csrfToken},
         }).then(function (r) {
             if (r.redirected) { window.location = r.url; return; }
-            return r.json().then(function (data) { alert(data.error || 'Could not cancel the revision.'); });
+            return r.json().then(function (data) { alert(data.error || '{% translate "Could not cancel the revision." %}'); });
         });
     });
     {% endif %}

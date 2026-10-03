@@ -3,6 +3,7 @@ from decimal import Decimal
 from django.core.validators import MinValueValidator
 from django.db import models, transaction
 from django.db.models import Q
+from django.utils.translation import gettext_lazy as _
 
 from STORA.accounts.models import Employee
 from STORA.products.models import Product
@@ -12,16 +13,16 @@ class RevisionAttributes(models.Model):
     STATUS_OPEN = 'OPEN'
     STATUS_COMPLETED = 'COMPLETED'
     STATUS_CANCELLED = 'CANCELLED'
-    STATUS_CHOICES = [(STATUS_OPEN, 'Open'), (STATUS_COMPLETED, 'Completed'), (STATUS_CANCELLED, 'Cancelled')]
+    STATUS_CHOICES = [(STATUS_OPEN, _('Open')), (STATUS_COMPLETED, _('Completed')), (STATUS_CANCELLED, _('Cancelled'))]
 
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default=STATUS_OPEN)
     # Optional -- most revisions are still fine identified by #pk alone
     # (every template already falls back to that), but a shop running
     # several counts (e.g. "Fridge only", "Weekly full count") wants a
     # label to tell them apart in the history list at a glance.
-    name = models.CharField(max_length=100, blank=True, verbose_name='Name')
+    name = models.CharField(max_length=100, blank=True, verbose_name=_('Name'))
     started_by = models.ForeignKey(Employee, on_delete=models.PROTECT, related_name='revisions_started',
-                                    verbose_name='Started By')
+                                    verbose_name=_('Started By'))
     started_at = models.DateTimeField(auto_now_add=True)
     # Reused for whichever way the revision was actually closed -- completed
     # (stock corrected) or cancelled (discarded, stock untouched). Templates
@@ -29,12 +30,12 @@ class RevisionAttributes(models.Model):
     # appropriately; splitting into separate cancelled_by/cancelled_at
     # fields would just duplicate the same "who closed it, when" concept.
     completed_by = models.ForeignKey(Employee, on_delete=models.PROTECT, null=True, blank=True,
-                                      related_name='revisions_completed', verbose_name='Completed By')
+                                      related_name='revisions_completed', verbose_name=_('Completed By'))
     completed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
-        verbose_name = 'Stock Revision'
-        verbose_name_plural = 'Stock Revisions'
+        verbose_name = _('Stock Revision')
+        verbose_name_plural = _('Stock Revisions')
         ordering = ['-started_at']
         constraints = [
             # DB-level guarantee that at most one revision is OPEN at a
@@ -120,8 +121,8 @@ class RevisionItems(models.Model):
     objects = RevisionItemsManager()
 
     class Meta:
-        verbose_name = 'Revision Item'
-        verbose_name_plural = 'Revision Items'
+        verbose_name = _('Revision Item')
+        verbose_name_plural = _('Revision Items')
         constraints = [
             models.UniqueConstraint(fields=['revision', 'product'], name='one_row_per_product_per_revision'),
         ]

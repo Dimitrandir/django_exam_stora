@@ -22,8 +22,14 @@ class AuthViewTests(TestCase):
         self.assertIn(response.status_code, (302, 405))
 
     def test_wrong_credentials_show_error_once_without_raw_field_name(self):
+        # Explicit English -- the site's default display language is
+        # Bulgarian (see STORA/settings.py LANGUAGE_CODE), and Django ships
+        # its own Bulgarian translation for this built-in AuthenticationForm
+        # message, so an unpinned request would get THAT instead of the
+        # English text this test actually checks the wording/count of.
         response = self.client.post(
-            reverse('login'), {'username': 'nobody', 'password': 'wrong'}
+            reverse('login'), {'username': 'nobody', 'password': 'wrong'},
+            HTTP_ACCEPT_LANGUAGE='en',
         )
         content = response.content.decode()
         self.assertNotIn('__all__', content)

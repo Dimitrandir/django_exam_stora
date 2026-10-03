@@ -1,10 +1,11 @@
 {% extends 'base.html' %}
+{% load i18n %}
 
-{% block title %}STORA - Delete Sale #{{ sale.id }}{% endblock %}
+{% block title %}STORA - {% translate "Delete Sale" %} #{{ sale.id }}{% endblock %}
 
 {% block content %}
 
-<h1>Are you sure you want to delete Sale ID: {{ sale.id }} of {{ sale.time_of_sale | date:"d.m.Y H:i"}}</h1>
+<h1>{% blocktranslate with id=sale.id time=sale.time_of_sale|date:"d.m.Y H:i" %}Are you sure you want to delete Sale ID: {{ id }} of {{ time }}?{% endblocktranslate %}</h1>
 
 {% if protected_error %}
 <div style="color: red;">{{ protected_error }}</div>
@@ -12,8 +13,8 @@
 
 <form method="POST">
     {% csrf_token %}
-    <button type="submit" class="delete_button">YES</button>
-    <a href="{% url 'sales_report' %}" class="button_cancel">NO</a>
+    <button type="submit" class="delete_button">{% translate "YES" %}</button>
+    <a href="{% url 'sales_report' %}" class="button_cancel">{% translate "NO" %}</a>
 </form>
 
 {% endblock %}

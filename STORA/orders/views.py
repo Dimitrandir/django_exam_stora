@@ -12,6 +12,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.dateparse import parse_date
+from django.utils.translation import gettext as _
 from django.views.decorators.http import require_POST
 from django.views.generic import DetailView, ListView
 
@@ -228,7 +229,7 @@ def order_new(request):
             to_create = _save_items_from_post(request)
 
             if not to_create:
-                error = 'Enter at least one requested quantity.'
+                error = _('Enter at least one requested quantity.')
             else:
                 with transaction.atomic():
                     order = OrderAttributes.objects.create(
@@ -274,7 +275,7 @@ def order_edit(request, pk):
         to_save = _save_items_from_post(request)
 
         if not to_save:
-            error = 'Enter at least one requested quantity.'
+            error = _('Enter at least one requested quantity.')
         else:
             with transaction.atomic():
                 order.items.all().delete()
@@ -312,7 +313,7 @@ def order_ai_suggest(request):
     positions = _valid_positions(request.POST.getlist('supplier_position'))
 
     if not supplier or not start_date or not end_date or not positions:
-        return JsonResponse({'error': 'Pick a supplier, position, and period first.'}, status=400)
+        return JsonResponse({'error': _('Pick a supplier, position, and period first.')}, status=400)
 
     candidates_qs = _candidate_products(supplier, positions)
     candidates = [{'id': p.pk, 'name': p.name, 'internal_code': p.internal_code} for p in candidates_qs]
@@ -322,9 +323,9 @@ def order_ai_suggest(request):
     try:
         suggestions = suggest_order_quantities(supplier.name, positions, start_date, end_date, candidates)
     except AIReportsNotConfigured:
-        return JsonResponse({'error': 'AI mode isn’t set up yet -- ANTHROPIC_API_KEY is missing from .env.'}, status=400)
+        return JsonResponse({'error': _('AI mode is not set up yet -- ANTHROPIC_API_KEY is missing from .env.')}, status=400)
     except Exception as exc:
-        return JsonResponse({'error': f'AI request failed: {exc}'}, status=500)
+        return JsonResponse({'error': _('AI request failed: %(error)s') % {'error': exc}}, status=500)
 
     return JsonResponse({'suggestions': suggestions})
 

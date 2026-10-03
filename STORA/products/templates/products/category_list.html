@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
-{% load static cache_bust %}
+{% load static cache_bust i18n %}
 
-{% block title %}STORA - Categories List{% endblock %}
+{% block title %}STORA - {% translate "Categories List" %}{% endblock %}
 
 {% block main_class %}main-wide{% endblock %}
 {% block container_class %}container-fluid{% endblock %}
@@ -14,16 +14,16 @@
 
 <div class="category-list-page">
     <div class="mb-4">
-        <h1 class="h2 mb-1">Categories List</h1>
-        <p class="text-muted mb-0">The category tree used across Products and the POS shortcuts panel. Click a row to edit it, a column header to sort, use the ▾ to filter.</p>
+        <h1 class="h2 mb-1">{% translate "Categories List" %}</h1>
+        <p class="text-muted mb-0">{% translate "The category tree used across Products and the POS shortcuts panel. Click a row to edit it, a column header to sort, use the ▾ to filter." %}</p>
     </div>
 
     {% if can_delete_category %}
     <div id="category-bulk-bar" class="bulk-actions-bar d-none align-items-center gap-2 flex-wrap mb-2">
-        <strong><span id="category-bulk-count">0</span> selected</strong>
+        <strong><span id="category-bulk-count">0</span> {% translate "selected" %}</strong>
         <button type="button" id="category-delete-btn" class="icon-btn icon-btn--delete icon-btn--sm ms-auto">
             <span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--bin"></span></span>
-            <span class="icon-btn__label">Delete selected</span>
+            <span class="icon-btn__label">{% translate "Delete selected" %}</span>
         </button>
     </div>
     {% endif %}
@@ -55,8 +55,8 @@ document.addEventListener('DOMContentLoaded', function () {
     // pattern as the Products grid's own show_on_pos column.
     function posToggleFormatter(cell) {
         return cell.getValue()
-            ? '<button type="button" class="pos-toggle-btn pos-toggle-btn--on">On</button>'
-            : '<button type="button" class="pos-toggle-btn">Off</button>';
+            ? '<button type="button" class="pos-toggle-btn pos-toggle-btn--on">{% translate "On" %}</button>'
+            : '<button type="button" class="pos-toggle-btn">{% translate "Off" %}</button>';
     }
 
     function posToggleCellClick(e, cell) {
@@ -73,12 +73,12 @@ document.addEventListener('DOMContentLoaded', function () {
             .then(function (response) {
                 if (!response.ok) {
                     cell.setValue(!newValue);
-                    alert('Could not save the change.');
+                    alert('{% translate "Could not save the change." %}');
                 }
             })
             .catch(function () {
                 cell.setValue(!newValue);
-                alert('Network error -- change was not saved.');
+                alert('{% translate "Network error -- change was not saved." %}');
             });
     }
 
@@ -99,17 +99,17 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
     columns.push(
-        {title: 'Name', field: 'name', width: 220, bottomCalc: 'count'},
-        {title: 'Parent', field: 'parent', width: 180},
-        {title: 'Description', field: 'description', widthGrow: 2, minWidth: 200},
+        {title: '{% translate "Name" %}', field: 'name', width: 220, bottomCalc: 'count'},
+        {title: '{% translate "Parent" %}', field: 'parent', width: 180},
+        {title: '{% translate "Description" %}', field: 'description', widthGrow: 2, minWidth: 200},
         {
-            title: 'Show on POS', field: 'show_on_pos', width: 130, hozAlign: 'center',
+            title: '{% translate "Show on POS" %}', field: 'show_on_pos', width: 130, hozAlign: 'center',
             formatter: posToggleFormatter, cellClick: posToggleCellClick,
         }
     );
 
     var table = initExcelStyleTable('#categories-table', 'categories-table-data', columns, {
-        placeholder: 'No categories found.',
+        placeholder: '{% translate "No categories found." %}',
         selectableRows: canDelete ? true : false,
     });
 
@@ -141,7 +141,8 @@ document.addEventListener('DOMContentLoaded', function () {
         deleteBtn.addEventListener('click', function () {
             var selected = table.getSelectedData();
             if (!selected.length) return;
-            if (!confirm('Delete ' + selected.length + ' selected categor' + (selected.length === 1 ? 'y' : 'ies') + '? This cannot be undone.')) return;
+            var categoryNoun = selected.length === 1 ? '{% translate "category" %}' : '{% translate "categories" %}';
+            if (!confirm('{% translate "Delete" %} ' + selected.length + ' {% translate "selected" %} ' + categoryNoun + '? {% translate "This cannot be undone." %}')) return;
 
             var body = new URLSearchParams();
             selected.forEach(function (row) { body.append('ids', row.id); });
@@ -152,11 +153,11 @@ document.addEventListener('DOMContentLoaded', function () {
             })
                 .then(function (response) { return response.json().then(function (data) { return {ok: response.ok, data: data}; }); })
                 .then(function (result) {
-                    if (!result.ok) alert(result.data.error || 'Could not delete the selected categories.');
+                    if (!result.ok) alert(result.data.error || '{% translate "Could not delete the selected categories." %}');
                     location.reload();
                 })
                 .catch(function () {
-                    alert('Network error -- change was not saved.');
+                    alert('{% translate "Network error -- change was not saved." %}');
                 });
         });
     }
@@ -171,7 +172,7 @@ document.addEventListener('DOMContentLoaded', function () {
         addCategoryBtn.className = 'icon-btn icon-btn--add icon-btn--sm';
         addCategoryBtn.innerHTML =
             '<span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--add"></span></span>' +
-            '<span class="icon-btn__label">Add category</span>';
+            '<span class="icon-btn__label">{% translate "Add category" %}</span>';
     }
 
     // Export to Excel moves into the table card's own toolbar (the bar

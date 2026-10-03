@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
+{% load static cache_bust i18n %}
 
-{% block title %}STORA - New Sale{% endblock %}
-{% load static cache_bust %}
+{% block title %}STORA - {% translate "New Sale" %}{% endblock %}
 
 {% block main_class %}main-wide{% endblock %}
 {% block container_class %}container-fluid{% endblock %}
@@ -22,11 +22,11 @@
         wasted space.
         {% endcomment %}
         <div class="pos-header__controls">
-            <button type="button" id="pos-menu-toggle-btn" class="pos-icon-btn" title="Menu">☰</button>
-            <button type="button" id="pos-fullscreen-btn" class="pos-icon-btn" title="Fullscreen">⛶</button>
+            <button type="button" id="pos-menu-toggle-btn" class="pos-icon-btn" title="{% translate "Menu" %}">☰</button>
+            <button type="button" id="pos-fullscreen-btn" class="pos-icon-btn" title="{% translate "Fullscreen" %}">⛶</button>
         </div>
         <div class="pos-header__info">
-            <h1>New Sale</h1>
+            <h1>{% translate "New Sale" %}</h1>
             <p class="pos-header__meta"><span id="live-clock"></span> — {{ user.username }}</p>
         </div>
         <div class="pos-header__right">
@@ -58,7 +58,7 @@
 
             <div class="pos-header__totals">
                 <div class="pos-header__total-row">
-                    <span class="pos-header__total-label">Total</span>
+                    <span class="pos-header__total-label">{% translate "Total" %}</span>
                     <span class="pos-header__total-value" id="transaction-total">0.00</span>
                 </div>
                 {% comment %}
@@ -72,7 +72,7 @@
                 next item is added (see addProductToCart).
                 {% endcomment %}
                 <div class="pos-header__total-row pos-header__total-row--change">
-                    <span class="pos-header__total-label">Change</span>
+                    <span class="pos-header__total-label">{% translate "Change" %}</span>
                     <span class="pos-header__total-value" id="header-change-due">{{ last_change|default:"0.00" }}</span>
                 </div>
             </div>
@@ -122,7 +122,7 @@
             <div class="sale-item-search-row">
                 <div class="position-relative sale-item-search-wrapper">
                     <input type="search" id="sale-item-search-input" class="form-control" data-osk-skip
-                           placeholder="Search PRODUCTS..." autocomplete="off">
+                           placeholder="{% translate "Search PRODUCTS..." %}" autocomplete="off">
                     {% comment %}
                     Shows/hides the on-screen keyboard below -- for a touch-
                     screen till with no physical keyboard attached, typing a
@@ -140,7 +140,7 @@
                     the same reason -- they already have the always-visible
                     .checkout-keypad next to them.
                     {% endcomment %}
-                    <button type="button" id="sale-keyboard-toggle-btn" class="sale-keyboard-toggle-btn" title="Show keyboard">⌨</button>
+                    <button type="button" id="sale-keyboard-toggle-btn" class="sale-keyboard-toggle-btn" title="{% translate "Show keyboard" %}">⌨</button>
                     <div id="sale-item-search-results" class="global-search-results"></div>
                     <small id="sale-item-search-hint" class="text-muted"></small>
                 </div>
@@ -171,7 +171,7 @@
                 sits on the panel itself, right where the cashier's eyes
                 already are.
                 {% endcomment %}
-                <button type="button" id="sale-keyboard-close-btn" class="sale-keyboard-close-btn" title="Hide keyboard" aria-label="Hide keyboard">×</button>
+                <button type="button" id="sale-keyboard-close-btn" class="sale-keyboard-close-btn" title="{% translate "Hide keyboard" %}" aria-label="{% translate "Hide keyboard" %}">×</button>
                 <div id="sale-keyboard-keys"></div>
             </div>
 
@@ -195,19 +195,19 @@
         it, so the toggle stays reachable even while that section itself
         is hidden.
         {% endcomment %}
-        <div class="sale-form__resizer" id="sale-form-resizer" title="Drag to resize">
+        <div class="sale-form__resizer" id="sale-form-resizer" title="{% translate "Drag to resize" %}">
             {% comment %} Single glyph, rotated in place via CSS (see
             .sale-form__resizer-toggle.is-open below) instead of swapping
             between '<' and '>' characters -- a smooth turn, not a jump
             cut. Dragging from anywhere on the bar still works the same as
             before -- see the e.target check in the resizer JS. {% endcomment %}
-            <button type="button" id="sale-form-toggle-categories-btn" class="sale-form__resizer-toggle is-open" title="Hide shortcuts">‹</button>
+            <button type="button" id="sale-form-toggle-categories-btn" class="sale-form__resizer-toggle is-open" title="{% translate "Hide shortcuts" %}">‹</button>
         </div>
 
         <section class="sale-form__categories" id="sale-form-categories">
             <header class="section-header">
-                <h2>Shortcuts</h2>
-                <button type="button" id="category-edit-mode-btn" class="category-edit-btn">Edit</button>
+                <h2>{% translate "Shortcuts" %}</h2>
+                <button type="button" id="category-edit-mode-btn" class="category-edit-btn">{% translate "Edit" %}</button>
             </header>
 
             {% comment %}
@@ -222,21 +222,22 @@
 
             <div id="category-pin-picker" class="category-pin-picker" style="display:none;">
                 <select id="category-pin-picker-select"></select>
-                <button type="button" id="category-pin-picker-tree-btn" title="Browse categories as a tree">Browse</button>
-                <button type="button" id="category-pin-picker-add-btn">Add</button>
-                <button type="button" id="category-pin-picker-cancel-btn">Cancel</button>
+                <button type="button" id="category-pin-picker-tree-btn" title="{% translate "Browse categories as a tree" %}">{% translate "Browse" %}</button>
+                <button type="button" id="category-pin-picker-add-btn">{% translate "Add" %}</button>
+                <button type="button" id="category-pin-picker-cancel-btn">{% translate "Cancel" %}</button>
             </div>
 
             {% comment %}
             Only shown when the open category's own content doesn't fit on
-            one page -- click advances to the next page (wraps back to 1
-            after the last). Same idea as tapping an already-open pinned
-            folder again (see the script below). No separate "current
+            one page -- one button per page, current one highlighted,
+            click jumps straight there. Tapping an already-open pinned
+            folder again still cycles to the next page too (see
+            openCategory in the script below). No separate "current
             folder" label here -- the open pin's own .is-open styling
             (a slightly different color) is the only "you are here" cue.
             {% endcomment %}
             <div class="category-breadcrumb">
-                <button type="button" id="category-page-indicator" class="category-page-indicator" style="display:none;"></button>
+                <div id="category-pages" class="category-pages"></div>
             </div>
             <div id="category-folders" class="category-grid"></div>
             <div id="category-products" class="category-grid"></div>
@@ -250,13 +251,13 @@
             removal (one line or the whole cart) is logged for later review
             -- see SaleItemVoidLog / log_removed_sale_item.
             {% endcomment %}
-            <button type="button" id="delete-line-btn" class="button-delete-line">Delete Line</button>
-            <button type="button" id="increment-qty-btn" class="button-increment-qty" title="Add 1 to the selected line">+1</button>
-            <button type="button" id="edit-line-btn" class="button-edit-line" title="Edit the selected line's quantity{% if can_edit_price %}/price{% endif %}">&#9998; Edit</button>
-            <button type="button" id="void-sale-btn" class="button-void-sale">Void Sale</button>
-            <button type="button" id="complete-sale-btn" class="button-save">Complete Sale</button>
-            <a href="{% url 'refund_find' %}" class="btn button-refund" role="button">Refund</a>
-            <a href="{% url 'fiscal_reports' %}" class="btn btn-outline-secondary" role="button">Fiscal Reports</a>
+            <button type="button" id="delete-line-btn" class="button-delete-line">{% translate "Delete Line" %}</button>
+            <button type="button" id="increment-qty-btn" class="button-increment-qty" title="{% translate "Add 1 to the selected line" %}">+1</button>
+            <button type="button" id="edit-line-btn" class="button-edit-line" title="{% if can_edit_price %}{% translate "Edit the quantity/price of the selected line" %}{% else %}{% translate "Edit the quantity of the selected line" %}{% endif %}">&#9998; {% translate "Edit" %}</button>
+            <button type="button" id="void-sale-btn" class="button-void-sale">{% translate "Void Sale" %}</button>
+            <button type="button" id="complete-sale-btn" class="button-save">{% translate "Complete Sale" %}</button>
+            <a href="{% url 'refund_find' %}" class="btn button-refund" role="button">{% translate "Refund" %}</a>
+            <a href="{% url 'fiscal_reports' %}" class="btn btn-outline-secondary" role="button">{% translate "Fiscal Reports" %}</a>
         </footer>
     </form>
 
@@ -270,8 +271,8 @@
         <div class="modal-dialog checkout-modal-dialog">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Complete Sale</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    <h5 class="modal-title">{% translate "Complete Sale" %}</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{% translate "Close" %}"></button>
                 </div>
                 <div class="modal-body checkout-modal-body">
                     {% comment %}
@@ -281,19 +282,19 @@
                     tiles middle, keypad right.
                     {% endcomment %}
                     <div class="checkout-methods-col">
-                        <button type="button" class="payment-method-btn" data-method="CASH">Cash</button>
-                        <button type="button" class="payment-method-btn" data-method="CARD">Card</button>
-                        <button type="button" class="payment-method-btn" data-method="MIXED">Mixed</button>
+                        <button type="button" class="payment-method-btn" data-method="CASH">{% translate "Cash" %}</button>
+                        <button type="button" class="payment-method-btn" data-method="CARD">{% translate "Card" %}</button>
+                        <button type="button" class="payment-method-btn" data-method="MIXED">{% translate "Mixed" %}</button>
                     </div>
 
                     <div class="checkout-tiles-col" id="checkout-tiles-col">
                         <div class="checkout-tile checkout-tile--total">
-                            <span class="checkout-tile__label">Total</span>
+                            <span class="checkout-tile__label">{% translate "Total" %}</span>
                             <span class="checkout-tile__value" id="checkout-total">0.00</span>
                         </div>
 
                         <div class="checkout-tile checkout-tile--input" id="checkout-paid-row">
-                            <label class="checkout-tile__label" for="checkout-paid-input">Paid</label>
+                            <label class="checkout-tile__label" for="checkout-paid-input">{% translate "Paid" %}</label>
                             {% comment %}
                             type="text" + inputmode="decimal", not
                             type="number" -- a number input silently blanks
@@ -310,17 +311,17 @@
                         </div>
 
                         <div class="checkout-tile checkout-tile--input" id="checkout-card-row" style="display: none;">
-                            <label class="checkout-tile__label" for="checkout-card-input">Card amount</label>
+                            <label class="checkout-tile__label" for="checkout-card-input">{% translate "Card amount" %}</label>
                             <input type="text" inputmode="decimal" id="checkout-card-input" class="checkout-tile__input" data-osk-skip>
                         </div>
 
                         <div class="checkout-tile checkout-tile--change" id="checkout-cash-remainder-row" style="display: none;">
-                            <span class="checkout-tile__label">Cash (remainder)</span>
+                            <span class="checkout-tile__label">{% translate "Cash (remainder)" %}</span>
                             <span class="checkout-tile__value" id="checkout-cash-remainder">0.00</span>
                         </div>
 
                         <div class="checkout-tile checkout-tile--change" id="checkout-change-row">
-                            <span class="checkout-tile__label">Change</span>
+                            <span class="checkout-tile__label">{% translate "Change" %}</span>
                             <span class="checkout-tile__value" id="checkout-change">0.00</span>
                         </div>
                     </div>
@@ -351,8 +352,8 @@
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-success" id="checkout-confirm-btn">Complete</button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">{% translate "Cancel" %}</button>
+                    <button type="button" class="btn btn-success" id="checkout-confirm-btn">{% translate "Complete" %}</button>
                 </div>
             </div>
         </div>
@@ -372,17 +373,17 @@
         <div class="modal-dialog">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Edit Line</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    <h5 class="modal-title">{% translate "Edit Line" %}</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{% translate "Close" %}"></button>
                 </div>
                 <div class="modal-body d-flex gap-3">
                     <div class="d-flex flex-column gap-2" style="flex: 1; min-width: 0;">
                         <div class="checkout-tile checkout-tile--input" id="edit-line-qty-tile">
-                            <span class="checkout-tile__label">Quantity</span>
+                            <span class="checkout-tile__label">{% translate "Quantity" %}</span>
                             <span class="checkout-tile__value" id="edit-line-qty-display">1</span>
                         </div>
                         <div class="checkout-tile checkout-tile--input" id="edit-line-price-tile">
-                            <span class="checkout-tile__label">Price</span>
+                            <span class="checkout-tile__label">{% translate "Price" %}</span>
                             <span class="checkout-tile__value" id="edit-line-price-display">0.00</span>
                         </div>
                     </div>
@@ -402,8 +403,8 @@
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-success" id="edit-line-save-btn">Save</button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">{% translate "Cancel" %}</button>
+                    <button type="button" class="btn btn-success" id="edit-line-save-btn">{% translate "Save" %}</button>
                 </div>
             </div>
         </div>
@@ -541,13 +542,13 @@
             if (localStorage.getItem(STORAGE_HIDDEN_KEY) === '1') {
                 workspace.classList.add('categories-hidden');
                 toggleBtn.classList.remove('is-open');
-                toggleBtn.title = 'Show shortcuts';
+                toggleBtn.title = '{% translate "Show shortcuts" %}';
             }
 
             toggleBtn.addEventListener('click', () => {
                 const hidden = workspace.classList.toggle('categories-hidden');
                 toggleBtn.classList.toggle('is-open', !hidden);
-                toggleBtn.title = hidden ? 'Show shortcuts' : 'Hide shortcuts';
+                toggleBtn.title = hidden ? '{% translate "Show shortcuts" %}' : '{% translate "Hide shortcuts" %}';
                 localStorage.setItem(STORAGE_HIDDEN_KEY, hidden ? '1' : '0');
                 refitCart();
             });
@@ -676,12 +677,12 @@
             }
             const decoded = decodeScaleBarcode(raw);
             if (decoded) {
-                const unitLabel = decoded.product.unit_type === 'weight' ? 'kg' : 'pcs';
+                const unitLabel = decoded.product.unit_type === 'weight' ? '{% translate "kg" %}' : '{% translate "pcs" %}';
                 const quantityLabel = decoded.product.unit_type === 'weight'
                     ? decoded.quantity.toFixed(3) : decoded.quantity;
                 scaleHintEl.textContent = decoded.product.name + ': ' + quantityLabel + ' ' + unitLabel;
             } else if (!isValidEan13(raw)) {
-                scaleHintEl.textContent = 'invalid check digit';
+                scaleHintEl.textContent = '{% translate "invalid check digit" %}';
             } else {
                 scaleHintEl.textContent = '';
             }
@@ -787,7 +788,7 @@
             data: saleItemsInitial,
             layout: 'fitColumns',
             height: 'calc(100vh - 480px)',
-            placeholder: 'Scan or search a product above to start the sale.',
+            placeholder: '{% translate "Scan or search a product above to start the sale." %}',
             columns: [
                 // field:'seq' (assigned once, at add time -- see above),
                 // not formatter:'rownum' -- rownum reflects the row's
@@ -811,13 +812,13 @@
                     // listener here -- Tabulator redraws this cell (window
                     // resize, column changes, ...), which would otherwise
                     // detach a directly-attached listener.
-                    title: 'Name', field: 'product_name', widthGrow: 2.2, minWidth: 70,
+                    title: '{% translate "Name" %}', field: 'product_name', widthGrow: 2.2, minWidth: 70,
                     bottomCalc: () => '',
                     bottomCalcFormatter: () =>
                         '<span class="sale-table-font-controls">' +
-                        '<span class="sale-table-font-controls__label">Text size</span>' +
-                        '<button type="button" class="sale-table-font-btn" data-font-step="-1" title="Decrease text size">－</button>' +
-                        '<button type="button" class="sale-table-font-btn" data-font-step="1" title="Increase text size">＋</button>' +
+                        '<span class="sale-table-font-controls__label">{% translate "Text size" %}</span>' +
+                        '<button type="button" class="sale-table-font-btn" data-font-step="-1" title="{% translate "Decrease text size" %}">－</button>' +
+                        '<button type="button" class="sale-table-font-btn" data-font-step="1" title="{% translate "Increase text size" %}">＋</button>' +
                         '</span>',
                 },
                 {
@@ -837,14 +838,14 @@
                     // values/the editor are untouched -- a weighed item
                     // still keeps its real entered precision (e.g. 0.125),
                     // only the aggregate at the bottom rounds for display.
-                    title: 'Qty', field: 'sale_quantity', width: 66, minWidth: 54, hozAlign: 'right',
+                    title: '{% translate "Qty" %}', field: 'sale_quantity', width: 66, minWidth: 54, hozAlign: 'right',
                     bottomCalc: 'sum', bottomCalcFormatter: (cell) => Number(cell.getValue() || 0).toFixed(2),
                 },
                 {
                     // Abbreviated -- "Unit Price" at the default header font
                     // size was the widest header label in the row, forcing
                     // the column wider than the numbers in it actually need.
-                    title: 'Price', field: 'price_at_sale', width: 68, minWidth: 55, hozAlign: 'right',
+                    title: '{% translate "Price" %}', field: 'price_at_sale', width: 68, minWidth: 55, hozAlign: 'right',
                     formatter: (cell) => Number(cell.getValue() || 0).toFixed(2),
                 },
                 {
@@ -854,7 +855,7 @@
                     // real cart. Generous enough now that fitColumns has to
                     // shrink genuinely hard (very narrow viewport) before
                     // the overflow-x:hidden backstop needs to clip anything.
-                    title: 'Sum', field: 'total_price_row', width: 92, minWidth: 78, hozAlign: 'right',
+                    title: '{% translate "Sum" %}', field: 'total_price_row', width: 92, minWidth: 78, hozAlign: 'right',
                     formatter: (cell) => Number(cell.getValue() || 0).toFixed(2),
                     bottomCalc: 'sum', bottomCalcFormatter: (cell) => Number(cell.getValue() || 0).toFixed(2),
                 },
@@ -1044,7 +1045,7 @@
 
         document.getElementById('delete-line-btn').addEventListener('click', () => {
             if (!selectedRowForDelete) {
-                alert('Select a line first (tap its row).');
+                alert('{% translate "Select a line first (tap its row)." %}');
                 return;
             }
             logRemovedItems([selectedRowForDelete.getData()], 'REMOVE_LINE');
@@ -1062,7 +1063,7 @@
         // incrementing a line agree with each other.
         document.getElementById('increment-qty-btn').addEventListener('click', () => {
             if (!selectedRowForDelete) {
-                alert('Select a line first (tap its row).');
+                alert('{% translate "Select a line first (tap its row)." %}');
                 return;
             }
             const data = selectedRowForDelete.getData();
@@ -1118,7 +1119,7 @@
 
         document.getElementById('edit-line-btn').addEventListener('click', () => {
             if (!selectedRowForDelete) {
-                alert('Select a line first (tap its row).');
+                alert('{% translate "Select a line first (tap its row)." %}');
                 return;
             }
             const data = selectedRowForDelete.getData();
@@ -1134,14 +1135,14 @@
             if (!selectedRowForDelete) return;
             const newQty = parseFloat(editLineQtyDisplay.textContent);
             if (isNaN(newQty) || newQty <= 0) {
-                alert('Enter a quantity greater than 0.');
+                alert('{% translate "Enter a quantity greater than 0." %}');
                 return;
             }
             const updates = {sale_quantity: newQty};
             if (canEditPrice) {
                 const newPrice = parseFloat(editLinePriceDisplay.textContent);
                 if (isNaN(newPrice) || newPrice < 0) {
-                    alert('Enter a valid price.');
+                    alert('{% translate "Enter a valid price." %}');
                     return;
                 }
                 updates.price_at_sale = newPrice;
@@ -1155,7 +1156,7 @@
         document.getElementById('void-sale-btn').addEventListener('click', () => {
             const rows = saleItemsTable.getData();
             if (!rows.length) return;
-            if (!confirm('Сигурен ли си, че искаш да изтриеш цялата сметка?')) return;
+            if (!confirm('{% translate "Are you sure you want to delete the whole bill?" %}')) return;
             logRemovedItems(rows, 'VOID_SALE');
             saleItemsTable.clearData();
             clearRowSelection();
@@ -1427,7 +1428,7 @@
                 }
             }
             if (!product) {
-                alert('Product not found');
+                alert('{% translate "Product not found" %}');
                 return;
             }
 
@@ -1527,7 +1528,7 @@
             langBtn.type = 'button';
             langBtn.className = 'sale-keyboard-key sale-keyboard-key--lang';
             langBtn.textContent = keyboardLanguage === 'bg' ? 'EN' : 'BG';
-            langBtn.title = 'Switch keyboard language';
+            langBtn.title = '{% translate "Switch keyboard language" %}';
             langBtn.addEventListener('click', () => {
                 keyboardLanguage = keyboardLanguage === 'bg' ? 'en' : 'bg';
                 renderKeyboard();
@@ -1538,7 +1539,7 @@
             const spaceBtn = document.createElement('button');
             spaceBtn.type = 'button';
             spaceBtn.className = 'sale-keyboard-key sale-keyboard-key--space';
-            spaceBtn.textContent = 'Space';
+            spaceBtn.textContent = '{% translate "Space" %}';
             spaceBtn.addEventListener('click', () => insertAtCursor(' '));
             controlsRow.appendChild(spaceBtn);
 
@@ -1643,7 +1644,7 @@
 
             const foldersEl = document.getElementById('category-folders');
             const productsEl = document.getElementById('category-products');
-            const pageIndicator = document.getElementById('category-page-indicator');
+            const pagesEl = document.getElementById('category-pages');
             const pinnedBarEl = document.getElementById('category-pinned-bar');
             const editModeBtn = document.getElementById('category-edit-mode-btn');
             const pinPickerEl = document.getElementById('category-pin-picker');
@@ -1738,8 +1739,7 @@
                 const pages = totalPagesFor(currentParentId);
                 if (currentPage >= pages) currentPage = 0;
 
-                pageIndicator.style.display = pages > 1 ? '' : 'none';
-                pageIndicator.textContent = `Page ${currentPage + 1}/${pages} →`;
+                renderPageButtons(pages);
 
                 folders.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE).forEach(cat => {
                     const btn = document.createElement('button');
@@ -1762,7 +1762,30 @@
                 renderPinnedBar();
             }
 
-            pageIndicator.addEventListener('click', () => openCategory(currentParentId));
+            // One button per page, current one highlighted -- replaces the
+            // old single "Page X/Y →" cycling button now that there's
+            // enough room to show them all directly (tapping an already-
+            // open pinned folder still cycles pages too, via openCategory
+            // above).
+            function renderPageButtons(pages) {
+                pagesEl.innerHTML = '';
+                if (pages <= 1) {
+                    pagesEl.style.display = 'none';
+                    return;
+                }
+                pagesEl.style.display = '';
+                for (let i = 0; i < pages; i++) {
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'category-page-btn' + (i === currentPage ? ' is-active' : '');
+                    btn.textContent = String(i + 1);
+                    btn.addEventListener('click', () => {
+                        currentPage = i;
+                        render();
+                    });
+                    pagesEl.appendChild(btn);
+                }
+            }
 
             // -- Fixed shortcut bar (PosPin rows) -- stays visible no
             // matter how deep currentParentId has drilled in. --
@@ -1798,7 +1821,7 @@
                     removeBtn.type = 'button';
                     removeBtn.className = 'category-pin-remove-btn';
                     removeBtn.textContent = '×';
-                    removeBtn.title = 'Remove shortcut';
+                    removeBtn.title = '{% translate "Remove shortcut" %}';
                     removeBtn.addEventListener('click', (e) => { e.stopPropagation(); removePin(pin.id); });
                     wrapper.appendChild(removeBtn);
                     pinnedBarEl.appendChild(wrapper);
@@ -1808,7 +1831,7 @@
                     const addBtn = document.createElement('button');
                     addBtn.type = 'button';
                     addBtn.className = 'category-pin-add-btn';
-                    addBtn.textContent = '+ Add shortcut';
+                    addBtn.textContent = '{% translate "+ Add shortcut" %}';
                     addBtn.addEventListener('click', openPinPicker);
                     pinnedBarEl.appendChild(addBtn);
                 }
@@ -1821,7 +1844,7 @@
                 pinPickerSelect.innerHTML = '';
 
                 const categoryGroup = document.createElement('optgroup');
-                categoryGroup.label = 'Categories';
+                categoryGroup.label = '{% translate "Categories" %}';
                 posCategories.filter(c => !pinnedCategoryIds.has(String(c.id))).forEach(c => {
                     const opt = document.createElement('option');
                     opt.value = `category:${c.id}`;
@@ -1830,7 +1853,7 @@
                 });
 
                 const productGroup = document.createElement('optgroup');
-                productGroup.label = 'Products';
+                productGroup.label = '{% translate "Products" %}';
                 posProducts.filter(p => !pinnedProductIds.has(String(p.id))).forEach(p => {
                     const opt = document.createElement('option');
                     opt.value = `product:${p.id}`;
@@ -1842,7 +1865,7 @@
                 if (productGroup.children.length) pinPickerSelect.appendChild(productGroup);
 
                 if (!pinPickerSelect.options.length) {
-                    alert('Nothing left to pin -- flag more categories/products as "Show on POS screen" first.');
+                    alert('{% translate "Nothing left to pin -- flag more categories/products as „Show on POS screen“ first." %}');
                     return;
                 }
                 pinPickerEl.style.display = '';
@@ -1871,7 +1894,7 @@
                     body: JSON.stringify({ type: type, target_id: targetId }),
                 });
                 if (!response.ok) {
-                    alert('Could not add this shortcut.');
+                    alert('{% translate "Could not add this shortcut." %}');
                     return;
                 }
                 location.reload();
@@ -1883,7 +1906,7 @@
                     headers: { 'X-CSRFToken': csrfToken() },
                 });
                 if (!response.ok) {
-                    alert('Could not remove this shortcut.');
+                    alert('{% translate "Could not remove this shortcut." %}');
                     return;
                 }
                 location.reload();
@@ -1892,7 +1915,7 @@
             editModeBtn.addEventListener('click', () => {
                 editMode = !editMode;
                 editModeBtn.classList.toggle('is-active', editMode);
-                editModeBtn.textContent = editMode ? 'Done' : 'Edit';
+                editModeBtn.textContent = editMode ? '{% translate "Done" %}' : '{% translate "Edit" %}';
                 pinPickerEl.style.display = 'none';
                 renderPinnedBar();
             });
@@ -2012,7 +2035,7 @@
             completeSaleBtn.addEventListener('click', () => {
                 const hasItem = saleItemsTable.getData().some(row => row.sale_item);
                 if (!hasItem) {
-                    alert('Add at least one product before completing the sale.');
+                    alert('{% translate "Add at least one product before completing the sale." %}');
                     return;
                 }
                 totalEl.textContent = currentTotal().toFixed(2);
@@ -2022,7 +2045,7 @@
 
             confirmBtn.addEventListener('click', () => {
                 if (!selectedMethod) {
-                    alert('Choose a payment method.');
+                    alert('{% translate "Choose a payment method." %}');
                     return;
                 }
                 const total = currentTotal();
@@ -2033,7 +2056,7 @@
                 if (selectedMethod === 'CASH') {
                     cashAmount = parseFloat(paidInput.value || 0);
                     if (cashAmount < total) {
-                        alert('Paid amount is less than the total.');
+                        alert('{% translate "Paid amount is less than the total." %}');
                         return;
                     }
                     change = cashAmount - total;
@@ -2044,7 +2067,7 @@
                     // rest is assumed paid exactly in cash (no change).
                     cardAmount = parseFloat(cardInput.value || 0);
                     if (cardAmount <= 0 || cardAmount >= total) {
-                        alert('Card amount must be more than 0 and less than the total for a mixed payment.');
+                        alert('{% translate "Card amount must be more than 0 and less than the total for a mixed payment." %}');
                         return;
                     }
                     cashAmount = total - cardAmount;

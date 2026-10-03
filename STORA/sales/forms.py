@@ -1,5 +1,6 @@
 from django import forms
 from django.forms import inlineformset_factory
+from django.utils.translation import gettext_lazy as _
 
 from STORA.sales.models import SaleItems, SaleAttributes
 
@@ -7,7 +8,7 @@ class SaleForms(forms.ModelForm):
     class Meta:
         model = SaleAttributes
         fields = ['cashier', 'payment_method', 'amount_paid', 'card_amount', 'change_due']
-        labels = {'cashier': 'Cashier'}
+        labels = {'cashier': _('Cashier')}
         widgets = {
             # Set by the checkout modal's JS -- not rendered as visible
             # form controls here.
@@ -26,20 +27,20 @@ class SaleForms(forms.ModelForm):
 
 class SaleItemForm(forms.ModelForm):
     product_code = forms.CharField(
-        label='Product Code / Barcode',
+        label=_('Product Code / Barcode'),
         required=False,
-        widget=forms.TextInput(attrs={'class': 'product-code-input', 'placeholder': 'Scan or type code'})
+        widget=forms.TextInput(attrs={'class': 'product-code-input', 'placeholder': _('Scan or type code')})
     )
 
     product_name = forms.CharField(
-        label='Product Name',
+        label=_('Product Name'),
         required=False,
         disabled=True,
         widget=forms.TextInput(attrs={'class': 'product-name-input'})
     )
 
     unit_price = forms.DecimalField(
-        label='Unit Price',
+        label=_('Unit Price'),
         required=False,
         disabled=True,
         decimal_places=2,
@@ -48,7 +49,7 @@ class SaleItemForm(forms.ModelForm):
     )
 
     line_total = forms.DecimalField(
-        label='Line Total',
+        label=_('Line Total'),
         required=False,
         disabled=True,
         decimal_places=2,
@@ -102,7 +103,7 @@ class BaseSaleItemFormSet(forms.BaseInlineFormSet):
                 break
 
         if not has_valid_item:
-            raise forms.ValidationError('You must add at least one sale item.')
+            raise forms.ValidationError(_('You must add at least one sale item.'))
 
 
 SaleItemFormSet = inlineformset_factory(

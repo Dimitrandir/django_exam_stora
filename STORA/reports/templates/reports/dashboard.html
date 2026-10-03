@@ -1,124 +1,83 @@
 {% extends 'base.html' %}
+{% load i18n %}
 
-{% block title %}STORA - Reports Dashboard{% endblock %}
+{% block title %}STORA - {% translate "Reports Dashboard" %}{% endblock %}
 
 {% block content %}
 <section class="reports-dashboard">
     <header class="page-header mb-4">
-        <h1 class="h2 mb-1">Reports Dashboard</h1>
-        <p class="text-muted mb-0">Pick a period, then open the report you need below.</p>
+        <h1 class="h2 mb-1">{% translate "Reports Dashboard" %}</h1>
+        <p class="text-muted mb-0">{% translate "Pick a period, then open the report you need below." %}</p>
     </header>
 
     {% if form.errors %}
     <div class="form-errors">{{ form.errors }}</div>
     {% endif %}
 
-    <section class="report-filter card shadow-sm border-0 rounded-4 mb-4">
-        <div class="card-body">
-            <form method="get">
-                <fieldset class="report-filter__fieldset border-0 p-0 m-0">
-                    <legend class="h5 mb-3">Choose period</legend>
-
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                            <div class="report-filter__field">
-                                {{ form.start_date.label_tag }}
-                                {{ form.start_date }}
-                            </div>
-                        </div>
-
-                        <div class="col-md-6">
-                            <div class="report-filter__field">
-                                {{ form.end_date.label_tag }}
-                                {{ form.end_date }}
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="mt-3">
-                        <button type="submit" class="btn btn-primary">Apply period</button>
-                    </div>
-                </fieldset>
-            </form>
-        </div>
+    <section class="reports-dashboard__filter-bar">
+        <form method="get" class="reports-dashboard__filter-form">
+            <div class="reports-dashboard__filter-field">
+                {{ form.start_date.label_tag }}
+                {{ form.start_date }}
+            </div>
+            <div class="reports-dashboard__filter-field">
+                {{ form.end_date.label_tag }}
+                {{ form.end_date }}
+            </div>
+            <button type="submit" class="reports-dashboard__filter-submit">{% translate "Apply period" %}</button>
+        </form>
     </section>
 
     {% if can_view_ai_reports %}
-    <section class="report-section card shadow-sm border-0 rounded-4 mb-4" style="background: linear-gradient(135deg, #f0f4ff, #ffffff); border-left: 4px solid #4f6df5 !important;">
-        <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-3">
-            <div>
-                <h2 class="h4 mb-1">AI Reports</h2>
-                <p class="text-muted mb-0">Ask a question about the shop's data in plain language -- no fixed report covers it? Just ask.</p>
-            </div>
-            <div class="d-flex gap-2">
-                <a href="{% url 'ai_report_list' %}" class="btn btn-outline-primary">Saved AI reports</a>
-                <a href="{% url 'ai_report_create' %}" class="btn btn-primary">+ New AI report</a>
-            </div>
+    <section class="reports-dashboard__hero">
+        <div class="reports-dashboard__hero-text">
+            <h2>{% translate "AI Reports" %}</h2>
+            <p>{% translate "Ask a question about the shop's data in plain language -- no fixed report covers it? Just ask." %}</p>
+        </div>
+        <div class="reports-dashboard__hero-actions">
+            <a href="{% url 'ai_report_list' %}" class="reports-dashboard__hero-btn reports-dashboard__hero-btn--ghost">{% translate "Saved AI reports" %}</a>
+            <a href="{% url 'ai_report_create' %}" class="reports-dashboard__hero-btn reports-dashboard__hero-btn--solid">{% translate "+ New AI report" %}</a>
         </div>
     </section>
     {% endif %}
 
-    <div class="row g-3">
-        <div class="col-md-4">
-            <section class="report-section card shadow-sm border-0 rounded-4 h-100">
-                <div class="card-body">
-                    <header class="section-header mb-3">
-                        <h2 class="h4 mb-0">Products</h2>
-                    </header>
-                    <ul class="list-unstyled d-flex flex-column gap-2 mb-0">
-                        <li><a href="{% url 'stock_as_of_report' %}" class="btn btn-outline-primary w-100 text-start">Stock as of date</a></li>
-                        <li><a href="{% url 'stock_balance_report' %}" class="btn btn-outline-primary w-100 text-start">Stock balance report</a></li>
-                        <li><a href="{% url 'expiring_report' %}" class="btn btn-outline-primary w-100 text-start">Expiring products</a></li>
-                    </ul>
-                </div>
-            </section>
-        </div>
+    <div class="reports-dashboard__grid">
+        <section class="reports-dashboard__card">
+            <h3>{% translate "Products" %}</h3>
+            <ul class="reports-dashboard__links">
+                <li><a href="{% url 'stock_as_of_report' %}">{% translate "Stock as of date" %}</a></li>
+                <li><a href="{% url 'stock_balance_report' %}">{% translate "Stock balance report" %}</a></li>
+                <li><a href="{% url 'expiring_report' %}">{% translate "Expiring products" %}</a></li>
+            </ul>
+        </section>
 
-        <div class="col-md-4">
-            <section class="report-section card shadow-sm border-0 rounded-4 h-100">
-                <div class="card-body">
-                    <header class="section-header mb-3">
-                        <h2 class="h4 mb-0">Sales</h2>
-                    </header>
-                    <ul class="list-unstyled d-flex flex-column gap-2 mb-0">
-                        {% if perms.sales.view_saleattributes %}
-                        <li><a href="{{ sales_report_url }}" class="btn btn-outline-primary w-100 text-start">Sales report</a></li>
-                        {% endif %}
-                        <li><a href="{{ sales_quantity_report_url }}" class="btn btn-outline-primary w-100 text-start">Sales quantity report</a></li>
-                    </ul>
-                </div>
-            </section>
-        </div>
+        <section class="reports-dashboard__card">
+            <h3>{% translate "Sales" %}</h3>
+            <ul class="reports-dashboard__links">
+                {% if perms.sales.view_saleattributes %}
+                <li><a href="{{ sales_report_url }}">{% translate "Sales report" %}</a></li>
+                {% endif %}
+                <li><a href="{{ sales_quantity_report_url }}">{% translate "Sales quantity report" %}</a></li>
+            </ul>
+        </section>
 
-        <div class="col-md-4">
-            <section class="report-section card shadow-sm border-0 rounded-4 h-100">
-                <div class="card-body">
-                    <header class="section-header mb-3">
-                        <h2 class="h4 mb-0">Stock Movements</h2>
-                    </header>
-                    <ul class="list-unstyled d-flex flex-column gap-2 mb-0">
-                        <li><a href="{{ deliveries_report_url }}" class="btn btn-outline-primary w-100 text-start">Deliveries, write-offs, scrap</a></li>
-                    </ul>
-                </div>
-            </section>
-        </div>
+        <section class="reports-dashboard__card">
+            <h3>{% translate "Stock Movements" %}</h3>
+            <ul class="reports-dashboard__links">
+                <li><a href="{{ deliveries_report_url }}">{% translate "Deliveries, write-offs, scrap" %}</a></li>
+            </ul>
+        </section>
 
         {% if perms.orders.view_orderattributes %}
-        <div class="col-md-4">
-            <section class="report-section card shadow-sm border-0 rounded-4 h-100">
-                <div class="card-body">
-                    <header class="section-header mb-3">
-                        <h2 class="h4 mb-0">Orders</h2>
-                    </header>
-                    <ul class="list-unstyled d-flex flex-column gap-2 mb-0">
-                        <li><a href="{% url 'order_list' %}" class="btn btn-outline-primary w-100 text-start">All orders</a></li>
-                        {% if perms.orders.add_orderattributes %}
-                        <li><a href="{% url 'order_new' %}" class="btn btn-primary w-100 text-start">New order</a></li>
-                        {% endif %}
-                    </ul>
-                </div>
-            </section>
-        </div>
+        <section class="reports-dashboard__card">
+            <h3>{% translate "Orders" %}</h3>
+            <ul class="reports-dashboard__links">
+                <li><a href="{% url 'order_list' %}">{% translate "All orders" %}</a></li>
+            </ul>
+            {% if perms.orders.add_orderattributes %}
+            <a href="{% url 'order_new' %}" class="reports-dashboard__card-cta">{% translate "+ New order" %}</a>
+            {% endif %}
+        </section>
         {% endif %}
     </div>
 </section>

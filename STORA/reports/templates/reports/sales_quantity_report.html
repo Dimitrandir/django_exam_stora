@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
+{% load static cache_bust i18n %}
 
-{% block title %}STORA - Sales Quantity Report{% endblock %}
-{% load static cache_bust %}
+{% block title %}STORA - {% translate "Sales Quantity Report" %}{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
@@ -10,8 +10,8 @@
 {% block content %}
 <section class="reports-sales-quantity">
     <header class="page-header mb-4">
-        <h1 class="h2 mb-1">Sales Quantity Report</h1>
-        <p class="text-muted mb-0">How much of each product sold in the period, its group, and its delivery/sell price.</p>
+        <h1 class="h2 mb-1">{% translate "Sales Quantity Report" %}</h1>
+        <p class="text-muted mb-0">{% translate "How much of each product sold in the period, its group, and its delivery/sell price." %}</p>
     </header>
 
     {% if form.errors %}
@@ -22,7 +22,7 @@
         <div class="card-body">
             <form method="get">
                 <fieldset class="report-filter__fieldset border-0 p-0 m-0">
-                    <legend class="h5 mb-3">Choose period</legend>
+                    <legend class="h5 mb-3">{% translate "Choose period" %}</legend>
 
                     <div class="row g-3">
                         <div class="col-md-6">
@@ -41,7 +41,7 @@
                     </div>
 
                     <div class="mt-3">
-                        <button type="submit" class="btn btn-primary">Show report</button>
+                        <button type="submit" class="btn btn-primary">{% translate "Show report" %}</button>
                     </div>
                 </fieldset>
             </form>
@@ -51,7 +51,7 @@
     <section class="report-section card shadow-sm border-0 rounded-4 mb-4">
         <div class="card-body">
             <header class="section-header mb-3">
-                <h2 class="h4 mb-0">Sold in period</h2>
+                <h2 class="h4 mb-0">{% translate "Sold in period" %}</h2>
             </header>
 
             {{ sales_quantity_data|json_script:"sales-quantity-table-data" }}
@@ -83,34 +83,34 @@ document.addEventListener('DOMContentLoaded', function () {
             title: '#', field: 'code', formatter: 'rownum', width: 50, hozAlign: 'center',
             headerFilter: false, hideable: false,
         },
-        {title: 'Code', field: 'code', width: 100},
-        {title: 'Name', field: 'name', width: 250},
-        {title: 'Category', field: 'category', width: 150},
+        {title: '{% translate "Code" %}', field: 'code', width: 100},
+        {title: '{% translate "Name" %}', field: 'name', width: 250},
+        {title: '{% translate "Category" %}', field: 'category', width: 150},
         {
-            title: 'Quantity Sold', field: 'quantity_sold', width: 140, hozAlign: 'right',
+            title: '{% translate "Quantity Sold" %}', field: 'quantity_sold', width: 140, hozAlign: 'right',
             formatter: qtyFormatter, bottomCalc: 'sum', bottomCalcFormatter: qtyFormatter,
         },
         {
-            title: 'Refunded Qty', field: 'refunded_qty', width: 130, hozAlign: 'right',
+            title: '{% translate "Refunded Qty" %}', field: 'refunded_qty', width: 130, hozAlign: 'right',
             formatter: qtyFormatter, bottomCalc: 'sum', bottomCalcFormatter: qtyFormatter,
         },
         {
-            title: 'Net Qty', field: 'net_quantity', width: 120, hozAlign: 'right',
+            title: '{% translate "Net Qty" %}', field: 'net_quantity', width: 120, hozAlign: 'right',
             formatter: qtyFormatter, bottomCalc: 'sum', bottomCalcFormatter: qtyFormatter,
         },
-        {title: 'Delivery Price', field: 'delivery_price', width: 130, hozAlign: 'right', formatter: moneyFormatter},
-        {title: 'Sell Price', field: 'sell_price', width: 130, hozAlign: 'right', formatter: moneyFormatter},
+        {title: '{% translate "Delivery Price" %}', field: 'delivery_price', width: 130, hozAlign: 'right', formatter: moneyFormatter},
+        {title: '{% translate "Sell Price" %}', field: 'sell_price', width: 130, hozAlign: 'right', formatter: moneyFormatter},
         {
-            title: 'Refunded', field: 'refunded_amount', width: 120, hozAlign: 'right', visible: false,
+            title: '{% translate "Refunded" %}', field: 'refunded_amount', width: 120, hozAlign: 'right', visible: false,
             formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
         },
         {
-            title: 'Net Revenue', field: 'total_amount', width: 150, hozAlign: 'right',
+            title: '{% translate "Net Revenue" %}', field: 'total_amount', width: 150, hozAlign: 'right',
             formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
         },
-    ], {placeholder: 'No sales found for the selected period.'});
+    ], {placeholder: '{% translate "No sales found for the selected period." %}'});
 
-    attachTableExportToToolbar(table, '#sales-quantity-table-card', 'sales_quantity_report.xlsx', 'Sales Quantity');
+    attachTableExportToToolbar(table, '#sales-quantity-table-card', 'sales_quantity_report.xlsx', '{% translate "Sales Quantity" %}');
 });
 </script>
 {% endblock %}

@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
+{% load static i18n %}
 
-{% block title %}STORA - {% if price_list %}Edit Price List{% else %}New Price List{% endif %}{% endblock %}
-{% load static %}
+{% block title %}STORA - {% if price_list %}{% translate "Edit Price List" %}{% else %}{% translate "New Price List" %}{% endif %}{% endblock %}
 
 {% block main_class %}main-wide{% endblock %}
 {% block container_class %}container-fluid{% endblock %}
@@ -13,7 +13,7 @@
 {% block content %}
 <section class="delivery-form">
     <header class="page-header">
-        <h1>{% if price_list %}Edit Price List{% else %}New Price List{% endif %}</h1>
+        <h1>{% if price_list %}{% translate "Edit Price List" %}{% else %}{% translate "New Price List" %}{% endif %}</h1>
     </header>
 
     {% if form.errors %}
@@ -29,7 +29,7 @@
         {% csrf_token %}
 
         <section class="delivery-form__general">
-            <header class="section-header"><h2>General Information</h2></header>
+            <header class="section-header"><h2>{% translate "General Information" %}</h2></header>
             <div class="delivery-form__fields">
                 <p>{{ form.name.label_tag }} {{ form.name }}</p>
                 <p>{{ form.priority.label_tag }} {{ form.priority }}</p>
@@ -39,28 +39,28 @@
         </section>
 
         <section class="delivery-form__items">
-            <header class="section-header"><h2>Products / Categories / Suppliers Covered</h2></header>
+            <header class="section-header"><h2>{% translate "Products / Categories / Suppliers Covered" %}</h2></header>
 
             <div class="d-flex gap-4 flex-wrap mb-3">
                 <div class="position-relative" style="min-width:280px;">
-                    <label class="form-label mb-1">Add a product</label>
+                    <label class="form-label mb-1">{% translate "Add a product" %}</label>
                     <input type="text" id="product-search-input" class="form-control form-control-sm"
-                           placeholder="Search product by name or code..." autocomplete="off">
+                           placeholder="{% translate "Search product by name or code..." %}" autocomplete="off">
                     <div id="product-search-results" class="global-search-results"></div>
                 </div>
 
                 <div style="min-width:220px;">
-                    <label class="form-label mb-1">Add a whole category</label>
+                    <label class="form-label mb-1">{% translate "Add a whole category" %}</label>
                     <div class="d-flex gap-2">
                         <select id="category-select" class="form-select form-select-sm"></select>
-                        <button type="button" id="add-category-btn" class="btn btn-sm btn-outline-primary">Add</button>
+                        <button type="button" id="add-category-btn" class="btn btn-sm btn-outline-primary">{% translate "Add" %}</button>
                     </div>
                 </div>
 
                 <div class="position-relative" style="min-width:280px;">
-                    <label class="form-label mb-1">Add a whole supplier</label>
+                    <label class="form-label mb-1">{% translate "Add a whole supplier" %}</label>
                     <input type="text" id="supplier-search-input" class="form-control form-control-sm"
-                           placeholder="Search supplier by name..." autocomplete="off">
+                           placeholder="{% translate "Search supplier by name..." %}" autocomplete="off">
                     <div id="supplier-search-results" class="global-search-results"></div>
                 </div>
             </div>
@@ -69,8 +69,8 @@
         </section>
 
         <footer class="page-actions">
-            <button type="submit" class="button-save">Save Price List</button>
-            <a href="{% if price_list %}{% url 'price_list_detail' price_list.pk %}{% else %}{% url 'price_list_list' %}{% endif %}" class="button-cancel">Cancel</a>
+            <button type="submit" class="button-save">{% translate "Save Price List" %}</button>
+            <a href="{% if price_list %}{% url 'price_list_detail' price_list.pk %}{% else %}{% url 'price_list_list' %}{% endif %}" class="button-cancel">{% translate "Cancel" %}</a>
         </footer>
 
         <input type="hidden" name="rules_json" id="rules-json-input">
@@ -98,23 +98,23 @@
     });
 
     function scopeLabel(scopeType) {
-        return {PRODUCT: 'Product', CATEGORY: 'Category', SUPPLIER: 'Supplier'}[scopeType] || scopeType;
+        return {PRODUCT: '{% translate "Product" %}', CATEGORY: '{% translate "Category" %}', SUPPLIER: '{% translate "Supplier" %}'}[scopeType] || scopeType;
     }
 
     const table = new Tabulator('#rules-table', {
         data: existingRules,
         layout: 'fitColumns',
-        placeholder: 'Add a product, category, or supplier above to start building this price list.',
+        placeholder: '{% translate "Add a product, category, or supplier above to start building this price list." %}',
         columns: [
             {title: '#', field: 'target_name', formatter: 'rownum', width: 50, hozAlign: 'center'},
-            {title: 'Applies To', field: 'scope_type', width: 110, formatter: function (cell) { return scopeLabel(cell.getValue()); }},
-            {title: 'Target', field: 'target_name', widthGrow: 2},
+            {title: '{% translate "Applies To" %}', field: 'scope_type', width: 110, formatter: function (cell) { return scopeLabel(cell.getValue()); }},
+            {title: '{% translate "Target" %}', field: 'target_name', widthGrow: 2},
             {
-                title: 'Discount %', field: 'discount_percent', width: 120, hozAlign: 'right',
+                title: '{% translate "Discount %" %}', field: 'discount_percent', width: 120, hozAlign: 'right',
                 editor: 'number', editorParams: {min: 0, max: 100, step: 0.01},
             },
             {
-                title: 'Fixed Price', field: 'fixed_price', width: 120, hozAlign: 'right',
+                title: '{% translate "Fixed Price" %}', field: 'fixed_price', width: 120, hozAlign: 'right',
                 editor: function (cell, onRendered, success, cancel) {
                     if (cell.getRow().getData().scope_type !== 'PRODUCT') return false;
                     var input = document.createElement('input');
@@ -138,7 +138,7 @@
                 },
             },
             {
-                title: 'Conflict', field: 'conflict_note', widthGrow: 2, hozAlign: 'left',
+                title: '{% translate "Conflict" %}', field: 'conflict_note', widthGrow: 2, hozAlign: 'left',
                 formatter: function (cell) {
                     var v = cell.getValue();
                     if (!v) return '';
@@ -146,8 +146,8 @@
                 },
             },
             {
-                title: 'Remove', width: 90, hozAlign: 'center', headerSort: false,
-                formatter: function () { return '<button type="button" class="btn btn-sm btn-outline-danger">Remove</button>'; },
+                title: '{% translate "Remove" %}', width: 90, hozAlign: 'center', headerSort: false,
+                formatter: function () { return '<button type="button" class="btn btn-sm btn-outline-danger">{% translate "Remove" %}</button>'; },
                 cellClick: function (e, cell) { cell.getRow().delete(); },
             },
         ],
@@ -177,13 +177,13 @@
                     var price = c.discount_percent !== null ? c.discount_percent + '%' : c.fixed_price.toFixed(2);
                     return c.price_list_name + ' (' + price + ')';
                 });
-                row.update({conflict_note: 'Also in: ' + parts.join(', ')});
+                row.update({conflict_note: '{% translate "Also in:" %} ' + parts.join(', ')});
             });
     }
 
     function addRow(scopeType, targetId, targetName) {
         var existing = table.getData().find(function (d) { return d.scope_type === scopeType && String(d.target_id) === String(targetId); });
-        if (existing) { alert('That is already in this list.'); return; }
+        if (existing) { alert('{% translate "That is already in this list." %}'); return; }
         table.addRow({
             scope_type: scopeType, target_id: targetId, target_name: targetName,
             discount_percent: null, fixed_price: null, conflict_note: '',

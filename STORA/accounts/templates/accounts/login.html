@@ -1,13 +1,14 @@
 {% extends 'base.html' %}
+{% load i18n %}
 
-{% block title %}STORA - Login{% endblock %}
+{% block title %}STORA - {% translate "Login" %}{% endblock %}
 
 {% block content %}
-<h1>Login</h1>
+<h1>{% translate "Login" %}</h1>
 
 <form method="post" action="{% url 'login' %}{% if next %}?next={{ next }}{% endif %}">
     {% csrf_token %}
     {{ form.as_p }}
-    <button type="submit">Login</button>
+    <button type="submit">{% translate "Login" %}</button>
 </form>
 {% endblock %}

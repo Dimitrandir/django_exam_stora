@@ -1,23 +1,24 @@
 {% extends 'base.html' %}
+{% load i18n %}
 
-{% block title %}STORA - {% if document_type %}Edit Document Type{% else %}New Document Type{% endif %}{% endblock %}
+{% block title %}STORA - {% if document_type %}{% translate "Edit Document Type" %}{% else %}{% translate "New Document Type" %}{% endif %}{% endblock %}
 
 {% block content %}
 
     {% if document_type %}
-        <h1>Edit document type: {{ document_type.name }}</h1>
+        <h1>{% blocktranslate with name=document_type.name %}Edit document type: {{ name }}{% endblocktranslate %}</h1>
     {% else %}
-        <h1>Add new document type</h1>
+        <h1>{% translate "Add new document type" %}</h1>
     {% endif %}
 
     <form method="post">
         {% csrf_token %}
         {{ form.as_p }}
-        <button type="submit">Save</button>
+        <button type="submit">{% translate "Save" %}</button>
     </form>
 
     <hr>
 
-    <a href="{% url 'document_type_list' %}">Cancel</a>
+    <a href="{% url 'document_type_list' %}">{% translate "Cancel" %}</a>
 
 {% endblock %}

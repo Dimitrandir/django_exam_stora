@@ -1,22 +1,23 @@
 {% extends 'base.html' %}
+{% load i18n %}
 
-{% block title %}STORA - Employees List{% endblock %}
+{% block title %}STORA - {% translate "Employees List" %}{% endblock %}
 {% block content %}
 
-<h1>Employees List</h1>
+<h1>{% translate "Employees List" %}</h1>
 
 {% if perms.accounts.change_companyprofile %}
-<p><a href="{% url 'company_profile_edit' %}">My Company</a></p>
+<p><a href="{% url 'company_profile_edit' %}">{% translate "My Company" %}</a></p>
 {% endif %}
 
 <table>
     <thead>
     <tr>
 
-        <th>First Name</th>
-        <th>Last Name</th>
-        <th>Position</th>
-        <th>{% if perms.accounts.add_employee %}<a href="{% url 'register'%}" class="add-btn-table" title="Add a new employee">+</a>{% endif %}</th>
+        <th>{% translate "First Name" %}</th>
+        <th>{% translate "Last Name" %}</th>
+        <th>{% translate "Position" %}</th>
+        <th>{% if perms.accounts.add_employee %}<a href="{% url 'register'%}" class="add-btn-table" title="{% translate "Add a new employee" %}">+</a>{% endif %}</th>
     </tr>
     </thead>
     <tbody>
@@ -24,8 +25,8 @@
         <tr>
             <td>{{ employee.first_name }}</td>
             <td>{{ employee.last_name }}</td>
-            <td>{{ employee.role }} </td>
-            <td><a href="{% url 'employee_details' employee.pk%}">View</a></td>
+            <td>{{ employee.get_role_display }}</td>
+            <td><a href="{% url 'employee_details' employee.pk%}">{% translate "View" %}</a></td>
         </tr>
         <tr>
             {% empty %}

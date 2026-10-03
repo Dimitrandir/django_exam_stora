@@ -10,6 +10,7 @@ from django.urls import reverse_lazy
 from django.views import View
 from django.views.generic import ListView, DetailView, CreateView, UpdateView, DeleteView
 from django.views.decorators.http import require_POST
+from django.utils.translation import gettext as _
 
 import json
 
@@ -382,7 +383,7 @@ def delivery_import_excel(request):
     "new product" row actually becomes one, at Save time."""
     uploaded = request.FILES.get('file')
     if not uploaded:
-        return JsonResponse({'error': 'No file was uploaded.'}, status=400)
+        return JsonResponse({'error': _('No file was uploaded.')}, status=400)
     result = parse_delivery_import(uploaded)
     return JsonResponse(result)
 

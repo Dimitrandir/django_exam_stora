@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
+{% load static cache_bust currency_filters i18n %}
 
-{% block title %}STORA - {% if delivery.movement_type == 'WRITE_OFF' %}Write-off{% elif delivery.movement_type == 'SCRAP' %}Scrap{% else %}Delivery{% endif %} #{{ delivery.id }}{% endblock %}
-{% load static cache_bust currency_filters %}
+{% block title %}STORA - {% if delivery.movement_type == 'WRITE_OFF' %}{% translate "Write-off" %}{% elif delivery.movement_type == 'SCRAP' %}{% translate "Scrap" %}{% else %}{% translate "Delivery" %}{% endif %} #{{ delivery.id }}{% endblock %}
 
 {% block main_class %}main-wide{% endblock %}
 {% block container_class %}container-fluid{% endblock %}
@@ -14,9 +14,9 @@
 <section class="delivery-details{% if delivery.movement_type == 'WRITE_OFF' or delivery.movement_type == 'SCRAP' %} delivery-form--writeoff{% endif %}">
     <header class="page-header">
         <h1>
-            {% if delivery.movement_type == 'WRITE_OFF' %}Details for Write-off ID: {{ delivery.id }}
-            {% elif delivery.movement_type == 'SCRAP' %}Details for Scrap ID: {{ delivery.id }}
-            {% else %}Details for Delivery ID: {{ delivery.id }}{% endif %}
+            {% if delivery.movement_type == 'WRITE_OFF' %}{% translate "Details for Write-off ID:" %} {{ delivery.id }}
+            {% elif delivery.movement_type == 'SCRAP' %}{% translate "Details for Scrap ID:" %} {{ delivery.id }}
+            {% else %}{% translate "Details for Delivery ID:" %} {{ delivery.id }}{% endif %}
         </h1>
         <p class="page-subtitle">{{ delivery.time_of_delivery|date:"d.m.Y H:i" }}</p>
     </header>
@@ -24,21 +24,21 @@
     <section class="delivery-summary">
         {% if delivery.supplier %}
         <div class="summary-item">
-            <strong>Supplier:</strong>
+            <strong>{% translate "Supplier:" %}</strong>
             <span>{{ delivery.supplier }}</span>
         </div>
         {% endif %}
         <div class="summary-item">
-            <strong>Receiver:</strong>
+            <strong>{% translate "Receiver:" %}</strong>
             <span>{{ delivery.receiver }}</span>
         </div>
         <div class="summary-item">
-            <strong>Total Amount:</strong>
+            <strong>{% translate "Total Amount:" %}</strong>
             <span>{{ delivery.total_amount|currency }}</span>
         </div>
         {% if delivery.comment %}
         <div class="summary-item">
-            <strong>Comment:</strong>
+            <strong>{% translate "Comment:" %}</strong>
             <span>{{ delivery.comment }}</span>
         </div>
         {% endif %}
@@ -46,7 +46,7 @@
 
     <section class="delivery-items">
         <header class="section-header">
-            <h2>Delivery Items</h2>
+            <h2>{% translate "Delivery Items" %}</h2>
         </header>
 
         {{ delivery_items_data|json_script:"delivery-details-items-data" }}
@@ -56,8 +56,8 @@
     </section>
 
     <footer class="page-actions">
-        {% if perms.deliveries.change_deliveryattributes %}<a href="{% url 'delivery_edit' delivery.pk %}" class="button_edit">EDIT</a>{% endif %}
-        {% if perms.deliveries.delete_deliveryattributes %}<a href="{% url 'delivery_delete' delivery.pk %}" class="button_delete">DELETE</a>{% endif %}
+        {% if perms.deliveries.change_deliveryattributes %}<a href="{% url 'delivery_edit' delivery.pk %}" class="button_edit">{% translate "EDIT" %}</a>{% endif %}
+        {% if perms.deliveries.delete_deliveryattributes %}<a href="{% url 'delivery_delete' delivery.pk %}" class="button_delete">{% translate "DELETE" %}</a>{% endif %}
     </footer>
 </section>
 {% endblock content %}
@@ -107,38 +107,38 @@ document.addEventListener('DOMContentLoaded', function () {
             title: '#', field: 'internal_code', formatter: 'rownum', width: 40, hozAlign: 'center',
             headerFilter: false, hideable: false,
         },
-        {title: 'Code', field: 'internal_code', width: 110},
-        {title: 'Name', field: 'name', width: 220},
-        {title: 'Qty', field: 'delivery_quantity', width: 90, hozAlign: 'right', formatter: quantityFormatter, bottomCalc: 'sum', bottomCalcFormatter: quantityFormatter},
+        {title: '{% translate "Code" %}', field: 'internal_code', width: 110},
+        {title: '{% translate "Name" %}', field: 'name', width: 220},
+        {title: '{% translate "Qty" %}', field: 'delivery_quantity', width: 90, hozAlign: 'right', formatter: quantityFormatter, bottomCalc: 'sum', bottomCalcFormatter: quantityFormatter},
         {
-            title: 'Unit Price', field: 'price_at_delivery', width: 120, hozAlign: 'right',
+            title: '{% translate "Unit Price" %}', field: 'price_at_delivery', width: 120, hozAlign: 'right',
             formatter: moneyFormatter,
         },
         {
-            title: 'Unit Price (no VAT)', field: 'price_without_vat', width: 150, hozAlign: 'right',
+            title: '{% translate "Unit Price (no VAT)" %}', field: 'price_without_vat', width: 150, hozAlign: 'right',
             formatter: moneyFormatter, visible: false,
         },
         {
-            title: 'Line Total', field: 'total_price_row', width: 120, hozAlign: 'right',
+            title: '{% translate "Line Total" %}', field: 'total_price_row', width: 120, hozAlign: 'right',
             formatter: movementMoneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: movementMoneyFormatter,
         },
         {
-            title: 'Line Total (no VAT)', field: 'total_without_vat', width: 150, hozAlign: 'right',
+            title: '{% translate "Line Total (no VAT)" %}', field: 'total_without_vat', width: 150, hozAlign: 'right',
             formatter: movementMoneyFormatter, visible: false, bottomCalc: 'sum', bottomCalcFormatter: movementMoneyFormatter,
         },
         {
-            title: 'Sell Price', field: 'sell_price', width: 110, hozAlign: 'right',
+            title: '{% translate "Sell Price" %}', field: 'sell_price', width: 110, hozAlign: 'right',
             formatter: moneyFormatter,
         },
-        {title: 'Markup %', field: 'markup_percent', width: 100, hozAlign: 'right', formatter: percentFormatter},
-        {title: 'Expiry Date', field: 'expiry_date', width: 120},
+        {title: '{% translate "Markup %" %}', field: 'markup_percent', width: 100, hozAlign: 'right', formatter: percentFormatter},
+        {title: '{% translate "Expiry Date" %}', field: 'expiry_date', width: 120},
         {% if delivery.movement_type == 'SCRAP' %}
-        {title: 'Scrap Reason', field: 'scrap_reason_name', width: 150},
+        {title: '{% translate "Scrap Reason" %}', field: 'scrap_reason_name', width: 150},
         {% endif %}
-    ], {placeholder: 'No delivery items found.'});
+    ], {placeholder: '{% translate "No delivery items found." %}'});
 
     {% if delivery_items_data %}
-    attachTableExportToToolbar(table, '#delivery-details-items-table-card', 'delivery_{{ delivery.pk }}_items.xlsx', 'Delivery Items');
+    attachTableExportToToolbar(table, '#delivery-details-items-table-card', 'delivery_{{ delivery.pk }}_items.xlsx', '{% translate "Delivery Items" %}');
     {% endif %}
 });
 </script>

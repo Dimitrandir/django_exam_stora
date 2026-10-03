@@ -1,16 +1,17 @@
 {% extends 'base.html' %}
+{% load i18n %}
 
-{% block title %}STORA - Delete Employee{% endblock %}
+{% block title %}STORA - {% translate "Delete Employee" %}{% endblock %}
 
 {% block content %}
 
-<h1>Are you sure you want to delete employee:
+<h1>{% translate "Are you sure you want to delete employee:" %}
     "{{ employee.first_name }} {{ employee.last_name }}"?</h1>
 
 <form method="POST">
     {% csrf_token %}
-    <button type="submit" class="delete_button">YES</button>
-    <a href="{% url 'employee_list' %}" class="button_cancel">NO</a>
+    <button type="submit" class="delete_button">{% translate "YES" %}</button>
+    <a href="{% url 'employee_list' %}" class="button_cancel">{% translate "NO" %}</a>
 
 </form>
 

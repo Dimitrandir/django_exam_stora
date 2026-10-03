@@ -9,6 +9,7 @@ from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.translation import gettext as _, pgettext_lazy
 from django.views.decorators.http import require_GET, require_POST
 from django.views.generic import ListView
 
@@ -175,7 +176,7 @@ def price_list_detail(request, pk):
             'product_id': product.pk,
             'internal_code': product.internal_code,
             'name': product.name,
-            'scope_type': rule.scope_type,
+            'scope_type': rule.get_scope_type_display(),
             'base_price': float(product.sell_price),
             'base_price_no_vat': float(price_without_vat(product.sell_price, product)),
             'discount_percent': float(rule.discount_percent) if rule.discount_percent is not None else None,
@@ -197,6 +198,21 @@ def price_list_delete(request, pk):
     price_list.is_deleted = True
     price_list.save(update_fields=['is_deleted'])
     return redirect('price_list_list')
+
+
+# Context-qualified so "Active" here (feminine, a price list) can be
+# translated apart from the Products list's "Active" pill.
+PRICE_LIST_STATUS_LABELS = {
+    'Active': pgettext_lazy('price list status', 'Active'),
+    'Upcoming': pgettext_lazy('price list status', 'Upcoming'),
+    'Expired': pgettext_lazy('price list status', 'Expired'),
+}
+
+
+def _price_list_status(price_list, today):
+    if price_list.start_date <= today <= price_list.end_date:
+        return 'Active'
+    return 'Upcoming' if price_list.start_date > today else 'Expired'
 
 
 class PriceListListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListView):
@@ -221,9 +237,10 @@ class PriceListListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListVi
                 'priority': price_list.priority,
                 'start_date': price_list.start_date.isoformat(),
                 'end_date': price_list.end_date.isoformat(),
-                'status': 'Active' if price_list.start_date <= today <= price_list.end_date else (
-                    'Upcoming' if price_list.start_date > today else 'Expired'
-                ),
+                # Code drives the colour, 'status' is the translated label
+                # the grid shows/filters on.
+                'status_code': _price_list_status(price_list, today),
+                'status': PRICE_LIST_STATUS_LABELS[_price_list_status(price_list, today)],
                 'is_deleted': price_list.is_deleted,
                 'created_by': str(price_list.created_by),
                 'view_url': reverse('price_list_detail', kwargs={'pk': price_list.pk}),

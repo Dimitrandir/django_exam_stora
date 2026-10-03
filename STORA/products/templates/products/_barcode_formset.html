@@ -1,17 +1,18 @@
+{% load i18n %}
 {{ barcode_formset.management_form }}
 
 <div id="barcode-forms-container">
     {% for barcode_form in barcode_formset %}
-    <div class="barcode-row" style="border:1px solid #ddd; border-radius:4px; padding:8px 12px; margin-bottom:8px;">
-        <strong>Barcode #<span class="barcode-index">{{ forloop.counter }}</span></strong>
+    <div class="barcode-row">
+        <strong class="barcode-row__label">{% translate "Barcode #" %}<span class="barcode-index">{{ forloop.counter }}</span></strong>
         {{ barcode_form.id }}
         {{ barcode_form.position }}
-        <p>
+        <span class="barcode-row__code">
             {{ barcode_form.code }}
             {{ barcode_form.code.errors }}
-        </p>
+        </span>
         {% if forloop.counter == 1 %}
-        <label><small>{{ barcode_form.is_scale_code }} {{ barcode_form.is_scale_code.label }}</small></label>
+        <label class="barcode-row__scale"><small>{{ barcode_form.is_scale_code }} {{ barcode_form.is_scale_code.label }}</small></label>
         <span class="popup-tip">
             <button type="button" class="popup-tip__trigger" aria-label="Explanation">?</button>
             <span class="popup-tip__bubble">{{ barcode_form.is_scale_code.help_text }}</span>
@@ -29,13 +30,13 @@
         <div style="display:none;">{{ barcode_form.is_scale_code }}</div>
         {% endif %}
         {% if barcode_form.instance.pk %}
-        <br><label>{{ barcode_form.DELETE }} Remove this barcode</label>
+        <label class="barcode-row__remove">{{ barcode_form.DELETE }} {% translate "Remove this barcode" %}</label>
         {% endif %}
     </div>
     {% endfor %}
 </div>
 
-<button type="button" id="add-barcode-btn">+ Add another barcode</button>
+<button type="button" id="add-barcode-btn" class="formset-add-btn">{% translate "+ Add another barcode" %}</button>
 
 <!-- No is_scale_code here at all (unlike the loop above) -- "+ Add
      another barcode" only ever appends a new row after whatever's already
@@ -43,13 +44,13 @@
      scale barcode; nothing pre-existing to preserve either, since it's
      brand new. -->
 <template id="empty-barcode-form">
-    <div class="barcode-row" style="border:1px solid #ddd; border-radius:4px; padding:8px 12px; margin-bottom:8px;">
-        <strong>Barcode #<span class="barcode-index"></span></strong>
+    <div class="barcode-row">
+        <strong class="barcode-row__label">Barcode #<span class="barcode-index"></span></strong>
         {{ barcode_formset.empty_form.id }}
         {{ barcode_formset.empty_form.position }}
-        <p>
+        <span class="barcode-row__code">
             {{ barcode_formset.empty_form.code }}
-        </p>
+        </span>
     </div>
 </template>
 
@@ -103,6 +104,82 @@
         var newInput = newRow.querySelector('input[name$="-code"]');
         if (newInput) newInput.focus();
     });
+
+    // "Scan anywhere" -- a physical scanner "types" wherever the browser's
+    // focus happens to be (Name field, nowhere at all, ...), not
+    // necessarily a barcode row -- without this, scanning before ever
+    // clicking into the barcode section just lands on whatever has focus
+    // and does nothing. Same mechanism as sale_add.html's own scan-anywhere
+    // listener (see its comment there for the full reasoning): buffers
+    // digit keys at the document level using the same 30ms/char burst
+    // timing, only while focus ISN'T already in a text field (so it can
+    // never corrupt something someone's mid-typing in Name/Category/etc.).
+    // On a burst-terminating Enter, routes the whole code into the first
+    // EMPTY barcode row if one exists, otherwise adds a fresh row for it --
+    // scanning a second barcode when #1 is already filled in becomes
+    // barcode #2, not an overwrite ("ако е заето да го добави 2ро
+    // баркод"). Afterward opens (and focuses) ANOTHER new empty row, the
+    // same way the container's own Enter-adds-a-new-row handler above
+    // always does -- NOT left focused on the field it just filled.
+    // Confirmed live this matters: a synthetic scanner typing into an
+    // already-filled, still-focused field just appends onto the end of the
+    // existing value instead of starting a new one (no selection to
+    // overwrite), silently corrupting it into one garbled code. Ending on
+    // a guaranteed-empty, focused row makes a second physical scan land
+    // cleanly every time, continuous-scanning included.
+    function isTextEntryElement(el) {
+        if (!el) return false;
+        if (el.tagName === 'TEXTAREA' || el.isContentEditable) return true;
+        if (el.tagName === 'INPUT') {
+            var type = (el.type || 'text').toLowerCase();
+            return ['text', 'search', 'number', 'email', 'tel', 'url', 'password', 'date'].indexOf(type) > -1;
+        }
+        return false;
+    }
+
+    var globalScanBuffer = '';
+    var globalScanLastKeyTime = 0;
+
+    document.addEventListener('keydown', function (e) {
+        if (isTextEntryElement(document.activeElement)) return;
+
+        var gap = performance.now() - globalScanLastKeyTime;
+        globalScanLastKeyTime = performance.now();
+
+        if (e.key === 'Enter') {
+            var code = globalScanBuffer;
+            globalScanBuffer = '';
+            if (code.length >= 4) {
+                e.preventDefault();
+                var codeInputs = container.querySelectorAll('input[name$="-code"]');
+                var target = null;
+                for (var i = 0; i < codeInputs.length; i++) {
+                    if (!codeInputs[i].value) {
+                        target = codeInputs[i];
+                        break;
+                    }
+                }
+                if (!target) {
+                    var newRow = addRow();
+                    target = newRow.querySelector('input[name$="-code"]');
+                }
+                target.value = code;
+                target.dispatchEvent(new Event('input', {bubbles: true}));
+                var nextRow = addRow();
+                var nextInput = nextRow.querySelector('input[name$="-code"]');
+                if (nextInput) nextInput.focus();
+            }
+            return;
+        }
+
+        if (/^[0-9]$/.test(e.key)) {
+            // A slow gap means this digit starts a fresh sequence, not a
+            // continuation of the last one.
+            globalScanBuffer = (gap < 30 || globalScanBuffer === '') ? globalScanBuffer + e.key : e.key;
+        } else {
+            globalScanBuffer = '';
+        }
+    }, true);
 
     renumber();
 })();

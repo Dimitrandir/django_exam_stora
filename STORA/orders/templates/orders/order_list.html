@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
+{% load static cache_bust i18n %}
 
-{% block title %}STORA - Orders{% endblock %}
-{% load static cache_bust %}
+{% block title %}STORA - {% translate "Orders" %}{% endblock %}
 
 {% block main_class %}main-wide{% endblock %}
 {% block container_class %}container-fluid{% endblock %}
@@ -43,8 +43,8 @@ document.addEventListener('DOMContentLoaded', function () {
         var banner = document.createElement('div');
         banner.className = 'alert alert-success';
         banner.textContent = created > 0
-            ? 'AI-то създаде ' + created + ' нови чернови поръчки (' + skipped + ' доставчика пропуснати -- нямаше какво да предложи).'
-            : 'AI-то не намери нищо за поръчване в момента (' + skipped + ' доставчика прегледани).';
+            ? '{% translate "AI created %s new draft orders (%s suppliers skipped -- nothing to suggest)." %}'.replace('%s', created).replace('%s', skipped)
+            : '{% translate "AI found nothing to order right now (%s suppliers checked)." %}'.replace('%s', skipped);
         document.querySelector('.data-table-card').before(banner);
         params.delete('ai_drafted');
         params.delete('ai_skipped');
@@ -68,18 +68,18 @@ document.addEventListener('DOMContentLoaded', function () {
 
     var table = initExcelStyleTable('#orders-table', 'orders-table-data', [
         {title: '#', field: 'order_number', formatter: 'rownum', width: 50, hozAlign: 'center', headerFilter: false, hideable: false},
-        {title: 'Order Number', field: 'order_number', width: 140},
-        {title: 'Date', field: 'order_date', width: 110},
-        {title: 'Supplier', field: 'supplier', widthGrow: 2},
-        {title: 'Position', field: 'supplier_position', width: 150},
-        {title: 'Period', field: 'period', width: 190},
-        {title: 'Status', field: 'status', width: 130, formatter: statusFormatter},
-        {title: 'Items', field: 'item_count', width: 80, hozAlign: 'right'},
+        {title: '{% translate "Order Number" %}', field: 'order_number', width: 140},
+        {title: '{% translate "Date" %}', field: 'order_date', width: 110},
+        {title: '{% translate "Supplier" %}', field: 'supplier', widthGrow: 2},
+        {title: '{% translate "Position" %}', field: 'supplier_position', width: 150},
+        {title: '{% translate "Period" %}', field: 'period', width: 190},
+        {title: '{% translate "Status" %}', field: 'status', width: 130, formatter: statusFormatter},
+        {title: '{% translate "Items" %}', field: 'item_count', width: 80, hozAlign: 'right'},
         {
-            title: 'Total', field: 'total_amount', width: 120, hozAlign: 'right',
+            title: '{% translate "Total" %}', field: 'total_amount', width: 120, hozAlign: 'right',
             formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
         },
-    ], {placeholder: 'No orders yet.'});
+    ], {placeholder: '{% translate "No orders yet." %}'});
 
     table.on('rowClick', function (e, row) {
         window.location = row.getData().view_url;
@@ -94,7 +94,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // note on products_list.html's Full Screen button).
     var toolbarTitle = document.createElement('span');
     toolbarTitle.className = 'data-table-card__toolbar-title';
-    toolbarTitle.textContent = 'Orders';
+    toolbarTitle.textContent = '{% translate "Orders" %}';
 
     attachTableExportToToolbar(table, '.data-table-card', 'orders.xlsx', 'Orders', [], toolbarTitle);
 
@@ -109,7 +109,7 @@ document.addEventListener('DOMContentLoaded', function () {
         newOrderBtn.className = 'icon-btn icon-btn--add icon-btn--sm';
         newOrderBtn.innerHTML =
             '<span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--add"></span></span>' +
-            '<span class="icon-btn__label">New Order</span>';
+            '<span class="icon-btn__label">{% translate "New Order" %}</span>';
 
         var leftGroup = document.createElement('div');
         leftGroup.className = 'data-table-card__toolbar-actions';
@@ -126,11 +126,11 @@ document.addEventListener('DOMContentLoaded', function () {
         var aiDraftBtn = document.createElement('button');
         aiDraftBtn.type = 'button';
         aiDraftBtn.className = 'icon-btn icon-btn--outline icon-btn--sm';
-        aiDraftBtn.innerHTML = '<span class="icon-btn__label">AI Draft All</span>';
+        aiDraftBtn.innerHTML = '<span class="icon-btn__label">{% translate "AI Draft All" %}</span>';
         aiDraftBtn.addEventListener('click', function () {
-            if (!confirm('AI-то ще прегледа продажбите на всички доставчици и ще създаде чернови поръчки, където прецени, че е нужно. Това може да отнеме известно време. Продължаваш ли?')) return;
+            if (!confirm('{% translate "AI will review the sales of every supplier and create draft orders wherever it finds them needed. This can take a while. Continue?" %}')) return;
             aiDraftBtn.disabled = true;
-            aiDraftBtn.querySelector('.icon-btn__label').textContent = 'Drafting…';
+            aiDraftBtn.querySelector('.icon-btn__label').textContent = '{% translate "Drafting…" %}';
             document.getElementById('ai-draft-all-form').submit();
         });
         leftGroup.appendChild(aiDraftBtn);

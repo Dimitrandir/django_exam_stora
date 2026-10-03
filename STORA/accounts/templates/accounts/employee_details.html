@@ -1,22 +1,23 @@
 {% extends 'base.html' %}
+{% load i18n %}
 
 {% block title %}STORA - {{ employee.first_name }} {{ employee.last_name }}{% endblock %}
 {% block content %}
 
-<h1>{{ employee.first_name }} {{ employee.last_name }}</h1></h1>
+<h1>{{ employee.first_name }} {{ employee.last_name }}</h1>
 
 <div class="info">
-    <p><strong>First Name: </strong>{{ employee.first_name }}</p>
-    <p><strong>Last Name: </strong>{{ employee.last_name }}</p>
-    <p><strong>Phone Number: </strong>{{ employee.phone}}</p>
-    <p><strong>Email: </strong>{{ employee.email }}</p>
-    <p><strong>Role: </strong>{{ employee.role }}</p>
+    <p><strong>{% translate "First Name: " %}</strong>{{ employee.first_name }}</p>
+    <p><strong>{% translate "Last Name: " %}</strong>{{ employee.last_name }}</p>
+    <p><strong>{% translate "Phone Number: " %}</strong>{{ employee.phone}}</p>
+    <p><strong>{% translate "Email: " %}</strong>{{ employee.email }}</p>
+    <p><strong>{% translate "Role: " %}</strong>{{ employee.get_role_display }}</p>
 
 </div>
 
 <div>
-    {% if perms.accounts.change_employee %}<a href="{% url 'employee_edit' employee.pk %}" class="button_edit">EDIT</a>{% endif %}
-    {% if perms.accounts.delete_employee %}<a href="{% url 'employee_delete' employee.pk %}" class="button_delete">DELETE</a>{% endif %}
+    {% if perms.accounts.change_employee %}<a href="{% url 'employee_edit' employee.pk %}" class="button_edit">{% translate "EDIT" %}</a>{% endif %}
+    {% if perms.accounts.delete_employee %}<a href="{% url 'employee_delete' employee.pk %}" class="button_delete">{% translate "DELETE" %}</a>{% endif %}
 </div>
 
 {% endblock %}

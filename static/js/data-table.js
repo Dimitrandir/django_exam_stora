@@ -10,6 +10,18 @@
  * `bottomCalc` set gets a totals row automatically (built into Tabulator).
  */
 (function (global) {
+    // This file is a plain static .js file, not a Django template, so
+    // {% translate %} tags can't go directly in it -- base.html renders a
+    // window.DataTableI18n object (real {% translate %} tags there) before
+    // this script loads on every page, and every user-visible string below
+    // reads from it with the English literal as a fallback (keeps this file
+    // working standalone too, e.g. if some future page doesn't extend
+    // base.html).
+    var i18n = global.DataTableI18n || {};
+    function t(key, fallback) {
+        return i18n[key] || fallback;
+    }
+
     // Every open toggle/panel pair, so closeAllPanels can tell a click
     // *inside* one of them apart from a click elsewhere on the page --
     // more robust than scattering stopPropagation() on each new child
@@ -111,7 +123,7 @@
             var field = column.getField();
             var widget = widgetCache[field];
             if (!widget) {
-                widget = createFloatingToggle('▾', 'Filter');
+                widget = createFloatingToggle('▾', t('filter', 'Filter'));
                 // null = no filter (everything included); otherwise the
                 // list of values still checked. Remembered across panel
                 // close/reopen (not just within one open session) so the
@@ -125,7 +137,7 @@
             function currentValues() {
                 return column.getTable().getData().map(function (row) {
                     var v = row[field];
-                    return v === null || v === undefined || v === '' ? '(blank)' : String(v);
+                    return v === null || v === undefined || v === '' ? t('blank', '(blank)') : String(v);
                 });
             }
 
@@ -144,7 +156,7 @@
 
                 var search = document.createElement('input');
                 search.type = 'text';
-                search.placeholder = 'Search...';
+                search.placeholder = t('search', 'Search...');
                 search.className = 'excel-filter-search';
                 widget.panel.appendChild(search);
 
@@ -153,7 +165,7 @@
                 allCb.type = 'checkbox';
                 allCb.checked = widget.selectedValues === null;
                 allLabel.appendChild(allCb);
-                allLabel.appendChild(document.createTextNode(' (All)'));
+                allLabel.appendChild(document.createTextNode(' ' + t('all', '(All)')));
                 widget.panel.appendChild(allLabel);
 
                 unique.forEach(function (val) {
@@ -222,7 +234,7 @@
 
     function excelStyleFilterFunc(headerValue, rowValue) {
         if (headerValue === '' || !headerValue) return true;
-        var display = rowValue === null || rowValue === undefined || rowValue === '' ? '(blank)' : String(rowValue);
+        var display = rowValue === null || rowValue === undefined || rowValue === '' ? t('blank', '(blank)') : String(rowValue);
         return headerValue.indexOf(display) > -1;
     }
 
@@ -231,7 +243,7 @@
     function addColumnChooser(containerElement, table, columns) {
         var bar = document.createElement('div');
         bar.className = 'mb-2';
-        var widget = createFloatingToggle('Columns ▾', 'Choose visible columns');
+        var widget = createFloatingToggle(t('columns', 'Columns') + ' ▾', t('chooseVisibleColumns', 'Choose visible columns'));
         // Restyled as a round icon-btn (eye glyph, static/visibility.png)
         // instead of the plain text "Columns ▾" link -- className is
         // REPLACED outright (not appended alongside excel-filter-toggle),
@@ -243,7 +255,7 @@
         widget.toggle.className = 'icon-btn icon-btn--outline icon-btn--sm';
         widget.toggle.innerHTML =
             '<span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--visibility"></span></span>' +
-            '<span class="icon-btn__label">Columns</span>';
+            '<span class="icon-btn__label">' + t('columns', 'Columns') + '</span>';
         bar.appendChild(widget.wrapper);
         containerElement.parentNode.insertBefore(bar, containerElement);
 
@@ -287,7 +299,7 @@
             data: data,
             layout: 'fitColumns',
             columns: columns,
-            placeholder: options.placeholder || 'No data found.',
+            placeholder: options.placeholder || t('noDataFound', 'No data found.'),
             // Opt-in per table (options.height, e.g. 'calc(100vh - 320px)',
             // same idea as the POS cart's own fixed height in sale_add.html).
             // Tabulator only switches to virtual-DOM row rendering (only the
@@ -331,7 +343,22 @@
             // properties explicitly forces the merge to always consider
             // them, regardless of what the original definition happens to
             // declare.
-            tableConfig.persistence = {columns: ['title', 'width', 'visible']};
+            // 'title' deliberately left OUT of this list (even though an
+            // earlier version of this file included it) -- column titles
+            // come from Django's {% translate %} at render time, so they
+            // can change on their own (a translation edit) independent of
+            // anything the user did. If Tabulator is allowed to persist
+            // 'title' too, the FIRST page load after turning persistence on
+            // freezes whatever title happened to be live at that moment
+            // into localStorage -- any later translation fix then gets
+            // silently masked by that frozen copy forever, and bumping the
+            // persistenceID (see products_list.html) only buys one more
+            // reset before the same thing happens again on the next wording
+            // change. Confirmed live: a column title edited twice in a row
+            // kept showing the FIRST edit, not the second, until this was
+            // removed. Width/visible are genuinely user choices (resizing,
+            // show/hide) and are fine to remember indefinitely.
+            tableConfig.persistence = {columns: ['width', 'visible']};
             tableConfig.persistenceID = typeof options.persist === 'string'
                 ? options.persist : elementSelector.replace(/^#/, '');
         }
@@ -501,7 +528,7 @@
                 '<line x1="14.9" y1="18" x2="29" y2="18" stroke="#7DBB42" stroke-width="1"/>' +
                 '</svg>' +
                 '</span>' +
-                '<span class="icon-btn__label">Export to Excel</span>';
+                '<span class="icon-btn__label">' + t('exportToExcel', 'Export to Excel') + '</span>';
             exportBtn.addEventListener('click', function () {
                 table.download('xlsx', filename, {sheetName: sheetName});
             });

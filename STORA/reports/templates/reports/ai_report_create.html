@@ -1,12 +1,13 @@
 {% extends 'base.html' %}
+{% load i18n %}
 
-{% block title %}STORA - New AI Report{% endblock %}
+{% block title %}STORA - {% translate "New AI Report" %}{% endblock %}
 
 {% block content %}
 <section class="reports-ai-create">
     <header class="page-header mb-4">
-        <h1 class="h2 mb-1">New AI Report</h1>
-        <p class="text-muted mb-0">Ask a question about sales, stock, deliveries or margins, in plain language.</p>
+        <h1 class="h2 mb-1">{% translate "New AI Report" %}</h1>
+        <p class="text-muted mb-0">{% translate "Ask a question about sales, stock, deliveries or margins, in plain language." %}</p>
     </header>
 
     {% if error %}
@@ -18,17 +19,17 @@
             <form method="POST">
                 {% csrf_token %}
                 <div class="mb-3">
-                    <label for="id_prompt" class="form-label">Question</label>
+                    <label for="id_prompt" class="form-label">{% translate "Question" %}</label>
                     <textarea id="id_prompt" name="prompt" class="form-control" rows="3"
-                              placeholder="e.g. Какъв беше оборотът на магазина вчера, и коя категория продаде най-много?"
+                              placeholder="{% translate "e.g. What was the shop turnover yesterday, and which category sold the most?" %}"
                               required>{{ prompt|default:'' }}</textarea>
                 </div>
-                <button type="submit" class="btn btn-primary" id="ask-btn">Ask</button>
+                <button type="submit" class="btn btn-primary" id="ask-btn">{% translate "Ask" %}</button>
             </form>
         </div>
     </section>
 
-    <p class="text-muted small">This can take a few seconds -- the AI may run several queries before answering.</p>
+    <p class="text-muted small">{% translate "This can take a few seconds -- the AI may run several queries before answering." %}</p>
 </section>
 {% endblock %}
 
@@ -39,7 +40,7 @@ document.addEventListener('DOMContentLoaded', function () {
     var btn = document.getElementById('ask-btn');
     form.addEventListener('submit', function () {
         btn.disabled = true;
-        btn.textContent = 'Thinking…';
+        btn.textContent = '{% translate "Thinking…" %}';
     });
 });
 </script>

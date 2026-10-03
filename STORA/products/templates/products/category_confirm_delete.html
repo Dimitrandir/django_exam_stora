@@ -1,15 +1,16 @@
 {% extends 'base.html' %}
+{% load i18n %}
 
-{% block title %}STORA - Delete Category{% endblock %}
+{% block title %}STORA - {% translate "Delete Category" %}{% endblock %}
 
 {% block content %}
 
-<h1>Are you sure you want to delete category: "{{ category.name }}"?</h1>
+<h1>{% blocktranslate with name=category.name %}Are you sure you want to delete category: "{{ name }}"?{% endblocktranslate %}</h1>
 
 <form method="POST">
     {% csrf_token %}
-    <button type="submit" class="delete_button">YES</button>
-    <a href="{% url 'category_list' %}" class="button_cancel">NO</a>
+    <button type="submit" class="delete_button">{% translate "YES" %}</button>
+    <a href="{% url 'category_list' %}" class="button_cancel">{% translate "NO" %}</a>
 </form>
 
 {% endblock %}

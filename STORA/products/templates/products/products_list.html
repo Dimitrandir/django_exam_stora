@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
+{% load static cache_bust i18n %}
 
-{% block title %}STORA - Products List{% endblock %}
-{% load static cache_bust %}
+{% block title %}STORA - {% translate "Products List" %}{% endblock %}
 
 {% block main_class %}main-wide products-page-main{% endblock %}
 {% block container_class %}container-fluid products-page-container{% endblock %}
@@ -32,45 +32,45 @@
 
 
 <div id="bulk-actions-bar" class="bulk-actions-bar d-none align-items-center gap-2 flex-wrap mb-2">
-    <strong><span id="bulk-selected-count">0</span> selected</strong>
+    <strong><span id="bulk-selected-count">0</span> {% translate "selected" %}</strong>
     {% if perms.products.change_product %}
     <div class="pill-search-wrapper pill-search-wrapper--with-browse" style="max-width: 340px; flex: 1 1 260px;">
         <span class="pill-search-wrapper__icon"></span>
-        <input type="text" id="bulk-category-search-input" class="pill-input" placeholder="Category..." autocomplete="off">
-        <button type="button" id="bulk-category-tree-btn" class="pill-search-wrapper__browse-btn" title="Browse categories as a tree">Browse</button>
+        <input type="text" id="bulk-category-search-input" class="pill-input" placeholder="{% translate 'Category...' %}" autocomplete="off">
+        <button type="button" id="bulk-category-tree-btn" class="pill-search-wrapper__browse-btn" title="{% translate 'Browse categories as a tree' %}">{% translate "Browse" %}</button>
         <div id="bulk-category-search-results" class="global-search-results"></div>
     </div>
     <button type="button" id="bulk-category-apply-btn" class="icon-btn icon-btn--apply icon-btn--sm" disabled>
         <span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--check"></span></span>
-        <span class="icon-btn__label">Pick a category</span>
+        <span class="icon-btn__label">{% translate "Pick a category" %}</span>
     </button>
 
-    <input type="number" id="bulk-price-input" class="pill-input" style="width: 110px;" step="0.01" min="0.01" placeholder="Sell price">
+    <input type="number" id="bulk-price-input" class="pill-input" style="width: 110px;" step="0.01" min="0.01" placeholder="{% translate 'Sell price' %}">
     <button type="button" id="bulk-price-apply-btn" class="icon-btn icon-btn--apply icon-btn--sm">
         <span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--check"></span></span>
-        <span class="icon-btn__label">Apply price</span>
+        <span class="icon-btn__label">{% translate "Apply price" %}</span>
     </button>
     {% endif %}
     {% if perms.revisions.add_revisionattributes or perms.deliveries.add_deliveryattributes or perms.orders.add_orderattributes %}
     <div class="d-flex align-items-center gap-1">
-        <span class="text-muted small">Load into:</span>
+        <span class="text-muted small">{% translate "Load into:" %}</span>
         {% if perms.revisions.add_revisionattributes %}
-        <button type="button" id="bulk-load-revision-btn" class="btn btn-sm btn-outline-secondary">Revision</button>
+        <button type="button" id="bulk-load-revision-btn" class="btn btn-sm btn-outline-secondary">{% translate "Revision" %}</button>
         {% endif %}
         {% if perms.deliveries.add_deliveryattributes %}
-        <button type="button" id="bulk-load-delivery-btn" class="btn btn-sm btn-outline-secondary">Delivery</button>
-        <button type="button" id="bulk-load-writeoff-btn" class="btn btn-sm btn-outline-secondary">Write-off</button>
-        <button type="button" id="bulk-load-scrap-btn" class="btn btn-sm btn-outline-secondary">Scrap</button>
+        <button type="button" id="bulk-load-delivery-btn" class="btn btn-sm btn-outline-secondary">{% translate "Delivery" %}</button>
+        <button type="button" id="bulk-load-writeoff-btn" class="btn btn-sm btn-outline-secondary">{% translate "Write-off" %}</button>
+        <button type="button" id="bulk-load-scrap-btn" class="btn btn-sm btn-outline-secondary">{% translate "Scrap" %}</button>
         {% endif %}
         {% if perms.orders.add_orderattributes %}
-        <button type="button" id="bulk-load-order-btn" class="btn btn-sm btn-outline-secondary">Order</button>
+        <button type="button" id="bulk-load-order-btn" class="btn btn-sm btn-outline-secondary">{% translate "Order" %}</button>
         {% endif %}
     </div>
     {% endif %}
     {% if perms.products.delete_product %}
     <button type="button" id="bulk-delete-btn" class="icon-btn icon-btn--delete icon-btn--sm ms-auto">
         <span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--bin"></span></span>
-        <span class="icon-btn__label">Delete selected</span>
+        <span class="icon-btn__label">{% translate "Delete selected" %}</span>
     </button>
     {% endif %}
 </div>
@@ -94,7 +94,7 @@ document.addEventListener('DOMContentLoaded', function () {
         return isNaN(v) ? '' : v.toFixed(2);
     }
 
-    var unitTypeLabels = {piece: 'pcs', weight: 'kg'};
+    var unitTypeLabels = {piece: '{% translate "pcs" %}', weight: '{% translate "kg" %}'};
     function unitTypeFormatter(cell) {
         return unitTypeLabels[cell.getValue()] || cell.getValue();
     }
@@ -129,7 +129,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // single-column aggregates, the well-trodden native code path, not
     // that same custom-function case.
     var priceStatModes = ['avg', 'min', 'max'];
-    var priceStatLabels = {avg: 'mean', min: 'min', max: 'max'};
+    var priceStatLabels = {avg: '{% translate "mean" %}', min: '{% translate "min" %}', max: '{% translate "max" %}'};
     var priceStatIndex = 0;
     var priceStatFields = ['sell_price', 'delivery_price', 'markup_percent'];
 
@@ -215,8 +215,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function posToggleFormatter(cell) {
         return cell.getValue()
-            ? '<button type="button" class="pos-toggle-btn pos-toggle-btn--on">On</button>'
-            : '<button type="button" class="pos-toggle-btn">Off</button>';
+            ? '<button type="button" class="pos-toggle-btn pos-toggle-btn--on">{% translate "On" %}</button>'
+            : '<button type="button" class="pos-toggle-btn">{% translate "Off" %}</button>';
     }
 
     function posToggleCellClick(e, cell) {
@@ -225,12 +225,12 @@ document.addEventListener('DOMContentLoaded', function () {
         postInlineUpdate(cell.getRow().getData().id, 'show_on_pos', newValue)
             .then(function (result) {
                 if (!result.ok) {
-                    alert(result.data.error || 'Could not save the change.');
+                    alert(result.data.error || '{% translate "Could not save the change." %}');
                     cell.setValue(!newValue);
                 }
             })
             .catch(function () {
-                alert('Network error -- change was not saved.');
+                alert('{% translate "Network error -- change was not saved." %}');
                 cell.setValue(!newValue);
             });
     }
@@ -244,8 +244,8 @@ document.addEventListener('DOMContentLoaded', function () {
     // the row itself doesn't disappear until the next reload/filter change.
     function archiveToggleFormatter(cell) {
         return cell.getValue()
-            ? '<button type="button" class="pos-toggle-btn pos-toggle-btn--on">Archived</button>'
-            : '<button type="button" class="pos-toggle-btn">Active</button>';
+            ? '<button type="button" class="pos-toggle-btn pos-toggle-btn--on">{% translate "Archived" %}</button>'
+            : '<button type="button" class="pos-toggle-btn">{% translate "Active" %}</button>';
     }
 
     function archiveToggleCellClick(e, cell) {
@@ -254,12 +254,12 @@ document.addEventListener('DOMContentLoaded', function () {
         postInlineUpdate(cell.getRow().getData().id, 'is_archived', newValue)
             .then(function (result) {
                 if (!result.ok) {
-                    alert(result.data.error || 'Could not save the change.');
+                    alert(result.data.error || '{% translate "Could not save the change." %}');
                     cell.setValue(!newValue);
                 }
             })
             .catch(function () {
-                alert('Network error -- change was not saved.');
+                alert('{% translate "Network error -- change was not saved." %}');
                 cell.setValue(!newValue);
             });
     }
@@ -271,46 +271,46 @@ document.addEventListener('DOMContentLoaded', function () {
             cellClick: function (e, cell) { cell.getRow().toggleSelect(); },
         },
         {
-            title: 'Code', field: 'internal_code', width: 90, bottomCalc: 'count',
+            title: '{% translate "Code" %}', field: 'internal_code', width: 90, bottomCalc: 'count',
             // Plain number, not "Products count: N" -- that wrapped onto two
             // lines in this narrow a column (flagged live). The label still
             // shows, just as a native hover tooltip instead of always-on text.
             bottomCalcFormatter: function (cell) {
-                return '<span title="Products count">' + cell.getValue() + '</span>';
+                return '<span title="{% translate "Products count" %}">' + cell.getValue() + '</span>';
             },
         },
-        {title: 'Name', field: 'name', width: 300},
-        {title: 'Category', field: 'category', width: 130},
-        {title: 'Tax Group', field: 'tax_group', width: 110, visible: false},
-        {title: 'Sold By', field: 'unit_type', width: 130, formatter: unitTypeFormatter},
+        {title: '{% translate "Name" %}', field: 'name', width: 300},
+        {title: '{% translate "Category" %}', field: 'category', width: 130},
+        {title: '{% translate "Tax Group" %}', field: 'tax_group', width: 110, visible: false},
+        {title: '{% translate "Sold By" %}', field: 'unit_type', width: 130, formatter: unitTypeFormatter},
         {
-            title: 'Recipe', field: 'is_recipe', width: 90,
-            formatter: function (cell) { return cell.getValue() ? 'Yes' : 'No'; },
+            title: '{% translate "Recipe" %}', field: 'is_recipe', width: 90,
+            formatter: function (cell) { return cell.getValue() ? '{% translate "Yes" %}' : '{% translate "No" %}'; },
             visible: false,
         },
         {
-            title: 'Show on POS', field: 'show_on_pos', width: 120, hozAlign: 'center',
+            title: '{% translate "Show on POS" %}', field: 'show_on_pos', width: 120, hozAlign: 'center',
             formatter: posToggleFormatter, cellClick: posToggleCellClick,
         },
         {
-            title: 'Archived', field: 'is_archived', width: 100, hozAlign: 'center', visible: false,
+            title: '{% translate "Archived" %}', field: 'is_archived', width: 100, hozAlign: 'center', visible: false,
             formatter: archiveToggleFormatter, cellClick: archiveToggleCellClick,
         },
         {
-            title: 'Sell Price', field: 'sell_price', width: 90, hozAlign: 'right', sorter: 'number',
+            title: '{% translate "Sell Price" %}', field: 'sell_price', width: 90, hozAlign: 'right', sorter: 'number',
             formatter: currencyFormatter, bottomCalc: 'avg', bottomCalcFormatter: priceBottomCalcFormatter,
         },
         {
-            title: 'Delivery Price', field: 'delivery_price', width: 90, hozAlign: 'right', sorter: 'number',
+            title: '{% translate "Delivery Price" %}', field: 'delivery_price', width: 90, hozAlign: 'right', sorter: 'number',
             formatter: currencyFormatter, visible: false,
             bottomCalc: 'avg', bottomCalcFormatter: priceBottomCalcFormatter,
         },
         {
-            title: 'Markup %', field: 'markup_percent', width: 80, hozAlign: 'right', sorter: 'number',
+            title: '{% translate "Markup %" %}', field: 'markup_percent', width: 80, hozAlign: 'right', sorter: 'number',
             formatter: markupFormatter, bottomCalc: 'avg', bottomCalcFormatter: markupBottomCalcFormatter,
         },
         {
-            title: 'Price List', field: 'price_list_name', width: 130,
+            title: '{% translate "Price List" %}', field: 'price_list_name', width: 130,
             formatter: function (cell) {
                 var v = cell.getValue();
                 return v ? '<span style="color:#2a4d7a;text-decoration:underline;cursor:pointer;">' + v + '</span>' : '';
@@ -325,7 +325,7 @@ document.addEventListener('DOMContentLoaded', function () {
             // while everything's "piece", but once weight products are
             // actually in use, a sum mixing pcs and kg stops being
             // meaningful. Revisit (e.g. split into two calcs) then.
-            title: 'Stock', field: 'quantity', width: 110, hozAlign: 'right', sorter: 'number',
+            title: '{% translate "Stock" %}', field: 'quantity', width: 110, hozAlign: 'right', sorter: 'number',
             formatter: stockFormatter, bottomCalc: 'sum',
             // The per-row formatter rounds piece products to whole units
             // and only shows decimals for weight ones -- for the SUMMED
@@ -340,14 +340,23 @@ document.addEventListener('DOMContentLoaded', function () {
         // Read-only: a product can have several barcodes/suppliers, but a
         // grid needs a fixed number of columns. Editing them still happens
         // on the product's own page, where the full list is managed.
-        {title: 'Barcode 1', field: 'barcode_1', width: 140},
-        {title: 'Barcode 2', field: 'barcode_2', width: 140, visible: false},
-        {title: 'Barcode 3', field: 'barcode_3', width: 140, visible: false},
-        {title: 'Supplier (Primary)', field: 'supplier_1', width: 160},
-        {title: 'Alt Supplier 1', field: 'supplier_2', width: 160, visible: false},
-        {title: 'Alt Supplier 2', field: 'supplier_3', width: 160, visible: false},
+        {title: '{% translate "Barcode 1" %}', field: 'barcode_1', width: 140},
+        {title: '{% translate "Barcode 2" %}', field: 'barcode_2', width: 140, visible: false},
+        {title: '{% translate "Barcode 3" %}', field: 'barcode_3', width: 140, visible: false},
+        {title: '{% translate "Supplier (Primary)" %}', field: 'supplier_1', width: 160},
+        {title: '{% translate "Alt Supplier 1" %}', field: 'supplier_2', width: 160, visible: false},
+        {title: '{% translate "Alt Supplier 2" %}', field: 'supplier_3', width: 160, visible: false},
     ], {
-        placeholder: 'No products found.', selectableRows: true, persist: 'products-list',
+        placeholder: '{% translate "No products found." %}', selectableRows: true,
+        // Bumped from 'products-list' to '-v2' when the column titles were
+        // translated to Bulgarian -- Tabulator's persistence module caches
+        // column title/width/visible in localStorage keyed by this string,
+        // so a returning user's browser would otherwise keep showing the
+        // old English titles it had already saved, even though the page
+        // itself now renders Bulgarian ones. A new key makes Tabulator
+        // start fresh (old key is simply left behind, harmless) instead of
+        // requiring every user to clear their own localStorage by hand.
+        persist: 'products-list-v2',
         // Bounded height -> Tabulator's virtual DOM (see initExcelStyleTable's
         // own comment) -- without this, a large catalog renders every row as
         // a real DOM node at once and the tab locks up (confirmed live at
@@ -392,7 +401,7 @@ document.addEventListener('DOMContentLoaded', function () {
         addProductBtn.className = 'icon-btn icon-btn--add icon-btn--sm';
         addProductBtn.innerHTML =
             '<span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--add"></span></span>' +
-            '<span class="icon-btn__label">New Product</span>';
+            '<span class="icon-btn__label">{% translate "New Product" %}</span>';
     }
 
     // Enable Edit moves into the table card's own toolbar too (built here
@@ -408,7 +417,7 @@ document.addEventListener('DOMContentLoaded', function () {
         editToggleBtn.className = 'icon-btn icon-btn--outline icon-btn--sm';
         editToggleBtn.innerHTML =
             '<span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--edit"></span></span>' +
-            '<span class="icon-btn__label">Enable Edit</span>';
+            '<span class="icon-btn__label">{% translate "Enable Edit" %}</span>';
     }
 
     // Cycles the Sell/Delivery Price + Markup % bottom-of-column stat
@@ -460,10 +469,10 @@ document.addEventListener('DOMContentLoaded', function () {
     var toolbarTitle = document.createElement('span');
     toolbarTitle.className = 'data-table-card__toolbar-title';
     toolbarTitle.innerHTML =
-        'Products List' +
+        '{% translate "Products List" %}' +
         '<span class="popup-tip">' +
-        '<button type="button" class="popup-tip__trigger" aria-label="Explanation">?</button>' +
-        '<span class="popup-tip__bubble">Overview of all products in stock. Click a row to open it, a column header to sort, use the ▾ to filter. Archived products are hidden -- show the "Archived" column (Columns ▾) to see them too.</span>' +
+        '<button type="button" class="popup-tip__trigger" aria-label="{% translate 'Explanation' %}">?</button>' +
+        '<span class="popup-tip__bubble">{% translate 'Overview of all products in stock. Click a row to open it, a column header to sort, use the ▾ to filter. Archived products are hidden -- show the "Archived" column (Columns ▾) to see them too.' %}</span>' +
         '</span>';
 
     attachTableExportToToolbar(table, '.data-table-card', 'products.xlsx', 'Products', toolbarExtras, toolbarTitle);
@@ -489,7 +498,7 @@ document.addEventListener('DOMContentLoaded', function () {
         focusBtn.className = 'icon-btn icon-btn--outline icon-btn--sm';
         focusBtn.innerHTML =
             '<span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--fullscreen"></span></span>' +
-            '<span class="icon-btn__label">Full Screen</span>';
+            '<span class="icon-btn__label">{% translate "Full Screen" %}</span>';
 
         // Bar is `justify-content: space-between`, which only really works
         // as "first item left, last item right" -- a loose sibling dropped
@@ -507,7 +516,7 @@ document.addEventListener('DOMContentLoaded', function () {
         focusBtn.addEventListener('click', function () {
             var on = document.body.classList.toggle('products-table-focus');
             focusBtn.classList.toggle('is-active', on);
-            focusBtn.querySelector('.icon-btn__label').textContent = on ? 'Exit Full Screen' : 'Full Screen';
+            focusBtn.querySelector('.icon-btn__label').textContent = on ? '{% translate "Exit Full Screen" %}' : '{% translate "Full Screen" %}';
             // Real browser fullscreen too (same pattern as the POS
             // screen's own pos-fullscreen-btn), not just hiding the site
             // nav ("да изораща целия браузер във фул скрийн", asked for
@@ -553,7 +562,7 @@ document.addEventListener('DOMContentLoaded', function () {
         var editToggleLabel = editToggleBtn.querySelector('.icon-btn__label');
         editToggleBtn.addEventListener('click', function () {
             editMode = !editMode;
-            editToggleLabel.textContent = editMode ? 'Disable Edit' : 'Enable Edit';
+            editToggleLabel.textContent = editMode ? '{% translate "Disable Edit" %}' : '{% translate "Enable Edit" %}';
             editToggleBtn.classList.toggle('is-active', editMode);
             document.getElementById('products-table').classList.toggle('edit-mode-active', editMode);
 
@@ -626,7 +635,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 // just-committed value instead.
                 var revertTo = cell.getOldValue();
                 if (!cost) {
-                    alert('Set a Delivery Price for this product first.');
+                    alert('{% translate "Set a Delivery Price for this product first." %}');
                     // Deferred -- this cellEdited handler is itself running
                     // synchronously inside the ORIGINAL cell.setValue()
                     // call that triggered it; calling setValue() again on
@@ -650,13 +659,13 @@ document.addEventListener('DOMContentLoaded', function () {
                 postInlineUpdate(data.id, 'sell_price', newSellPrice)
                     .then(function (result) {
                         if (!result.ok) {
-                            alert(result.data.error || 'Could not save the change.');
+                            alert(result.data.error || '{% translate "Could not save the change." %}');
                             row.update({sell_price: oldSellPrice});
                             cell.setValue(revertTo);
                         }
                     })
                     .catch(function () {
-                        alert('Network error -- change was not saved.');
+                        alert('{% translate "Network error -- change was not saved." %}');
                         row.update({sell_price: oldSellPrice});
                         cell.setValue(revertTo);
                     });
@@ -666,14 +675,14 @@ document.addEventListener('DOMContentLoaded', function () {
             postInlineUpdate(row.getData().id, field, cell.getValue())
                 .then(function (result) {
                     if (!result.ok) {
-                        alert(result.data.error || 'Could not save the change.');
+                        alert(result.data.error || '{% translate "Could not save the change." %}');
                         cell.setValue(cell.getOldValue());
                         return;
                     }
                     if (field === 'sell_price' || field === 'delivery_price') refreshMarkupDisplay(row);
                 })
                 .catch(function () {
-                    alert('Network error -- change was not saved.');
+                    alert('{% translate "Network error -- change was not saved." %}');
                     cell.setValue(cell.getOldValue());
                 });
         });
@@ -728,7 +737,7 @@ document.addEventListener('DOMContentLoaded', function () {
         function setSelectedCategory(name) {
             selectedCategoryName = name || '';
             categoryApplyBtn.disabled = !selectedCategoryName;
-            categoryApplyLabel.textContent = selectedCategoryName ? 'Apply category' : 'Pick a category';
+            categoryApplyLabel.textContent = selectedCategoryName ? '{% translate "Apply category" %}' : '{% translate "Pick a category" %}';
         }
 
         function renderCategoryResults(data) {
@@ -736,7 +745,7 @@ document.addEventListener('DOMContentLoaded', function () {
             if (!data.results.length) {
                 var empty = document.createElement('div');
                 empty.className = 'global-search-empty';
-                empty.textContent = 'No matches';
+                empty.textContent = '{% translate "No matches" %}';
                 categoryResultsBox.appendChild(empty);
                 categoryResultsBox.classList.add('is-open');
                 return;
@@ -791,7 +800,7 @@ document.addEventListener('DOMContentLoaded', function () {
         categoryApplyBtn.addEventListener('click', function () {
             if (!selectedCategoryName) return;
             bulkPost('set_category', selectedCategoryName).then(function (result) {
-                if (!result.ok) { alert(result.data.error || 'Could not apply category.'); return; }
+                if (!result.ok) { alert(result.data.error || '{% translate "Could not apply category." %}'); return; }
                 location.reload();
             });
         });
@@ -812,9 +821,9 @@ document.addEventListener('DOMContentLoaded', function () {
     if (priceApplyBtn) {
         priceApplyBtn.addEventListener('click', function () {
             var value = document.getElementById('bulk-price-input').value;
-            if (!value) { alert('Enter a sell price first.'); return; }
+            if (!value) { alert('{% translate "Enter a sell price first." %}'); return; }
             bulkPost('set_sell_price', value).then(function (result) {
-                if (!result.ok) { alert(result.data.error || 'Could not apply price.'); return; }
+                if (!result.ok) { alert(result.data.error || '{% translate "Could not apply price." %}'); return; }
                 location.reload();
             });
         });
@@ -825,7 +834,8 @@ document.addEventListener('DOMContentLoaded', function () {
         deleteBtn.addEventListener('click', function () {
             var selected = table.getSelectedData();
             if (!selected.length) return;
-            if (!confirm('Delete ' + selected.length + ' selected product(s)? This cannot be undone.')) return;
+            var productNoun = selected.length === 1 ? '{% translate "product" %}' : '{% translate "products" %}';
+            if (!confirm('{% translate "Delete" %} ' + selected.length + ' {% translate "selected" %} ' + productNoun + '? {% translate "This cannot be undone." %}')) return;
 
             bulkPost('delete').then(function (result) {
                 if (result.data.error) alert(result.data.error);

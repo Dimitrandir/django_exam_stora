@@ -1,6 +1,7 @@
 from django import forms
 from django.forms import inlineformset_factory
 from django.utils import timezone
+from django.utils.translation import gettext_lazy as _
 from STORA.deliveries.models import DeliveryAttributes, DeliveryItems, DocumentType, ScrapReason
 
 
@@ -12,13 +13,13 @@ class DeliveryForms(forms.ModelForm):
             'comment',
         ]
         labels = {
-            'receiver': 'Receiver',
-            'time_of_delivery': 'Delivery Date',
-            'document_type': 'Document Type',
-            'document_number': 'Document Number',
-            'document_date': 'Document Date',
-            'supplier': 'Supplier',
-            'comment': 'Comment',
+            'receiver': _('Receiver'),
+            'time_of_delivery': _('Delivery Date'),
+            'document_type': _('Document Type'),
+            'document_number': _('Document Number'),
+            'document_date': _('Document Date'),
+            'supplier': _('Supplier'),
+            'comment': _('Comment'),
         }
         widgets = {
             'document_date': forms.DateInput(attrs={'type': 'date'}),
@@ -47,17 +48,17 @@ class WriteOffForm(forms.ModelForm):
         model = DeliveryAttributes
         fields = ['receiver', 'supplier', 'time_of_delivery', 'document_number', 'document_date', 'comment']
         labels = {
-            'receiver': 'Receiver',
-            'time_of_delivery': 'Write-off Date',
-            'document_number': 'Internal Number',
-            'document_date': 'Document Date',
-            'supplier': 'Supplier',
-            'comment': 'Comment',
+            'receiver': _('Receiver'),
+            'time_of_delivery': _('Write-off Date'),
+            'document_number': _('Internal Number'),
+            'document_date': _('Document Date'),
+            'supplier': _('Supplier'),
+            'comment': _('Comment'),
         }
         widgets = {
             'document_date': forms.DateInput(attrs={'type': 'date'}),
             'supplier': forms.HiddenInput(),
-            'document_number': forms.TextInput(attrs={'placeholder': 'Leave blank to auto-generate'}),
+            'document_number': forms.TextInput(attrs={'placeholder': _('Leave blank to auto-generate')}),
             'comment': forms.Textarea(attrs={'rows': 2}),
         }
 
@@ -80,15 +81,15 @@ class ScrapForm(forms.ModelForm):
         model = DeliveryAttributes
         fields = ['receiver', 'time_of_delivery', 'document_number', 'document_date', 'comment']
         labels = {
-            'receiver': 'Receiver',
-            'time_of_delivery': 'Scrap Date',
-            'document_number': 'Internal Number',
-            'document_date': 'Document Date',
-            'comment': 'Comment',
+            'receiver': _('Receiver'),
+            'time_of_delivery': _('Scrap Date'),
+            'document_number': _('Internal Number'),
+            'document_date': _('Document Date'),
+            'comment': _('Comment'),
         }
         widgets = {
             'document_date': forms.DateInput(attrs={'type': 'date'}),
-            'document_number': forms.TextInput(attrs={'placeholder': 'Leave blank to auto-generate'}),
+            'document_number': forms.TextInput(attrs={'placeholder': _('Leave blank to auto-generate')}),
             'comment': forms.Textarea(attrs={'rows': 2}),
         }
 
@@ -106,14 +107,14 @@ class DocumentTypeForm(forms.ModelForm):
     class Meta:
         model = DocumentType
         fields = '__all__'
-        labels = {'name': 'Document Type Name'}
+        labels = {'name': _('Document Type Name')}
 
 
 class ScrapReasonForm(forms.ModelForm):
     class Meta:
         model = ScrapReason
         fields = '__all__'
-        labels = {'name': 'Scrap Reason Name'}
+        labels = {'name': _('Scrap Reason Name')}
 
 
 class DeliveryItemForm(forms.ModelForm):
@@ -164,7 +165,7 @@ class BaseDeliveryItemFormSet(forms.BaseInlineFormSet):
                 break
 
         if not has_valid_item:
-            raise forms.ValidationError('You must add at least one delivery item.')
+            raise forms.ValidationError(_('You must add at least one delivery item.'))
 
 
 DeliveryItemFormSet = inlineformset_factory(

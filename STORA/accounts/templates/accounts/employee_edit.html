@@ -1,21 +1,22 @@
 {% extends 'base.html' %}
+{% load i18n %}
 
-{% block title %}STORA - Edit Employee{% endblock %}
+{% block title %}STORA - {% translate "Edit Employee" %}{% endblock %}
 {% block content %}
 
-<h1>Edit details for {{ employee.first_name }} {{ employee.last_name }}</h1>
+<h1>{% blocktranslate with first=employee.first_name last=employee.last_name %}Edit details for {{ first }} {{ last }}{% endblocktranslate %}</h1>
 
 <form method="post">
     {% csrf_token %}
     {{ form.as_p }}
 
-    <button type="submit"> Update Employee Info</button>
+    <button type="submit">{% translate "Update Employee Info" %}</button>
 </form>
 
 <hr>
 
-<a href="{% url 'employee_details' employee.pk%}">Cancel and back to details</a>
-{% if perms.accounts.delete_employee %}<a href="{% url 'employee_delete' employee.pk %}" class="button_delete">DELETE Employee</a>{% endif %}
+<a href="{% url 'employee_details' employee.pk%}">{% translate "Cancel and back to details" %}</a>
+{% if perms.accounts.delete_employee %}<a href="{% url 'employee_delete' employee.pk %}" class="button_delete">{% translate "DELETE Employee" %}</a>{% endif %}
 
 
 {% endblock %}

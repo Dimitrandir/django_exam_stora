@@ -1,30 +1,30 @@
 {% extends 'base.html' %}
+{% load i18n %}
 
-{% block title %}STORA - Stock Revision{% endblock %}
+{% block title %}STORA - {% translate "Stock Revision" %}{% endblock %}
 
 {% block content %}
 <section class="revision-home">
     <header class="page-header">
-        <h1>Stock Revision</h1>
+        <h1>{% translate "Stock Revision" %}</h1>
     </header>
 
     {% if open_revision %}
     <div class="form-errors" style="background:#fff8e6;border-color:#e6c66b;color:#6b5300;">
         <p>
-            There is already an open revision, started by <strong>{{ open_revision.started_by }}</strong>
-            at {{ open_revision.started_at|date:"d.m.Y H:i" }}. Only one revision can be open at a time.
+            {% blocktranslate with who=open_revision.started_by time=open_revision.started_at|date:"d.m.Y H:i" %}There is already an open revision, started by <strong>{{ who }}</strong> at {{ time }}. Only one revision can be open at a time.{% endblocktranslate %}
         </p>
-        <a href="{% url 'revision_view' open_revision.pk %}" class="btn button-save" role="button">Join open revision</a>
+        <a href="{% url 'revision_view' open_revision.pk %}" class="btn button-save" role="button">{% translate "Join open revision" %}</a>
     </div>
     {% else %}
-    <p class="text-muted">No revision is currently open.</p>
+    <p class="text-muted">{% translate "No revision is currently open." %}</p>
     <form method="post" action="{% url 'revision_start' %}" class="d-flex align-items-center gap-2">
         {% csrf_token %}
-        <input type="text" name="name" class="form-control" style="max-width: 280px;" placeholder="Revision name (optional)">
-        <button type="submit" class="btn button-save">Start New Revision</button>
+        <input type="text" name="name" class="form-control" style="max-width: 280px;" placeholder="{% translate "Revision name (optional)" %}">
+        <button type="submit" class="btn button-save">{% translate "Start New Revision" %}</button>
     </form>
     {% endif %}
 
-    <p style="margin-top:1.5rem;"><a href="{% url 'revision_list' %}">View revision history</a></p>
+    <p style="margin-top:1.5rem;"><a href="{% url 'revision_list' %}">{% translate "View revision history" %}</a></p>
 </section>
 {% endblock %}

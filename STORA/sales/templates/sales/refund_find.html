@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
+{% load static cache_bust i18n %}
 
-{% block title %}STORA - Refund{% endblock %}
-{% load static cache_bust %}
+{% block title %}STORA - {% translate "Refund" %}{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
@@ -10,25 +10,25 @@
 {% block content %}
 
 <div class="d-flex justify-content-between align-items-center">
-    <h1>Refund a Sale</h1>
-    <a href="{% url 'sale_add' %}" class="pill-btn pill-btn--outline">Back to Sales</a>
+    <h1>{% translate "Refund a Sale" %}</h1>
+    <a href="{% url 'sale_add' %}" class="pill-btn pill-btn--outline">{% translate "Back to Sales" %}</a>
 </div>
 
 <form method="get" id="refund-search-form" class="refund-search-form">
-    <input type="search" name="q" value="{{ query }}" placeholder="Sale ID or cashier" class="pill-input"
+    <input type="search" name="q" value="{{ query }}" placeholder="{% translate "Sale ID or cashier" %}" class="pill-input"
            id="refund-search-q" autocomplete="off">
-    <button type="button" class="sale-keyboard-toggle-btn" id="refund-keyboard-toggle-btn" title="Show keyboard">⌨</button>
+    <button type="button" class="sale-keyboard-toggle-btn" id="refund-keyboard-toggle-btn" title="{% translate "Show keyboard" %}">⌨</button>
     <input type="date" name="date" value="{{ date }}" class="pill-input">
-    <input type="text" inputmode="decimal" name="amount" value="{{ amount }}" placeholder="Amount" class="pill-input"
+    <input type="text" inputmode="decimal" name="amount" value="{{ amount }}" placeholder="{% translate "Amount" %}" class="pill-input"
            id="refund-search-amount" autocomplete="off">
     <button type="submit" class="icon-btn icon-btn--outline icon-btn--sm">
         <span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--search"></span></span>
-        <span class="icon-btn__label">Search</span>
+        <span class="icon-btn__label">{% translate "Search" %}</span>
     </button>
-    {% if any_filter %}<a href="{% url 'refund_find' %}" class="pill-btn pill-btn--outline">Clear</a>{% endif %}
+    {% if any_filter %}<a href="{% url 'refund_find' %}" class="pill-btn pill-btn--outline">{% translate "Clear" %}</a>{% endif %}
     <span class="popup-tip">
-        <button type="button" class="popup-tip__trigger" aria-label="Explanation">?</button>
-        <span class="popup-tip__bubble">Pick from the recent receipts below, or narrow the search by sale ID/cashier, date, or amount -- scanning a sale's own receipt barcode also works here (it just types the sale ID into the search box).</span>
+        <button type="button" class="popup-tip__trigger" aria-label="{% translate "Explanation" %}">?</button>
+        <span class="popup-tip__bubble">{% translate "Pick from the recent receipts below, or narrow the search by sale ID/cashier, date, or amount -- scanning a sale's own receipt barcode also works here (it just types the sale ID into the search box)." %}</span>
     </span>
 </form>
 
@@ -52,18 +52,19 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function refundStatusFormatter(cell) {
         var v = cell.getValue();
-        var cls = v === 'Full' ? 'refund-status--full' : v === 'Partial' ? 'refund-status--partial' : 'refund-status--none';
+        var status = cell.getData().refunded_status;
+        var cls = status === 'Full' ? 'refund-status--full' : status === 'Partial' ? 'refund-status--partial' : 'refund-status--none';
         return '<span class="' + cls + '">' + v + '</span>';
     }
 
     var table = initExcelStyleTable('#refund-results-table', 'refund-results-data', [
-        {title: 'ID', field: 'id', width: 70, hozAlign: 'center'},
-        {title: 'Date', field: 'date', width: 100},
-        {title: 'Time', field: 'time', width: 80},
-        {title: 'Cashier', field: 'cashier', widthGrow: 2},
-        {title: 'Amount', field: 'amount', width: 100, hozAlign: 'right', formatter: moneyFormatter},
-        {title: 'Refunded', field: 'refunded', width: 100, hozAlign: 'center', formatter: refundStatusFormatter},
-    ], {placeholder: 'No sales found.'});
+        {title: '{% translate "ID" %}', field: 'id', width: 70, hozAlign: 'center'},
+        {title: '{% translate "Date" %}', field: 'date', width: 100},
+        {title: '{% translate "Time" %}', field: 'time', width: 80},
+        {title: '{% translate "Cashier" %}', field: 'cashier', widthGrow: 2},
+        {title: '{% translate "Amount" %}', field: 'amount', width: 100, hozAlign: 'right', formatter: moneyFormatter},
+        {title: '{% translate "Refunded" %}', field: 'refunded', width: 100, hozAlign: 'center', formatter: refundStatusFormatter},
+    ], {placeholder: '{% translate "No sales found." %}'});
 
     // The search form is real server-rendered HTML (not built in JS) so
     // Django's own {{ query }}/{{ date }}/{{ amount }} values just work --
@@ -74,7 +75,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // icons instead of as a separate block taking up its own row above
     // the table.
     var searchForm = document.getElementById('refund-search-form');
-    attachTableExportToToolbar(table, '#refund-results-table-card', 'refund_search_results.xlsx', 'Sales', [], searchForm);
+    attachTableExportToToolbar(table, '#refund-results-table-card', 'refund_search_results.xlsx', '{% translate "Sales" %}', [], searchForm);
 
     // Row click opens the refund picker for that sale -- same "click a row
     // to open the record" convention as every other list table in the app

@@ -1,16 +1,17 @@
 {% extends 'base.html' %}
+{% load i18n %}
 
-{% block title %}STORA - Delete AI Report{% endblock %}
+{% block title %}STORA - {% translate "Delete AI Report" %}{% endblock %}
 
 {% block content %}
 
-<h1>Are you sure you want to delete this AI report?</h1>
+<h1>{% translate "Are you sure you want to delete this AI report?" %}</h1>
 <p class="text-muted">"{{ ai_report.prompt|truncatechars:150 }}"</p>
 
 <form method="POST">
     {% csrf_token %}
-    <button type="submit" class="delete_button">YES</button>
-    <a href="{% url 'ai_report_list' %}" class="button_cancel">NO</a>
+    <button type="submit" class="delete_button">{% translate "YES" %}</button>
+    <a href="{% url 'ai_report_list' %}" class="button_cancel">{% translate "NO" %}</a>
 </form>
 
 {% endblock %}

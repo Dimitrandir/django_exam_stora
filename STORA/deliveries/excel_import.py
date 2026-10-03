@@ -71,6 +71,7 @@ import anthropic
 import openpyxl
 from django.conf import settings
 from django.contrib.postgres.search import TrigramSimilarity
+from django.utils.translation import gettext as _
 
 from STORA.products.models import Barcode, Category, Product, Suppliers
 
@@ -234,7 +235,7 @@ def parse_delivery_import(file_obj):
     try:
         wb = openpyxl.load_workbook(file_obj, data_only=True, read_only=True)
     except Exception:
-        return {'rows': [], 'skipped': [], 'errors': ['Could not read this file -- is it a real .xlsx?']}
+        return {'rows': [], 'skipped': [], 'errors': [_('Could not read this file -- is it a real .xlsx?')]}
     ws = wb.active
 
     pending_rows = []
@@ -245,7 +246,7 @@ def parse_delivery_import(file_obj):
 
     all_rows = list(ws.iter_rows(values_only=True))
     if len(all_rows) <= 1:
-        return {'rows': [], 'skipped': [], 'errors': ['The file has no data rows.']}
+        return {'rows': [], 'skipped': [], 'errors': [_('The file has no data rows.')]}
 
     for row_number, raw_row in enumerate(all_rows[1:], start=2):
         if raw_row is None or all(cell in (None, '') for cell in raw_row):
@@ -258,7 +259,7 @@ def parse_delivery_import(file_obj):
         code = _clean_str(code)
         name = _clean_str(name)
         if not name:
-            errors.append(f'Row {row_number}: name is required, row skipped.')
+            errors.append(_('Row %(row)s: name is required, row skipped.') % {'row': row_number})
             continue
 
         unit_type = _clean_unit_type(unit_type)
@@ -277,7 +278,8 @@ def parse_delivery_import(file_obj):
 
         if matched_product:
             if quantity <= 0:
-                skipped.append(f'Row {row_number}: "{matched_product.name}" already exists, skipped (quantity was 0).')
+                skipped.append(_('Row %(row)s: "%(name)s" already exists, skipped (quantity was 0).') % {
+                    'row': row_number, 'name': matched_product.name})
                 continue
             pending_rows.append({
                 'row_number': row_number,

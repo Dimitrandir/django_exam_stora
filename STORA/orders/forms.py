@@ -1,4 +1,5 @@
 from django import forms
+from django.utils.translation import gettext_lazy as _
 
 from STORA.products.models import Suppliers
 from STORA.orders.models import OrderAttributes
@@ -12,7 +13,7 @@ class OrderPickerForm(forms.Form):
     order that's always addressed to exactly one supplier."""
 
     supplier = forms.ModelChoiceField(
-        label='Supplier',
+        label=_('Supplier'),
         queryset=Suppliers.objects.all(),
         # Rendered as a plain <select> by default -- order_new.html swaps
         # this for the same search+popup picker as the delivery form's own
@@ -23,16 +24,16 @@ class OrderPickerForm(forms.Form):
     # ranked-supplier tiers can be pulled into one order at once instead
     # of running the compose screen three separate times.
     supplier_position = forms.MultipleChoiceField(
-        label='Supplier position', choices=OrderAttributes.POSITION_CHOICES,
+        label=_('Supplier position'), choices=OrderAttributes.POSITION_CHOICES,
         initial=[OrderAttributes.POSITION_PRIMARY], widget=forms.CheckboxSelectMultiple,
     )
-    start_date = forms.DateField(label='From date', widget=forms.DateInput(attrs={'type': 'date'}))
-    end_date = forms.DateField(label='To date', widget=forms.DateInput(attrs={'type': 'date'}))
+    start_date = forms.DateField(label=_('From date'), widget=forms.DateInput(attrs={'type': 'date'}))
+    end_date = forms.DateField(label=_('To date'), widget=forms.DateInput(attrs={'type': 'date'}))
 
     def clean(self):
         cleaned_data = super().clean()
         start_date = cleaned_data.get('start_date')
         end_date = cleaned_data.get('end_date')
         if start_date and end_date and start_date > end_date:
-            raise forms.ValidationError('Start date cannot be later than end date.')
+            raise forms.ValidationError(_('Start date cannot be later than end date.'))
         return cleaned_data

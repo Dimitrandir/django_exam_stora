@@ -3,6 +3,7 @@ from decimal import Decimal
 from django.core.validators import MinValueValidator
 from django.db import models, transaction
 from django.utils import timezone
+from django.utils.translation import gettext_lazy as _
 
 from STORA.accounts.models import Employee
 from STORA.products.models import Product, Suppliers
@@ -20,7 +21,7 @@ class OrderCounter(models.Model):
     @classmethod
     def next(cls):
         with transaction.atomic():
-            counter, _ = cls.objects.select_for_update().get_or_create(pk=1)
+            counter, _created = cls.objects.select_for_update().get_or_create(pk=1)
             n = counter.next_number
             counter.next_number = n + 1
             counter.save(update_fields=['next_number'])
@@ -37,19 +38,19 @@ class OrderAttributes(models.Model):
     POSITION_SECONDARY = 2
     POSITION_TERTIARY = 3
     POSITION_CHOICES = [
-        (POSITION_PRIMARY, 'Primary (1st)'),
-        (POSITION_SECONDARY, 'Secondary (2nd)'),
-        (POSITION_TERTIARY, 'Tertiary (3rd)'),
+        (POSITION_PRIMARY, _('Primary (1st)')),
+        (POSITION_SECONDARY, _('Secondary (2nd)')),
+        (POSITION_TERTIARY, _('Tertiary (3rd)')),
     ]
 
     STATUS_DRAFT = 'DRAFT'
     STATUS_CONFIRMED = 'CONFIRMED'
     STATUS_CHOICES = [
-        (STATUS_DRAFT, 'Draft (AI)'),
-        (STATUS_CONFIRMED, 'Confirmed'),
+        (STATUS_DRAFT, _('Draft (AI)')),
+        (STATUS_CONFIRMED, _('Confirmed')),
     ]
 
-    supplier = models.ForeignKey(Suppliers, on_delete=models.PROTECT, related_name='orders', verbose_name='Supplier')
+    supplier = models.ForeignKey(Suppliers, on_delete=models.PROTECT, related_name='orders', verbose_name=_('Supplier'))
     # Every order built by hand on the compose screen (order_new) is
     # CONFIRMED the moment it's saved -- a human picked the supplier/period
     # and reviewed the lines before hitting Save, same as always. DRAFT only
@@ -58,7 +59,7 @@ class OrderAttributes(models.Model):
     # for a human to open, adjust if needed, and explicitly Confirm (or
     # Discard) before they're treated as real -- see order_confirm/
     # order_discard.
-    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default=STATUS_CONFIRMED, verbose_name='Status')
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default=STATUS_CONFIRMED, verbose_name=_('Status'))
     # Which of the product's ranked suppliers (ProductSupplier.position)
     # the candidate list was built from -- comma-joined ("1,2"), not a
     # single choices field any more, since the compose screen now lets you
@@ -66,17 +67,17 @@ class OrderAttributes(models.Model):
     # "да можеш да избираш и трите едновременно"). get_supplier_position_display()
     # is hand-written below to replace the auto one Django only generates
     # for an actual `choices=` field.
-    supplier_position = models.CharField(max_length=20, blank=True, verbose_name='Supplier position(s)')
-    period_start = models.DateField(verbose_name='Sales period start')
-    period_end = models.DateField(verbose_name='Sales period end')
+    supplier_position = models.CharField(max_length=20, blank=True, verbose_name=_('Supplier position(s)'))
+    period_start = models.DateField(verbose_name=_('Sales period start'))
+    period_end = models.DateField(verbose_name=_('Sales period end'))
     # Auto-generated on first save when left blank -- see OrderCounter.
-    order_number = models.CharField(max_length=10, blank=True, verbose_name='Order Number')
-    order_date = models.DateField(default=timezone.localdate, verbose_name='Order Date')
-    created_by = models.ForeignKey(Employee, on_delete=models.PROTECT, related_name='orders', verbose_name='Created by')
+    order_number = models.CharField(max_length=10, blank=True, verbose_name=_('Order Number'))
+    order_date = models.DateField(default=timezone.localdate, verbose_name=_('Order Date'))
+    created_by = models.ForeignKey(Employee, on_delete=models.PROTECT, related_name='orders', verbose_name=_('Created by'))
 
     class Meta:
-        verbose_name = 'Order'
-        verbose_name_plural = 'Orders'
+        verbose_name = _('Order')
+        verbose_name_plural = _('Orders')
         ordering = ['-order_date', '-pk']
 
     def __str__(self):
@@ -97,7 +98,7 @@ class OrderAttributes(models.Model):
 
     def get_supplier_position_display(self):
         labels = dict(self.POSITION_CHOICES)
-        return ', '.join(labels.get(p, str(p)) for p in self.get_position_list())
+        return ', '.join(str(labels.get(p, p)) for p in self.get_position_list())
 
 
 class OrderItems(models.Model):
@@ -108,20 +109,20 @@ class OrderItems(models.Model):
     already on OrderAttributes, so there's nothing to snapshot against
     going stale)."""
 
-    order = models.ForeignKey(OrderAttributes, on_delete=models.CASCADE, related_name='items', verbose_name='Order')
+    order = models.ForeignKey(OrderAttributes, on_delete=models.CASCADE, related_name='items', verbose_name=_('Order'))
     # PROTECT, not CASCADE -- same reasoning as SaleItems/DeliveryItems: a
     # product that's been ordered before shouldn't be hard-deletable out
     # from under this history (ProductDeleteView already offers "Archive
     # instead" on any ProtectedError, no extra handling needed here).
-    product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name='order_items', verbose_name='Product')
+    product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name='order_items', verbose_name=_('Product'))
     requested_quantity = models.DecimalField(
         max_digits=10, decimal_places=3, validators=[MinValueValidator(Decimal('0.001'))],
-        verbose_name='Requested quantity',
+        verbose_name=_('Requested quantity'),
     )
 
     class Meta:
-        verbose_name = 'Order Item'
-        verbose_name_plural = 'Order Items'
+        verbose_name = _('Order Item')
+        verbose_name_plural = _('Order Items')
         constraints = [
             models.UniqueConstraint(fields=['order', 'product'], name='unique_order_product'),
         ]

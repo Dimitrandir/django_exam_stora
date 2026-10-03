@@ -1,37 +1,38 @@
 from django import forms
+from django.utils.translation import gettext_lazy as _
 
 from STORA.products.models import Suppliers
 
 
 class StockAsOfDateForm(forms.Form):
     as_of_date = forms.DateField(
-        label='As of date',
+        label=_('As of date'),
         widget=forms.DateInput(attrs={'type': 'date'}),
     )
 
 
 class ExpiringPeriodForm(forms.Form):
     days_ahead = forms.IntegerField(
-        label='Days ahead',
+        label=_('Days ahead'),
         min_value=0,
-        help_text='Also includes batches that already expired.',
+        help_text=_('Also includes batches that already expired.'),
     )
 
 
 class ReportPeriodForm(forms.Form):
     start_date = forms.DateField(
-        label='From date',
+        label=_('From date'),
         widget=forms.DateInput(attrs={'type': 'date'}),
     )
     end_date = forms.DateField(
-        label='To date',
+        label=_('To date'),
         widget=forms.DateInput(attrs={'type': 'date'}),
     )
     supplier = forms.ModelChoiceField(
-        label='Supplier',
+        label=_('Supplier'),
         queryset=Suppliers.objects.all(),
         required=False,
-        empty_label='All suppliers',
+        empty_label=_('All suppliers'),
         # Rendered as a plain <select> by default -- deliveries_report.html
         # swaps this for a search+popup-free picker in JS, same pattern as
         # the delivery form's own supplier field (see supplier_search).
@@ -44,6 +45,6 @@ class ReportPeriodForm(forms.Form):
         end_date = cleaned_data.get('end_date')
 
         if start_date and end_date and start_date > end_date:
-            raise forms.ValidationError('Start date cannot be later than end date.')
+            raise forms.ValidationError(_('Start date cannot be later than end date.'))
 
         return cleaned_data

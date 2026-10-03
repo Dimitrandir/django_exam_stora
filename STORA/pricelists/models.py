@@ -4,6 +4,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils import timezone
+from django.utils.translation import gettext_lazy as _
 
 from STORA.accounts.models import Employee
 from STORA.products.models import Category, Product, Suppliers
@@ -15,25 +16,25 @@ class PriceList(models.Model):
     # one currently-active list at once (e.g. a personal promo AND a
     # brochure both touching the same product) -- higher wins. See
     # resolve_prices() below for the full tie-break order.
-    priority = models.PositiveIntegerField(default=0, verbose_name='Priority')
-    start_date = models.DateField(verbose_name='Start Date')
-    end_date = models.DateField(verbose_name='End Date')
+    priority = models.PositiveIntegerField(default=0, verbose_name=_('Priority'))
+    start_date = models.DateField(verbose_name=_('Start Date'))
+    end_date = models.DateField(verbose_name=_('End Date'))
     # Soft delete -- keeps the list (and its past effect, visible on
     # anything that already referenced it) instead of losing history, same
     # convention as everywhere else in the app that avoids hard deletes.
     is_deleted = models.BooleanField(default=False)
     created_by = models.ForeignKey(Employee, on_delete=models.PROTECT, related_name='price_lists_created',
-                                   verbose_name='Created By')
+                                   verbose_name=_('Created By'))
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        verbose_name = 'Price List'
-        verbose_name_plural = 'Price Lists'
+        verbose_name = _('Price List')
+        verbose_name_plural = _('Price Lists')
         ordering = ['-priority', '-created_at']
 
     def clean(self):
         if self.start_date and self.end_date and self.end_date < self.start_date:
-            raise ValidationError('End date cannot be before start date.')
+            raise ValidationError(_('End date cannot be before start date.'))
 
     def is_in_period(self, on_date=None):
         on_date = on_date or timezone.localdate()
@@ -64,14 +65,14 @@ class PriceListRule(models.Model):
     SCOPE_PRODUCT = 'PRODUCT'
     SCOPE_CATEGORY = 'CATEGORY'
     SCOPE_SUPPLIER = 'SUPPLIER'
-    SCOPE_CHOICES = [(SCOPE_PRODUCT, 'Product'), (SCOPE_CATEGORY, 'Category'), (SCOPE_SUPPLIER, 'Supplier')]
+    SCOPE_CHOICES = [(SCOPE_PRODUCT, _('Product')), (SCOPE_CATEGORY, _('Category')), (SCOPE_SUPPLIER, _('Supplier'))]
     # Lower number = more specific -- the tie-break order within a single
     # PriceList (or across lists sharing the same priority) when a product
     # is somehow reachable through more than one rule at once.
     SCOPE_SPECIFICITY = {SCOPE_PRODUCT: 0, SCOPE_CATEGORY: 1, SCOPE_SUPPLIER: 2}
 
     price_list = models.ForeignKey(PriceList, on_delete=models.CASCADE, related_name='rules')
-    scope_type = models.CharField(max_length=10, choices=SCOPE_CHOICES, verbose_name='Applies To')
+    scope_type = models.CharField(max_length=10, choices=SCOPE_CHOICES, verbose_name=_('Applies To'))
     product = models.ForeignKey(Product, on_delete=models.CASCADE, null=True, blank=True,
                                 related_name='price_list_rules')
     category = models.ForeignKey(Category, on_delete=models.CASCADE, null=True, blank=True,
@@ -81,17 +82,17 @@ class PriceListRule(models.Model):
     discount_percent = models.DecimalField(
         max_digits=5, decimal_places=2, null=True, blank=True,
         validators=[MinValueValidator(Decimal('0')), MaxValueValidator(Decimal('100'))],
-        verbose_name='Discount %',
+        verbose_name=_('Discount %'),
     )
     # PRODUCT scope only -- see class docstring.
     fixed_price = models.DecimalField(
         max_digits=9, decimal_places=2, null=True, blank=True,
-        validators=[MinValueValidator(Decimal('0.01'))], verbose_name='Fixed Price',
+        validators=[MinValueValidator(Decimal('0.01'))], verbose_name=_('Fixed Price'),
     )
 
     class Meta:
-        verbose_name = 'Price List Rule'
-        verbose_name_plural = 'Price List Rules'
+        verbose_name = _('Price List Rule')
+        verbose_name_plural = _('Price List Rules')
 
     def clean(self):
         scope_fields = {
@@ -101,21 +102,26 @@ class PriceListRule(models.Model):
         }
         expected_field = scope_fields.get(self.scope_type)
         if expected_field is None:
-            raise ValidationError('Choose what this rule applies to.')
+            raise ValidationError(_('Choose what this rule applies to.'))
+        # Translated display names (Product/Category/Supplier), lowercased
+        # to sit mid-sentence -- the same labels SCOPE_CHOICES shows.
+        scope_labels = {key: str(label).lower() for key, label in self.SCOPE_CHOICES}
         for scope, field_name in scope_fields.items():
             value = getattr(self, f'{field_name}_id')
             if field_name == expected_field and not value:
-                raise ValidationError(f'A {self.scope_type.lower()}-scoped rule needs a {field_name}.')
+                raise ValidationError(_('A rule for a %(scope)s must have a %(field)s selected.') % {
+                    'scope': scope_labels[self.scope_type], 'field': scope_labels[scope]})
             if field_name != expected_field and value:
-                raise ValidationError(f'A {self.scope_type.lower()}-scoped rule cannot also set {field_name}.')
+                raise ValidationError(_('A rule for a %(scope)s cannot also set a %(field)s.') % {
+                    'scope': scope_labels[self.scope_type], 'field': scope_labels[scope]})
 
         if self.fixed_price is not None and self.scope_type != self.SCOPE_PRODUCT:
-            raise ValidationError('A fixed price can only be set on a product-scoped rule -- '
-                                   'category/supplier rules can only use a percentage discount.')
+            raise ValidationError(_('A fixed price can only be set on a product rule -- '
+                                    'category/supplier rules can only use a percentage discount.'))
         if self.discount_percent is None and self.fixed_price is None:
-            raise ValidationError('Set either a discount percentage or a fixed price.')
+            raise ValidationError(_('Set either a discount percentage or a fixed price.'))
         if self.discount_percent is not None and self.fixed_price is not None:
-            raise ValidationError('Set either a discount percentage or a fixed price, not both.')
+            raise ValidationError(_('Set either a discount percentage or a fixed price, not both.'))
 
     def effective_price(self, base_price):
         """The price this rule produces for a product whose regular price

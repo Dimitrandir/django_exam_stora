@@ -177,7 +177,14 @@ class ProductDeleteProtectedTests(TestCase):
         SaleItems.objects.create(sale=sale, sale_item=product, sale_quantity=1)
 
         self.client.force_login(manager)
-        response = self.client.post(reverse('product_delete', kwargs={'pk': product.pk}))
+        # Explicit English -- the site's default display language is
+        # Bulgarian (see STORA/settings.py LANGUAGE_CODE), but this test is
+        # about the protected-delete BEHAVIOR (friendly error + Archive
+        # fallback), not translation wording, so it pins the language
+        # instead of asserting on whichever one happens to be the default.
+        response = self.client.post(
+            reverse('product_delete', kwargs={'pk': product.pk}), HTTP_ACCEPT_LANGUAGE='en'
+        )
         self.assertEqual(response.status_code, 200)
         self.assertTrue(Product.objects.filter(pk=product.pk).exists())
         self.assertContains(response, 'Cannot delete')
@@ -444,7 +451,8 @@ class ProductHistoryViewTests(TestCase):
         )
 
         self.client.force_login(self.manager)
-        response = self.client.get(reverse('product_history', kwargs={'pk': self.product.pk}))
+        # English pinned -- event_type is the (translated) movement type label.
+        response = self.client.get(reverse('product_history', kwargs={'pk': self.product.pk}), HTTP_ACCEPT_LANGUAGE='en')
         events = response.context['events']
 
         write_off_event = next(e for e in events if e['event_type'] == 'Write-off')

@@ -1,25 +1,25 @@
 {% extends 'base.html' %}
+{% load static i18n %}
 
-{% block title %}STORA - Suppliers List{% endblock %}
-{% load static %}
+{% block title %}STORA - {% translate "Suppliers List" %}{% endblock %}
 
 {% block content %}
 
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
-        <h1 class="h2 mb-1">Suppliers List</h1>
-        <p class="text-muted mb-0">Overview of all registered suppliers.</p>
+        <h1 class="h2 mb-1">{% translate "Suppliers List" %}</h1>
+        <p class="text-muted mb-0">{% translate "Overview of all registered suppliers." %}</p>
     </div>
 </div>
 
 <table>
     <thead>
         <tr>
-            <th>Name</th>
-            <th>BULSTAT</th>
-            <th>VAT Number</th>
+            <th>{% translate "Name" %}</th>
+            <th>{% translate "BULSTAT" %}</th>
+            <th>{% translate "VAT Number" %}</th>
             <th>
-                {% if perms.products.add_suppliers %}<a href="{% url 'suppliers_create' %}" class="add-btn-table" title="New Supplier">+</a>{% endif %}
+                {% if perms.products.add_suppliers %}<a href="{% url 'suppliers_create' %}" class="add-btn-table" title="{% translate 'New Supplier' %}">+</a>{% endif %}
             </th>
         </tr>
     </thead>
@@ -31,15 +31,15 @@
             <td>{{ supplier.vat_n }}</td>
             <td>
                 {% if perms.products.change_suppliers %}
-                <a href="{% url 'suppliers_edit' supplier.pk %}" title="Edit supplier">
-                    <img src="{% static 'visibility.png' %}" alt="View" style="width:24px;height:24px;max-width:24px;max-height:24px;object-fit:contain;">
+                <a href="{% url 'suppliers_edit' supplier.pk %}" title="{% translate 'Edit supplier' %}">
+                    <img src="{% static 'visibility.png' %}" alt="{% translate 'View' %}" style="width:24px;height:24px;max-width:24px;max-height:24px;object-fit:contain;">
                 </a>
                 {% endif %}
             </td>
         </tr>
         {% empty %}
         <tr>
-            <td colspan="4">No suppliers found.</td>
+            <td colspan="4">{% translate "No suppliers found." %}</td>
         </tr>
         {% endfor %}
     </tbody>

@@ -1,6 +1,7 @@
 from django import forms
 from django.core.validators import MaxLengthValidator
 from django.forms import inlineformset_factory
+from django.utils.translation import gettext_lazy as _
 
 from STORA.products.models import (
     Product, Category, Suppliers, Barcode, ProductSupplier, RecipeIngredient, TaxGroup,
@@ -22,11 +23,11 @@ class ProductForms(forms.ModelForm):
         ]
 
         labels = {
-            'name': 'Product Name',
-            'delivery_price': 'Last Delivery Price',
-            'sell_price': 'Selling Price',
-            'quantity': 'Current Stock',
-            'show_on_pos': 'Show on POS screen',
+            'name': _('Product Name'),
+            'delivery_price': _('Last Delivery Price'),
+            'sell_price': _('Selling Price'),
+            'quantity': _('Current Stock'),
+            'show_on_pos': _('Show on POS screen'),
         }
 
         widgets = {
@@ -69,7 +70,7 @@ class ProductForms(forms.ModelForm):
         # current one -- a readonly HTML attribute alone can be bypassed by
         # posting a different value directly.
         self.fields['quantity'].disabled = True
-        self.fields['quantity'].help_text = (
+        self.fields['quantity'].help_text = _(
             'Quantity cannot be changed manually. Use Deliveries, Sales, modules to update stock levels.'
         )
         # The model allows category=NULL (`null=True`, no `blank=True`) --
@@ -89,7 +90,7 @@ class ProductForms(forms.ModelForm):
         # this ONE form's <select> renders, not Product.UNIT_TYPE_CHOICES
         # itself -- get_unit_type_display() elsewhere (product detail page,
         # history log, ...) keeps the fuller wording.
-        self.fields['unit_type'].choices = [(Product.PIECE, 'pcs'), (Product.WEIGHT, 'kg')]
+        self.fields['unit_type'].choices = [(Product.PIECE, _('pcs')), (Product.WEIGHT, _('kg'))]
 
         # Every product in this shop is VAT group "Б" (20%) unless someone
         # picks something else -- defaulting the dropdown to it saves
@@ -129,8 +130,8 @@ class CategoryForm(forms.ModelForm):
         fields = ['name', 'description', 'parent', 'show_on_pos']
 
         labels = {
-            'name': 'Category Name', 'description': 'Description', 'parent': 'Parent Category',
-            'show_on_pos': 'Show on POS screen',
+            'name': _('Category Name'), 'description': _('Description'), 'parent': _('Parent Category'),
+            'show_on_pos': _('Show on POS screen'),
         }
 
         widgets = {
@@ -156,10 +157,12 @@ class TaxGroupForm(forms.ModelForm):
     class Meta:
         model = TaxGroup
         fields = '__all__'
-        labels = {'name': 'Tax Group Name', 'rate': 'VAT Rate (%)', 'fiscal_letter': 'Fiscal device letter'}
+        labels = {'name': _('Tax Group Name'), 'rate': _('VAT Rate (%)'), 'fiscal_letter': _('Fiscal device letter')}
         help_texts = {
-            'fiscal_letter': 'The single Cyrillic letter (e.g. Б, Г) this rate is programmed as on the fiscal '
-                              'device -- leave blank if this group is never sold through the fiscal printer.',
+            'fiscal_letter': _(
+                'The single Cyrillic letter (e.g. Б, Г) this rate is programmed as on the fiscal '
+                'device -- leave blank if this group is never sold through the fiscal printer.'
+            ),
         }
 
 
@@ -169,11 +172,11 @@ class SuppliersForm(forms.ModelForm):
         fields = '__all__'
 
         labels = {
-            'name': 'Supplier Name',
-            'bulstat': 'BULSTAT',
-            'vat_n': 'VAT Number',
-            'phone': 'Phone Number',
-            'email': 'Email Address',
+            'name': _('Supplier Name'),
+            'bulstat': _('BULSTAT'),
+            'vat_n': _('VAT Number'),
+            'phone': _('Phone Number'),
+            'email': _('Email Address'),
         }
 
 
@@ -182,11 +185,11 @@ class BarcodeForm(forms.ModelForm):
         model = Barcode
         fields = ['code', 'position', 'is_scale_code']
         labels = {
-            'code': 'Barcode Number',
-            'is_scale_code': 'Scale barcode (weight/qty encoded)',
+            'code': _('Barcode Number'),
+            'is_scale_code': _('Scale barcode (weight/qty encoded)'),
         }
         widgets = {
-            'code': forms.TextInput(attrs={'placeholder': 'Scan or enter barcode'}),
+            'code': forms.TextInput(attrs={'placeholder': _('Scan or enter barcode')}),
             # The "Barcode #1/#2/#3" numbering in the UI IS the position --
             # the JS renumber() in _barcode_formset.html keeps this in sync,
             # no manual input needed.
@@ -276,7 +279,7 @@ class RecipeIngredientForm(forms.ModelForm):
     class Meta:
         model = RecipeIngredient
         fields = ['ingredient', 'quantity']
-        labels = {'quantity': 'Quantity per unit (kg for weight, pcs for piece)'}
+        labels = {'quantity': _('Quantity per unit (kg for weight, pcs for piece)')}
         widgets = {
             # Rendering the full product queryset as <option>s doesn't scale
             # (a shop can have thousands of products) -- the picker in
@@ -309,11 +312,11 @@ RecipeIngredientFormSet = inlineformset_factory(
 
 class ProductHistoryPeriodForm(forms.Form):
     start_date = forms.DateField(
-        label='From date',
+        label=_('From date'),
         widget=forms.DateInput(attrs={'type': 'date'}),
     )
     end_date = forms.DateField(
-        label='To date',
+        label=_('To date'),
         widget=forms.DateInput(attrs={'type': 'date'}),
     )
 
@@ -323,6 +326,6 @@ class ProductHistoryPeriodForm(forms.Form):
         end_date = cleaned_data.get('end_date')
 
         if start_date and end_date and start_date > end_date:
-            raise forms.ValidationError('Start date cannot be later than end date.')
+            raise forms.ValidationError(_('Start date cannot be later than end date.'))
 
         return cleaned_data

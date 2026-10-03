@@ -1,6 +1,6 @@
-{% load static cache_bust %}
+{% load static cache_bust i18n %}
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ LANGUAGE_CODE }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,11 +10,58 @@
     <link href="{% static 'vendor/bootstrap/bootstrap.min.css' %}" rel="stylesheet">
     <link rel="stylesheet" href="{% static 'vendor/bootstrap-icons/bootstrap-icons.min.css' %}">
     <link rel="stylesheet" href="{% static_v 'style.css' %}">
+    {% comment %}
+    Small i18n lookup table for plain static .js files (data-table.js,
+    category-tree-picker.js) -- those aren't Django templates, so
+    {% translate %} tags can't go directly in them. Each file reads its own
+    strings off this object (English literal as fallback if a key's
+    missing), see their own "var i18n = window.DataTableI18n" comments.
+    Lives in <head>, not just before {% block extra_js %} at the bottom of
+    <body> -- category-tree-picker.js is loaded from INSIDE {% block
+    content %} on the product forms (not extra_js), which renders earlier
+    in the document than anything placed near the body's closing scripts,
+    so this has to run before literally everything else to guarantee it's
+    always defined by the time any page's own script reads it (confirmed
+    live: with this object placed at the bottom of <body> instead, the
+    category tree picker modal on the product forms silently fell back to
+    its English defaults every time).
+    {% endcomment %}
+    <script>
+    window.DataTableI18n = {
+        filter: '{% translate "Filter" %}',
+        search: '{% translate "Search..." %}',
+        all: '{% translate "(All)" %}',
+        blank: '{% translate "(blank)" %}',
+        columns: '{% translate "Columns" %}',
+        chooseVisibleColumns: '{% translate "Choose visible columns" %}',
+        exportToExcel: '{% translate "Export to Excel" %}',
+        noDataFound: '{% translate "No data found." %}',
+        chooseACategory: '{% translate "Choose a category" %}',
+        close: '{% translate "Close" %}',
+        filterCategories: '{% translate "Filter categories..." %}',
+        clear: '{% translate "Clear" %}',
+        switchKeyboardLanguage: '{% translate "Switch keyboard language" %}',
+        space: '{% translate "Space" %}'
+    };
+    </script>
     {% block extra_css %}{% endblock %}
 </head>
 <body class="bg-light d-flex flex-column min-vh-100 {% block body_class %}{% endblock %}">
 
-<nav class="navbar navbar-expand-xl navbar-dark bg-dark">
+<nav class="navbar navbar-expand-xxl navbar-dark bg-dark">
+    {% comment %}
+    Bumped from navbar-expand-xl (collapses below 1200px) to -xxl (collapses
+    below 1400px) -- flagged live with a screenshot at a normal ~1280px
+    window: Products/Sales/Stock Movements/Reports + the 280px-min-width
+    search box + BG/EN + Employees + Logout + the Touch Mode icon no longer
+    fit on one row at that width (worse now that some labels are longer in
+    Bulgarian than the English originals they replaced), clipping the
+    right-most icon instead of wrapping. `.container` inside this nav also
+    caps at 1140px at that viewport tier (Bootstrap's own breakpoint
+    max-widths), tighter than the 1280px window itself. Below the new
+    threshold the items now properly collapse into the hamburger menu
+    (stacked vertically, nothing clipped) instead of cramming into one row.
+    {% endcomment %}
     <div class="container">
         <a class="navbar-brand fw-bold" href="{% url 'index' %}">STORA</a>
 
@@ -26,55 +73,55 @@
             <ul class="navbar-nav me-auto mb-2 mb-lg-0">
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
-                        Products
+                        {% translate "Products" %}
                     </a>
                     <ul class="dropdown-menu">
-                        <li><a class="dropdown-item" href="{% url 'product_list' %}">Products list</a></li>
-                        <li><a class="dropdown-item" href="{% url 'product_create' %}">New product</a></li>
-                        <li><a class="dropdown-item" href="{% url 'category_list' %}">Categories</a></li>
-                        <li><a class="dropdown-item" href="{% url 'tax_group_list' %}">Tax Groups</a></li>
-                        <li><a class="dropdown-item" href="{% url 'suppliers_list' %}">Suppliers</a></li>
-                        <li><a class="dropdown-item" href="{% url 'price_list_list' %}">Price Lists</a></li>
+                        <li><a class="dropdown-item" href="{% url 'product_list' %}">{% translate "Products list" %}</a></li>
+                        <li><a class="dropdown-item" href="{% url 'product_create' %}">{% translate "New product" %}</a></li>
+                        <li><a class="dropdown-item" href="{% url 'category_list' %}">{% translate "Categories" %}</a></li>
+                        <li><a class="dropdown-item" href="{% url 'tax_group_list' %}">{% translate "Tax Groups" %}</a></li>
+                        <li><a class="dropdown-item" href="{% url 'suppliers_list' %}">{% translate "Suppliers" %}</a></li>
+                        <li><a class="dropdown-item" href="{% url 'price_list_list' %}">{% translate "Price Lists" %}</a></li>
                         <li><hr class="dropdown-divider"></li>
-                        <li><a class="dropdown-item" href="{% url 'stock_as_of_report' %}">Stock as of date</a></li>
-                        <li><a class="dropdown-item" href="{% url 'stock_balance_report' %}">Stock balance report</a></li>
-                        <li><a class="dropdown-item" href="{% url 'expiring_report' %}">Expiring products</a></li>
+                        <li><a class="dropdown-item" href="{% url 'stock_as_of_report' %}">{% translate "Stock as of date" %}</a></li>
+                        <li><a class="dropdown-item" href="{% url 'stock_balance_report' %}">{% translate "Stock balance report" %}</a></li>
+                        <li><a class="dropdown-item" href="{% url 'expiring_report' %}">{% translate "Expiring products" %}</a></li>
                     </ul>
                 </li>
 
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
-                        Sales
+                        {% translate "Sales" %}
                     </a>
                     <ul class="dropdown-menu">
-                        <li><a class="dropdown-item" href="{% url 'sale_add' %}">New sale</a></li>
+                        <li><a class="dropdown-item" href="{% url 'sale_add' %}">{% translate "New sale" %}</a></li>
                         {% if perms.sales.view_saleattributes %}
-                        <li><a class="dropdown-item" href="{% url 'sales_report' %}">Sales report</a></li>
+                        <li><a class="dropdown-item" href="{% url 'sales_report' %}">{% translate "Sales report" %}</a></li>
                         {% endif %}
-                        <li><a class="dropdown-item" href="{% url 'sales_quantity_report' %}">Sales quantity report</a></li>
+                        <li><a class="dropdown-item" href="{% url 'sales_quantity_report' %}">{% translate "Sales quantity report" %}</a></li>
                     </ul>
                 </li>
 
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
-                        Stock Movements
+                        {% translate "Stock Movements" %}
                     </a>
                     <ul class="dropdown-menu">
-                        <li><a class="dropdown-item" href="{% url 'delivery_add' %}">Delivery</a></li>
-                        <li><a class="dropdown-item" href="{% url 'writeoff_add' %}">Write-off</a></li>
-                        <li><a class="dropdown-item" href="{% url 'scrap_add' %}">Scrap</a></li>
+                        <li><a class="dropdown-item" href="{% url 'delivery_add' %}">{% translate "Delivery" %}</a></li>
+                        <li><a class="dropdown-item" href="{% url 'writeoff_add' %}">{% translate "Write-off" %}</a></li>
+                        <li><a class="dropdown-item" href="{% url 'scrap_add' %}">{% translate "Scrap" %}</a></li>
                         <li><hr class="dropdown-divider"></li>
-                        <li><a class="dropdown-item" href="{% url 'document_type_list' %}">Document Types</a></li>
-                        <li><a class="dropdown-item" href="{% url 'scrap_reason_list' %}">Scrap Reasons</a></li>
-                        <li><a class="dropdown-item" href="{% url 'deliveries_report' %}">Stock movements report</a></li>
+                        <li><a class="dropdown-item" href="{% url 'document_type_list' %}">{% translate "Document Types" %}</a></li>
+                        <li><a class="dropdown-item" href="{% url 'scrap_reason_list' %}">{% translate "Scrap Reasons" %}</a></li>
+                        <li><a class="dropdown-item" href="{% url 'deliveries_report' %}">{% translate "Stock movements report" %}</a></li>
                         <li><hr class="dropdown-divider"></li>
-                        <li><a class="dropdown-item" href="{% url 'revision_home' %}">Stock Revision</a></li>
-                        <li><a class="dropdown-item" href="{% url 'revision_list' %}">Revisions history</a></li>
+                        <li><a class="dropdown-item" href="{% url 'revision_home' %}">{% translate "Stock Revision" %}</a></li>
+                        <li><a class="dropdown-item" href="{% url 'revision_list' %}">{% translate "Revisions history" %}</a></li>
                     </ul>
                 </li>
 
                 <li class="nav-item">
-                    <a class="nav-link" href="{% url 'reports_dashboard' %}">Reports</a>
+                    <a class="nav-link" href="{% url 'reports_dashboard' %}">{% translate "Reports" %}</a>
                 </li>
             </ul>
 
@@ -82,22 +129,39 @@
             <div class="pill-search-wrapper position-relative mx-lg-3 my-2 my-lg-0" style="min-width: 280px;">
                 <span class="pill-search-wrapper__icon"></span>
                 <input type="search" id="global-search-input" class="pill-input"
-                       placeholder="Search products, suppliers, categories, employees..." autocomplete="off">
+                       placeholder="{% translate 'Search products, suppliers, categories, employees...' %}" autocomplete="off">
                 <div id="global-search-results" class="global-search-results"></div>
             </div>
             {% endif %}
 
             <ul class="navbar-nav ms-auto align-items-lg-center">
+                <li class="nav-item me-2">
+                    {% comment %}
+                    Visible regardless of login state -- even the login
+                    screen itself should be readable in either language.
+                    POSTs to Django's own built-in set_language view (see
+                    STORA/urls.py), which just sets a cookie and redirects
+                    back to `next` -- no per-user DB field, so it's a per-
+                    browser choice, same as Touch Mode.
+                    {% endcomment %}
+                    {% get_current_language as CURRENT_LANGUAGE %}
+                    <form method="post" action="{% url 'set_language' %}" class="lang-switch">
+                        {% csrf_token %}
+                        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                        <button type="submit" name="language" value="bg" class="lang-switch__btn{% if CURRENT_LANGUAGE == 'bg' %} is-active{% endif %}">BG</button>
+                        <button type="submit" name="language" value="en" class="lang-switch__btn{% if CURRENT_LANGUAGE == 'en' %} is-active{% endif %}">EN</button>
+                    </form>
+                </li>
                 {% if user.is_authenticated %}
                     {% if perms.accounts.view_employee %}
                     <li class="nav-item">
-                        <a class="nav-link" href="{% url 'employee_list' %}">Employees</a>
+                        <a class="nav-link" href="{% url 'employee_list' %}">{% translate "Employees" %}</a>
                     </li>
                     {% endif %}
                     <li class="nav-item">
                         <form method="post" action="{% url 'logout' %}" class="d-inline">
                             {% csrf_token %}
-                            <button type="submit" class="btn btn-outline-light btn-sm">Logout {{ user.username }}</button>
+                            <button type="submit" class="btn btn-outline-light btn-sm">{% translate "Logout" %} {{ user.username }}</button>
                         </form>
                     </li>
                     <li class="nav-item">
@@ -118,7 +182,7 @@
                         keyboard/keypad opt out explicitly, see that file's
                         own comments).
                         {% endcomment %}
-                        <button type="button" class="touch-mode-toggle-btn nav-link" title="Touch Mode: auto-show an on-screen keyboard for any text field" aria-label="Touch Mode">
+                        <button type="button" class="touch-mode-toggle-btn nav-link" title="{% translate "Touch Mode: auto-show an on-screen keyboard for any text field" %}" aria-label="{% translate "Touch Mode" %}">
                             {% comment %}
                             Two custom icons the user dropped into static/
                             themselves -- mouse.png = Touch Mode off (pointer
@@ -133,7 +197,7 @@
                     </li>
                 {% else %}
                     <li class="nav-item me-2">
-                        <a class="btn btn-outline-light btn-sm" href="{% url 'login' %}">Login</a>
+                        <a class="btn btn-outline-light btn-sm" href="{% url 'login' %}">{% translate "Login" %}</a>
                     </li>
                 {% endif %}
             </ul>
@@ -146,12 +210,12 @@
         {% if cashier_operation %}
             <div class="alert alert-info shadow-sm d-flex justify-content-between align-items-center rounded-4 mb-4">
                 <div>
-                    <strong>Open operation:</strong>
+                    <strong>{% translate "Open operation:" %}</strong>
                     {{ cashier_operation.type|cut:"_"|title }}
-                    <span class="text-muted">is saved in draft</span>
+                    <span class="text-muted">{% translate "is saved in draft" %}</span>
                 </div>
                 <a href="{% url 'clear_cashier_operation' %}" class="btn btn-sm btn-outline-primary">
-                    Resume / Clear
+                    {% translate "Resume / Clear" %}
                 </a>
             </div>
         {% endif %}
@@ -195,14 +259,14 @@
 
     function render(data) {
         resultsBox.innerHTML = '';
-        renderGroup('Products', data.products);
-        renderGroup('Suppliers', data.suppliers);
-        renderGroup('Categories', data.categories);
-        renderGroup('Employees', data.employees);
+        renderGroup('{% translate "Products" %}', data.products);
+        renderGroup('{% translate "Suppliers" %}', data.suppliers);
+        renderGroup('{% translate "Categories" %}', data.categories);
+        renderGroup('{% translate "Employees" %}', data.employees);
         if (!resultsBox.children.length) {
             var empty = document.createElement('div');
             empty.className = 'global-search-empty';
-            empty.textContent = 'No matches';
+            empty.textContent = '{% translate "No matches" %}';
             resultsBox.appendChild(empty);
         }
         resultsBox.classList.add('is-open');
@@ -259,8 +323,8 @@
         var btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'dropdown-newtab-btn';
-        btn.title = 'Open in new tab';
-        btn.setAttribute('aria-label', 'Open in new tab');
+        btn.title = '{% translate "Open in new tab" %}';
+        btn.setAttribute('aria-label', '{% translate "Open in new tab" %}');
         btn.innerHTML =
             '<svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">' +
             '<path d="M14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7zM19 19H5V5h7V3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7z"/>' +

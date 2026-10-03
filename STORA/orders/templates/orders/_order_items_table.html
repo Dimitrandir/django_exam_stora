@@ -1,3 +1,4 @@
+{% load i18n %}
 {% comment %}
 Shared by order_new.html and order_edit.html -- the editable candidate
 grid + AI-suggest button + hidden-input rebuild on submit. Included
@@ -23,12 +24,12 @@ only actually strips correctly on a single line in this Django version),
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Add a Product</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                <h5 class="modal-title">{% translate "Add a Product" %}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{% translate "Close" %}"></button>
             </div>
             <div class="modal-body">
                 <input type="text" id="order-product-picker-search" class="form-control mb-2"
-                       placeholder="Search product by name or code..." autocomplete="off">
+                       placeholder="{% translate "Search product by name or code..." %}" autocomplete="off">
                 <div id="order-product-picker-results" class="list-group" style="max-height: 340px; overflow-y: auto;"></div>
             </div>
         </div>
@@ -40,10 +41,10 @@ only actually strips correctly on a single line in this Django version),
 </div>
 
 <p class="mt-2 d-flex gap-2">
-    <button type="submit" class="btn button-save">Save Order</button>
+    <button type="submit" class="btn button-save">{% translate "Save Order" %}</button>
     {% if show_order_nav_buttons %}
-    <a href="{% url 'order_new' %}" class="btn btn-outline-secondary">Cancel</a>
-    <a href="{% url 'order_list' %}" class="btn btn-outline-secondary">Back to Orders</a>
+    <a href="{% url 'order_new' %}" class="btn btn-outline-secondary">{% translate "Cancel" %}</a>
+    <a href="{% url 'order_list' %}" class="btn btn-outline-secondary">{% translate "Back to Orders" %}</a>
     {% endif %}
 </p>
 
@@ -119,21 +120,21 @@ document.addEventListener('DOMContentLoaded', function () {
 
     var table = initExcelStyleTable('#order-items-table', 'order-lines-data', [
         {title: '#', field: 'internal_code', formatter: 'rownum', width: 50, hozAlign: 'center', headerFilter: false, hideable: false},
-        {title: 'Code', field: 'internal_code', width: 90, bottomCalc: 'count'},
-        {title: 'Product', field: 'name', widthGrow: 2},
-        {title: 'Barcode', field: 'barcode', width: 140},
-        {title: 'In Stock', field: 'in_stock', width: 110, hozAlign: 'right', formatter: quantityFormatter},
-        {title: 'Sold (period)', field: 'sold_qty', width: 120, hozAlign: 'right', formatter: quantityFormatter},
-        {title: '# of Sales', field: 'sale_count', width: 100, hozAlign: 'right'},
+        {title: '{% translate "Code" %}', field: 'internal_code', width: 90, bottomCalc: 'count'},
+        {title: '{% translate "Product" %}', field: 'name', widthGrow: 2},
+        {title: '{% translate "Barcode" %}', field: 'barcode', width: 140},
+        {title: '{% translate "In Stock" %}', field: 'in_stock', width: 110, hozAlign: 'right', formatter: quantityFormatter},
+        {title: '{% translate "Sold (period)" %}', field: 'sold_qty', width: 120, hozAlign: 'right', formatter: quantityFormatter},
+        {title: '{% translate "# of Sales" %}', field: 'sale_count', width: 100, hozAlign: 'right'},
         {
-            title: 'Requested Qty', field: 'requested_qty', width: 140, hozAlign: 'right',
+            title: '{% translate "Requested Qty" %}', field: 'requested_qty', width: 140, hozAlign: 'right',
             formatter: quantityFormatter, editor: numberEditor, editorParams: quantityEditorParams,
         },
         {
-            title: 'Value', field: 'line_value', width: 130, hozAlign: 'right',
+            title: '{% translate "Value" %}', field: 'line_value', width: 130, hozAlign: 'right',
             formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
         },
-    ], {placeholder: 'No products found for this supplier/position.'});
+    ], {placeholder: '{% translate "No products found for this supplier/position." %}'});
 
     // Seed line_value for every row already on the grid (server-rendered
     // candidates, or pre-filled Requested Qty on the edit screen) -- the
@@ -177,7 +178,7 @@ document.addEventListener('DOMContentLoaded', function () {
         function renderResults(products) {
             resultsBox.innerHTML = '';
             if (!products.length) {
-                resultsBox.innerHTML = '<div class="list-group-item text-muted">No products found.</div>';
+                resultsBox.innerHTML = '<div class="list-group-item text-muted">{% translate "No products found." %}</div>';
                 return;
             }
             products.forEach(function (product) {
@@ -241,16 +242,16 @@ document.addEventListener('DOMContentLoaded', function () {
     addProductBtn.className = 'icon-btn icon-btn--add icon-btn--sm';
     addProductBtn.setAttribute('data-bs-toggle', 'modal');
     addProductBtn.setAttribute('data-bs-target', '#orderProductPickerModal');
-    addProductBtn.innerHTML = '<span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--add"></span></span><span class="icon-btn__label">Add product</span>';
+    addProductBtn.innerHTML = '<span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--add"></span></span><span class="icon-btn__label">{% translate "Add product" %}</span>';
 
     {% if ai_available %}
     var aiBtn = document.createElement('button');
     aiBtn.type = 'button';
     aiBtn.className = 'icon-btn icon-btn--outline icon-btn--sm';
-    aiBtn.innerHTML = '<span class="icon-btn__label">AI Suggest Quantities</span>';
+    aiBtn.innerHTML = '<span class="icon-btn__label">{% translate "AI Suggest Quantities" %}</span>';
     aiBtn.addEventListener('click', function () {
         aiBtn.disabled = true;
-        aiBtn.querySelector('.icon-btn__label').textContent = 'Thinking…';
+        aiBtn.querySelector('.icon-btn__label').textContent = '{% translate "Thinking…" %}';
         var body = new URLSearchParams();
         body.set('supplier_id', document.querySelector('#order-form input[name="supplier"]').value);
         document.querySelectorAll('#order-form input[name="supplier_position"]').forEach(function (el) {
@@ -272,15 +273,15 @@ document.addEventListener('DOMContentLoaded', function () {
                     if (pid in byId) row.update({requested_qty: byId[pid]});
                 });
             })
-            .catch(function () { alert('AI request failed (network error).'); })
+            .catch(function () { alert('{% translate "AI request failed (network error)." %}'); })
             .finally(function () {
                 aiBtn.disabled = false;
-                aiBtn.querySelector('.icon-btn__label').textContent = 'AI Suggest Quantities';
+                aiBtn.querySelector('.icon-btn__label').textContent = '{% translate "AI Suggest Quantities" %}';
             });
     });
-    attachTableExportToToolbar(table, '#order-items-table-card', 'order_items.xlsx', 'Order Items', [addProductBtn, aiBtn]);
+    attachTableExportToToolbar(table, '#order-items-table-card', 'order_items.xlsx', '{% translate "Order Items" %}', [addProductBtn, aiBtn]);
     {% else %}
-    attachTableExportToToolbar(table, '#order-items-table-card', 'order_items.xlsx', 'Order Items', [addProductBtn]);
+    attachTableExportToToolbar(table, '#order-items-table-card', 'order_items.xlsx', '{% translate "Order Items" %}', [addProductBtn]);
     {% endif %}
 
     document.getElementById('order-form').addEventListener('submit', function () {

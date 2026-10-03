@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
+{% load static cache_bust i18n %}
 
-{% block title %}STORA - Price Lists{% endblock %}
-{% load static cache_bust %}
+{% block title %}STORA - {% translate "Price Lists" %}{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
@@ -10,12 +10,12 @@
 {% block content %}
 
 <div class="mb-3">
-    <h1 class="mb-0">Price Lists</h1>
+    <h1 class="mb-0">{% translate "Price Lists" %}</h1>
 </div>
 
 <div class="mb-2">
     <label class="form-check-label" style="cursor:pointer;">
-        <input type="checkbox" id="show-deleted-toggle" {% if show_deleted %}checked{% endif %}> Show deleted
+        <input type="checkbox" id="show-deleted-toggle" {% if show_deleted %}checked{% endif %}> {% translate "Show deleted" %}
     </label>
 </div>
 
@@ -34,9 +34,10 @@
 document.addEventListener('DOMContentLoaded', function () {
     function statusFormatter(cell) {
         var v = cell.getValue();
-        if (v === 'Active') return '<span style="color:#27ae60;font-weight:600;">Active</span>';
-        if (v === 'Expired') return '<span style="color:#6c757d;">Expired</span>';
-        return '<span style="color:#c0392b;">Upcoming</span>';
+        var code = cell.getData().status_code;
+        if (code === 'Active') return '<span style="color:#27ae60;font-weight:600;">' + v + '</span>';
+        if (code === 'Expired') return '<span style="color:#6c757d;">' + v + '</span>';
+        return '<span style="color:#c0392b;">' + v + '</span>';
     }
 
     var table = initExcelStyleTable('#price-lists-table', 'price-lists-data', [
@@ -44,13 +45,13 @@ document.addEventListener('DOMContentLoaded', function () {
             title: '#', field: 'name', formatter: 'rownum', width: 50, hozAlign: 'center',
             headerFilter: false, hideable: false,
         },
-        {title: 'Name', field: 'name', widthGrow: 3},
-        {title: 'Priority', field: 'priority', width: 90, hozAlign: 'right'},
-        {title: 'Start Date', field: 'start_date', width: 120},
-        {title: 'End Date', field: 'end_date', width: 120},
-        {title: 'Status', field: 'status', width: 110, formatter: statusFormatter},
-        {title: 'Created By', field: 'created_by', width: 150},
-    ], {placeholder: 'No price lists yet.'});
+        {title: '{% translate "Name" %}', field: 'name', widthGrow: 3},
+        {title: '{% translate "Priority" %}', field: 'priority', width: 90, hozAlign: 'right'},
+        {title: '{% translate "Start Date" %}', field: 'start_date', width: 120},
+        {title: '{% translate "End Date" %}', field: 'end_date', width: 120},
+        {title: '{% translate "Status" %}', field: 'status', width: 110, formatter: statusFormatter},
+        {title: '{% translate "Created By" %}', field: 'created_by', width: 150},
+    ], {placeholder: '{% translate "No price lists yet." %}'});
 
     table.on('rowClick', function (e, row) {
         if (e.target.closest('.tabulator-header')) return;
@@ -67,10 +68,10 @@ document.addEventListener('DOMContentLoaded', function () {
         addPriceListBtn.className = 'icon-btn icon-btn--add icon-btn--sm';
         addPriceListBtn.innerHTML =
             '<span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--add"></span></span>' +
-            '<span class="icon-btn__label">New Price List</span>';
+            '<span class="icon-btn__label">{% translate "New Price List" %}</span>';
     }
 
-    attachTableExportToToolbar(table, '#price-lists-table-card', 'price_lists.xlsx', 'Price Lists', addPriceListBtn ? [addPriceListBtn] : []);
+    attachTableExportToToolbar(table, '#price-lists-table-card', 'price_lists.xlsx', '{% translate "Price Lists" %}', addPriceListBtn ? [addPriceListBtn] : []);
 
     document.getElementById('show-deleted-toggle').addEventListener('change', function (e) {
         var params = new URLSearchParams(window.location.search);

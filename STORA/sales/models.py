@@ -4,6 +4,7 @@ from django.db import models, transaction
 from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 from django.core.validators import MinValueValidator
+from django.utils.translation import gettext_lazy as _
 
 
 from STORA.accounts.models import Employee
@@ -13,18 +14,18 @@ class SaleAttributes(models.Model):
     CASH = 'CASH'
     CARD = 'CARD'
     MIXED = 'MIXED'
-    PAYMENT_METHOD_CHOICES = [(CASH, 'Cash'), (CARD, 'Card'), (MIXED, 'Mixed')]
+    PAYMENT_METHOD_CHOICES = [(CASH, _('Cash')), (CARD, _('Card')), (MIXED, _('Mixed'))]
 
     cashier = models.ForeignKey(Employee, on_delete=models.PROTECT, related_name='sales',
-                                verbose_name='Cashier')
-    time_of_sale = models.DateTimeField(auto_now_add=True, verbose_name='Sale Time')
+                                verbose_name=_('Cashier'))
+    time_of_sale = models.DateTimeField(auto_now_add=True, verbose_name=_('Sale Time'))
     total_amount = models.DecimalField(default=0.00, decimal_places=2, max_digits=12)
     # Nullable -- existing rows predate the checkout screen (Фаза 2) that
     # sets these. New sales always get one via the checkout modal's own
     # client-side requirement, not a DB-level NOT NULL, so nothing here
     # breaks mid-rollout while that screen is still being built in stages.
     payment_method = models.CharField(max_length=5, choices=PAYMENT_METHOD_CHOICES, null=True, blank=True,
-                                      verbose_name='Payment Method')
+                                      verbose_name=_('Payment Method'))
     # `amount_paid` is always the CASH portion (gross cash handed over --
     # for CASH it can exceed the total, giving change; for MIXED it's just
     # the cash remainder after `card_amount`, paid exactly, no change; for
@@ -34,11 +35,11 @@ class SaleAttributes(models.Model):
     # total_amount` always holds, regardless of method -- no branching by
     # payment_method needed in a later report.
     amount_paid = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True,
-                                      verbose_name='Amount Paid (Cash)')
+                                      verbose_name=_('Amount Paid (Cash)'))
     card_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True,
-                                      verbose_name='Amount Paid (Card)')
+                                      verbose_name=_('Amount Paid (Card)'))
     change_due = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True,
-                                     verbose_name='Change Due')
+                                     verbose_name=_('Change Due'))
 
     # Fiscal printer (Daisy Perfect S01, see STORA.sales.fiscal) status --
     # NONE covers both "not attempted yet" and "not eligible" (e.g. CARD/
@@ -50,7 +51,7 @@ class SaleAttributes(models.Model):
     FISCAL_PRINTED = 'PRINTED'
     FISCAL_FAILED = 'FAILED'
     FISCAL_STATUS_CHOICES = [
-        (FISCAL_NONE, 'Not fiscalized'), (FISCAL_PRINTED, 'Printed'), (FISCAL_FAILED, 'Failed'),
+        (FISCAL_NONE, _('Not fiscalized')), (FISCAL_PRINTED, _('Printed')), (FISCAL_FAILED, _('Failed')),
     ]
     fiscal_status = models.CharField(max_length=7, choices=FISCAL_STATUS_CHOICES, default=FISCAL_NONE)
     # The exact УНП (UnicSaleNum) sent on the last attempt -- kept for
@@ -68,8 +69,8 @@ class SaleAttributes(models.Model):
     fiscal_receipt_number = models.PositiveIntegerField(null=True, blank=True)
 
     class Meta:
-        verbose_name = 'Sale'
-        verbose_name_plural = 'Sales'
+        verbose_name = _('Sale')
+        verbose_name_plural = _('Sales')
 
     def __str__(self):
         return f"{self.cashier} {self.time_of_sale}"
@@ -83,25 +84,25 @@ class SaleAttributes(models.Model):
 
 class SaleItems(models.Model):
     sale = models.ForeignKey(SaleAttributes, on_delete=models.CASCADE, related_name='items',
-                             verbose_name='Sale Reference')
+                             verbose_name=_('Sale Reference'))
     sale_item = models.ForeignKey(Product, on_delete=models.PROTECT, related_name='sold_items',
-                                  verbose_name='Product')
+                                  verbose_name=_('Product'))
     # Decimal, not an integer count -- a `unit_type=weight` product can be
     # sold in fractional amounts (e.g. 0.350 kg); `piece` products just
     # always use a whole number in the same field.
     sale_quantity = models.DecimalField(default=1, max_digits=10, decimal_places=3,
                                         validators=[MinValueValidator(Decimal('0.001'))],
-                                        verbose_name='Quantity Sold')
+                                        verbose_name=_('Quantity Sold'))
     price_at_sale = models.DecimalField(blank=True, null= True, max_digits=9, decimal_places=2,
-                                        verbose_name='Unit Price at Sale',
-                                        help_text='Price of the product at the moment of sale')
+                                        verbose_name=_('Unit Price at Sale'),
+                                        help_text=_('Price of the product at the moment of sale'))
     total_price_row = models.DecimalField(blank=True, null= True, max_digits=9, decimal_places=2,
-                                        verbose_name='Total price',
-                                        help_text='Total price of the current article')
+                                        verbose_name=_('Total price'),
+                                        help_text=_('Total price of the current article'))
 
     class Meta:
-        verbose_name = 'Sale Item'
-        verbose_name_plural = 'Sales Items'
+        verbose_name = _('Sale Item')
+        verbose_name_plural = _('Sales Items')
 
     def __str__(self):
         return f"{self.sale_item_id} {self.sale_item.name} {self.sale_quantity} {self.price_at_sale}"
@@ -203,8 +204,8 @@ class PosPin(models.Model):
     position = models.PositiveIntegerField(default=0)
 
     class Meta:
-        verbose_name = 'POS Pin'
-        verbose_name_plural = 'POS Pins'
+        verbose_name = _('POS Pin')
+        verbose_name_plural = _('POS Pins')
         ordering = ['position']
         constraints = [
             models.CheckConstraint(
@@ -233,7 +234,7 @@ class SaleItemVoidLog(models.Model):
 
     REMOVE_LINE = 'REMOVE_LINE'
     VOID_SALE = 'VOID_SALE'
-    ACTION_CHOICES = [(REMOVE_LINE, 'Removed one line'), (VOID_SALE, 'Voided whole sale')]
+    ACTION_CHOICES = [(REMOVE_LINE, _('Removed one line')), (VOID_SALE, _('Voided whole sale'))]
 
     employee = models.ForeignKey(Employee, on_delete=models.PROTECT, related_name='sale_item_voids')
     # SET_NULL, not PROTECT/CASCADE -- this is a historical log entry; a
@@ -247,8 +248,8 @@ class SaleItemVoidLog(models.Model):
     removed_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        verbose_name = 'Removed Sale Item'
-        verbose_name_plural = 'Removed Sale Items'
+        verbose_name = _('Removed Sale Item')
+        verbose_name_plural = _('Removed Sale Items')
         ordering = ['-removed_at']
 
     def __str__(self):
@@ -274,9 +275,9 @@ class RefundAttributes(models.Model):
     OPERATOR_ERROR = 'OPERATOR_ERROR'
     TAX_BASE_REDUCTION = 'TAX_BASE_REDUCTION'
     REASON_CHOICES = [
-        (RETURN_COMPLAINT, 'Return / Complaint'),
-        (OPERATOR_ERROR, 'Operator Error'),
-        (TAX_BASE_REDUCTION, 'Reduction of Tax Base'),
+        (RETURN_COMPLAINT, _('Return / Complaint')),
+        (OPERATOR_ERROR, _('Operator Error')),
+        (TAX_BASE_REDUCTION, _('Reduction of Tax Base')),
     ]
 
     # PROTECT, not CASCADE -- a refund is a record of money actually handed
@@ -298,8 +299,8 @@ class RefundAttributes(models.Model):
     fiscal_printed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
-        verbose_name = 'Refund'
-        verbose_name_plural = 'Refunds'
+        verbose_name = _('Refund')
+        verbose_name_plural = _('Refunds')
         ordering = ['-time_of_refund']
 
     def __str__(self):
@@ -323,8 +324,8 @@ class RefundItems(models.Model):
     total_price_row = models.DecimalField(max_digits=9, decimal_places=2, blank=True, null=True)
 
     class Meta:
-        verbose_name = 'Refund Item'
-        verbose_name_plural = 'Refund Items'
+        verbose_name = _('Refund Item')
+        verbose_name_plural = _('Refund Items')
 
     def __str__(self):
         return f"{self.original_item.sale_item.name} x{self.refund_quantity}"
@@ -355,7 +356,7 @@ class FiscalCounter(models.Model):
     @classmethod
     def next(cls):
         with transaction.atomic():
-            counter, _ = cls.objects.select_for_update().get_or_create(pk=1)
+            counter, _created = cls.objects.select_for_update().get_or_create(pk=1)
             n = counter.next_number
             counter.next_number = n + 1
             counter.save(update_fields=['next_number'])
