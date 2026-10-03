@@ -1673,7 +1673,7 @@ Apps: accounts, core, products, deliveries, sales, reports.
   `verbose_name`/`choices` с `_()` НЕ прави миграция; ДОБАВЯНЕ на нов
   `verbose_name` прави (само метаданни) — нов етикет слагай във формата
   (`labels`), не в модела. (Products commit-ът е добавил такива —
-  `products/0016` чака съгласие, още не е генерирана.)
+  записани в `products/0016_i18n_verbose_names`, само метаданни, без SQL.)
 - **Капан: `x, _ = ...get_or_create()`/`.delete()` в функция, която вика**
   **`_()`** — локалното `_` засенчва gettext → `UnboundLocalError`/
   `TypeError`. Ползвай друго име (`_created`, `_per_model`).
