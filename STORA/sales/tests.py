@@ -1074,8 +1074,12 @@ class FiscalPrintReceiptTests(TestCase):
         result = fiscal.print_fiscal_receipt(self.sale)
 
         sent_commands = [call.args[0] for call in mock_post.call_args_list]
+        # FDPrintBarcode after FDTotalSum (not before) -- moved there to
+        # match a real reference receipt from another store, where the
+        # barcode prints between the "paid" and "change" lines, meaning
+        # change itself only prints when the receipt closes (FDEndFiscRcp).
         self.assertEqual(
-            sent_commands, ['FDStartFiscRcp', 'FDSaleItem', 'FDPrintBarcode', 'FDTotalSum', 'FDEndFiscRcp'],
+            sent_commands, ['FDStartFiscRcp', 'FDSaleItem', 'FDTotalSum', 'FDPrintBarcode', 'FDEndFiscRcp'],
         )
         self.assertTrue(result['unic_sale_num'].startswith('DY000001-OP01-'))
         self.assertEqual(result['receipt_number'], 3)
