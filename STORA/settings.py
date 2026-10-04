@@ -105,9 +105,13 @@ WSGI_APPLICATION = 'STORA.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
+# Stock backend everywhere except hosts stuck on PostgreSQL < 14 (see
+# STORA/db_backends/postgresql_legacy/base.py), which set DB_ENGINE in .env.
+DB_ENGINE = os.environ.get('DB_ENGINE', 'django.db.backends.postgresql')
+
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.postgresql',
+        'ENGINE': DB_ENGINE,
         'NAME': os.environ.get('DB_NAME', 'stora_db'),
         'USER': os.environ.get('DB_USER', 'stora_usr'),
         'PASSWORD': os.environ.get('DB_PASSWORD', 'stora_psswd'),
@@ -120,7 +124,7 @@ DATABASES = {
     # "please don't write" instruction in the prompt. Genuinely can't
     # execute a write, regardless of what the AI generates.
     'readonly': {
-        'ENGINE': 'django.db.backends.postgresql',
+        'ENGINE': DB_ENGINE,
         'NAME': os.environ.get('DB_NAME', 'stora_db'),
         'USER': os.environ.get('DB_READONLY_USER', 'stora_ai_readonly'),
         # Same dev-only fallback pattern as DB_PASSWORD above -- matches

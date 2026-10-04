@@ -142,3 +142,27 @@ class DispatchTaskTests(TestCase):
                 task.delay.assert_called_once_with('arg')
         finally:
             listener.close()
+
+class LegacyPostgresBackendTests(TestCase):
+    """STORA.db_backends.postgresql_legacy exists only so the SuperHosting
+    pilot (PostgreSQL 10.23) can run Django 6 -- it must skip the version
+    check that the stock backend raises on, and nothing else."""
+
+    def _wrapper(self, wrapper_class):
+        from django.db import connection
+
+        wrapper = wrapper_class(connection.settings_dict.copy())
+        wrapper.__dict__['pg_version'] = 100023  # what SuperHosting reports
+        return wrapper
+
+    def test_stock_backend_rejects_postgres_10(self):
+        from django.db import NotSupportedError
+        from django.db.backends.postgresql.base import DatabaseWrapper
+
+        with self.assertRaises(NotSupportedError):
+            self._wrapper(DatabaseWrapper).check_database_version_supported()
+
+    def test_legacy_backend_accepts_postgres_10(self):
+        from STORA.db_backends.postgresql_legacy.base import DatabaseWrapper
+
+        self._wrapper(DatabaseWrapper).check_database_version_supported()
