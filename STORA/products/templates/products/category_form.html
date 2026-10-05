@@ -5,45 +5,67 @@
 
 {% block content %}
 
-    {% if category %}
-        <h1>{% blocktranslate with name=category.name %}Edit category: {{ name }}{% endblocktranslate %}</h1>
-    {% else %}
-        <h1>{% translate "Add new category" %}</h1>
-    {% endif %}
+    <header class="page-header mb-4">
+        {% if category %}
+        <h1 class="h2 mb-1">{% blocktranslate with name=category.name %}Edit category: {{ name }}{% endblocktranslate %}</h1>
+        {% else %}
+        <h1 class="h2 mb-1">{% translate "Add new category" %}</h1>
+        {% endif %}
+    </header>
 
-    <form method="post">
+    <form method="post" class="product-form">
         {% csrf_token %}
-        <p>
-            {{ form.name.label_tag }}
-            {{ form.name }}
-            {{ form.name.errors }}
-        </p>
-        <p>
-            {{ form.description.label_tag }}
-            {{ form.description }}
-            {{ form.description.errors }}
-        </p>
-        <p>
-            {{ form.parent.label_tag }}
-            <span style="position:relative; display:inline-block; max-width: 320px;">
-                <input type="text" id="parent-search-input" autocomplete="off"
-                       placeholder="{% translate 'Search category by name...' %}"
-                       value="{% if form.instance.parent_id %}{{ form.instance.parent.name }}{% endif %}">
-                <div id="parent-search-results" class="global-search-results"></div>
-            </span>
-            <button type="button" id="parent-tree-btn">{% translate "Browse" %}</button>
-            {{ form.parent }}
-            {{ form.parent.errors }}
-        </p>
-        <p>
-            <label>{{ form.show_on_pos }} {{ form.show_on_pos.label }}</label>
-        </p>
-        <button type="submit">{% translate "Save" %}</button>
+        <section class="product-form__section">
+            <div class="product-form__grid">
+                <div class="field">
+                    {{ form.name.label_tag }}
+                    {{ form.name }}
+                    {{ form.name.errors }}
+                </div>
+
+                <div class="field">
+                    {{ form.description.label_tag }}
+                    {{ form.description }}
+                    {{ form.description.errors }}
+                </div>
+
+                <div class="field">
+                    {{ form.parent.label_tag }}
+                    <div class="field__row">
+                        <div class="pill-search-wrapper pill-search-wrapper--with-browse" style="max-width: 380px;">
+                            <span class="pill-search-wrapper__icon"></span>
+                            <input type="text" id="parent-search-input" class="pill-input" autocomplete="off"
+                                   placeholder="{% translate 'Search category by name...' %}"
+                                   value="{% if form.instance.parent_id %}{{ form.instance.parent.name }}{% endif %}">
+                            <button type="button" id="parent-tree-btn" class="pill-search-wrapper__browse-btn" title="{% translate 'Browse categories as a tree' %}">{% translate "Browse" %}</button>
+                            <div id="parent-search-results" class="global-search-results"></div>
+                        </div>
+                        {{ form.parent }}
+                    </div>
+                    {{ form.parent.errors }}
+                </div>
+
+                <div class="field field--checkbox">
+                    {{ form.show_on_pos }}
+                    <div class="field__body">
+                        <span class="field__label-row">
+                            <label for="{{ form.show_on_pos.id_for_label }}">{{ form.show_on_pos.label }}</label>
+                            <span class="popup-tip">
+                                <button type="button" class="popup-tip__trigger" aria-label="Explanation">?</button>
+                                <span class="popup-tip__bubble">{{ form.show_on_pos.help_text }}</span>
+                            </span>
+                        </span>
+                        {{ form.show_on_pos.errors }}
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <div class="product-form__actions">
+            <button type="submit" class="form-submit-btn">{% translate "Save" %}</button>
+            <a href="{% url 'category_list' %}" class="form-cancel-btn">{% translate "Cancel" %}</a>
+        </div>
     </form>
-
-    <hr>
-
-    <a href="{% url 'category_list' %}">{% translate "Cancel" %}</a>
 
 {{ excluded_category_ids|json_script:"excluded-category-ids" }}
 <script src="{% static_v 'js/category-tree-picker.js' %}"></script>

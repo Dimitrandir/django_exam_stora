@@ -2757,6 +2757,36 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
     transform: translateY(-50%) rotate(-135deg);
 }
 
+/* Bootstrap's default modal entrance slides the dialog DOWN into place
+   (starts 50px above its resting spot, animates to 0) -- but that same
+   rule also governs the EXIT, so closing the modal (pick a category, or
+   dismiss it) slides it back UP and away ("изкача"), which is the half
+   of the animation actually visible most often (every successful pick
+   closes it). Flipped to start/end 50px BELOW instead, so closing sinks
+   the dialog down out of view ("да потъва") -- asked for live. This
+   necessarily flips the entrance too (now rises up from below instead
+   of descending), there's no way to make a plain two-state CSS
+   transition sink on both ends without separate enter/exit keyframes. */
+#categoryTreeModal.fade .modal-dialog {
+    transform: translate(0, 50px);
+}
+
+/* Without this, the rule above (an ID selector) outranks Bootstrap's own
+   .modal.show .modal-dialog{transform:none} (plain classes, lower
+   specificity) EVEN while the modal is open -- the dialog got stuck
+   translated 50px down permanently instead of settling into place,
+   confirmed live right after adding the rule above. Equal specificity to
+   the rule above (same ID) should let source order break the tie, but
+   that did NOT win live either (confirmed by inspecting the matched
+   CSSOM rules directly, not just guessing) -- !important forces it,
+   same escape hatch already used elsewhere in this file for the same
+   class of problem (see .tabulator-cell above). Removing .show on close
+   falls back to the translate(0,50px) rule above again, which is the
+   actual point of this whole override. */
+#categoryTreeModal.show .modal-dialog {
+    transform: none !important;
+}
+
 /* "Choose a category" tree modal (static/js/category-tree-picker.js) --
    alternative to typing in the search box, for browsing Category.parent's
    hierarchy directly. Rows sized for a touchscreen tap, not just a mouse
@@ -2923,6 +2953,53 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
     align-items: center;
     gap: 0.75rem;
     flex-wrap: wrap;
+}
+
+/* Primary form submit -- same cyan/blue gradient pill as
+   .report-page__filter-submit (STYLES.md: blue = confirm/apply), given
+   its own neutral name here since this is used outside Reports too
+   (Category form first, see its own comment for why that page needed
+   this). Product create/edit's own Save button is intentionally left
+   alone -- out of scope for the pass that introduced this class. */
+.form-submit-btn {
+    height: 44px;
+    padding: 0 1.6rem;
+    border: none;
+    border-radius: 999px;
+    background: linear-gradient(135deg, var(--brand-cyan-mid), var(--brand-blue-deep));
+    color: #ffffff;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    box-shadow: 0 4px 10px rgba(43, 111, 209, 0.25);
+    transition: box-shadow 0.15s ease;
+}
+
+.form-submit-btn:hover {
+    box-shadow: 0 6px 14px rgba(43, 111, 209, 0.35);
+}
+
+/* Secondary action next to .form-submit-btn -- outline, not filled, so
+   Save stays the one loud thing in the row (same "quiet secondary"
+   language as .reports-dashboard__hero-btn--ghost). */
+.form-cancel-btn {
+    height: 44px;
+    padding: 0 1.4rem;
+    border: 1.5px solid #d7dee3;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--secondary-color);
+    font-weight: 600;
+    font-size: 0.9rem;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.form-cancel-btn:hover {
+    border-color: var(--brand-blue-deep);
+    color: var(--brand-blue-deep);
 }
 
 /* Data table card -- pilot started on Categories List for the STYLES.md
