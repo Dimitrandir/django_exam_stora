@@ -90,7 +90,13 @@ def sales_add(request):
     # the only place that matters, since the cart/search JS just reads
     # sell_price straight off this dump for whatever product gets scanned.
     # See STORA.pricelists.services.resolve_prices.
-    all_products = list(Product.objects.all())
+    # is_archived excluded -- an archived product is "retired" from the
+    # catalog (Products list hides it by default), so it shouldn't be
+    # findable at the register either (search, barcode scan, category
+    # panel all read off this one dump). Deliberately NOT filtered out of
+    # barcodes_data/Products' OWN search screens -- see CLAUDE.md on
+    # is_archived for why those stay reachable (history, refunds, etc.).
+    all_products = list(Product.objects.filter(is_archived=False))
     price_list_matches = resolve_prices(all_products)
     products_data = []
     for product in all_products:
