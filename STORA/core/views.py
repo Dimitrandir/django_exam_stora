@@ -45,6 +45,7 @@ class GlobalSearchView(LoginRequiredMixin, View):
 
     def _search_products(self, query):
         from STORA.products.models import Product
+        from STORA.products.templatetags.currency_filters import quantity_display
 
         results = (
             Product.objects
@@ -56,7 +57,19 @@ class GlobalSearchView(LoginRequiredMixin, View):
             .order_by('-similarity', 'name')[:self.RESULTS_PER_CATEGORY]
         )
         return [
-            {'label': f'{p.internal_code} — {p.name}', 'url': reverse('product_details', kwargs={'pk': p.pk})}
+            {
+                # Code - Name - Stock - Delivery price - Sell price, a plain
+                # "-" between each (not an em dash -- asked for live, this
+                # dropdown used to be just "code — name"). delivery_price is
+                # nullable (never delivered yet) -- '-' there too rather than
+                # "0.00", which would misleadingly read as a known zero cost.
+                'label': '{} - {} - {} - {} - {:.2f}'.format(
+                    p.internal_code, p.name, quantity_display(p.quantity, p.unit_type),
+                    f'{p.delivery_price:.2f}' if p.delivery_price is not None else '-',
+                    p.sell_price,
+                ),
+                'url': reverse('product_details', kwargs={'pk': p.pk}),
+            }
             for p in results
         ]
 

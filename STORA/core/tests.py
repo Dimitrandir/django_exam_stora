@@ -69,6 +69,16 @@ class GlobalSearchViewTests(TestCase):
         labels = [item['label'] for item in response.json()['products']]
         self.assertTrue(any('Sparkling Water' in label for label in labels))
 
+    def test_product_label_includes_stock_and_prices_with_a_plain_dash(self):
+        # Code - Name - Stock - Delivery price - Sell price, "-" throughout
+        # (used to be an em dash between just code and name) -- delivery
+        # price is None here (never delivered), shown as "-" too, not "0.00".
+        self.client.force_login(self.user)
+        response = self._search('sparkl')
+        labels = [item['label'] for item in response.json()['products']]
+        self.assertIn('P9000001 - Sparkling Water - 0 pcs - - - 1.50', labels)
+        self.assertNotIn('—', labels[0])
+
     def test_finds_supplier_by_name(self):
         self.client.force_login(self.user)
         response = self._search('acme')
