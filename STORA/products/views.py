@@ -774,8 +774,24 @@ class CategoryListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListVie
         # grid's own bulk delete.
         can_edit = self.request.user.has_perm('products.change_category')
         can_delete = self.request.user.has_perm('products.delete_category')
-        categories_data = [
-            {
+
+        # Nested (not flat) -- each node carries its own subcategories under
+        # `_children`, Tabulator's own dataTree child-field convention (see
+        # category_list.html) -- an expand/collapse tree instead of a flat
+        # table with a "Parent" text column, same hierarchy the POS category
+        # panel/the "Browse" picker already show, just rendered as rows here
+        # instead of folders/an indented list. Parent stays as its own
+        # column too (direct parent name) -- still useful at a glance once a
+        # tree goes several levels deep, where the nesting alone only shows
+        # position, not the name without expanding upward.
+        by_parent_id = {}
+        for category in context['categories']:
+            by_parent_id.setdefault(category.parent_id, []).append(category)
+        for siblings in by_parent_id.values():
+            siblings.sort(key=lambda c: c.name or '')
+
+        def serialize(category):
+            node = {
                 'id': category.pk,
                 'name': category.name,
                 'parent': category.parent.name if category.parent else '',
@@ -783,9 +799,12 @@ class CategoryListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListVie
                 'show_on_pos': category.show_on_pos,
                 'edit_url': reverse('category_edit', kwargs={'pk': category.pk}) if can_edit else '',
             }
-            for category in context['categories']
-        ]
-        context['categories_data'] = categories_data
+            children = by_parent_id.get(category.pk)
+            if children:
+                node['_children'] = [serialize(child) for child in children]
+            return node
+
+        context['categories_data'] = [serialize(category) for category in by_parent_id.get(None, [])]
         context['can_edit_category'] = can_edit
         context['can_delete_category'] = can_delete
         return context

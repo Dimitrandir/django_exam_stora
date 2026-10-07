@@ -1289,6 +1289,48 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
     white-space: nowrap !important;
 }
 
+/* The dataTree expand/collapse control (Categories List's subcategory
+   toggle, see category_list.html) -- the vendor default is a tiny 11x11px
+   box with a 1px-thick +/- drawn in #333/#ccc, easy to miss and hard to
+   tap accurately, especially on a touch screen (the project's recurring
+   concern elsewhere -- see the on-screen keypad/keyboard work). Scaled up
+   ~1.7x (11px -> 20px box, the 1px strokes -> 2px, their 7px length ->
+   12px) and recolored to the brand blue instead of near-black/gray, for
+   a clearly bigger, higher-contrast target against the white row
+   background. Applies to every Tabulator table in the project, not just
+   this one -- nothing here is Categories-specific, it's just the only
+   table using dataTree so far. */
+.tabulator-data-tree-control {
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    border: 1px solid var(--brand-blue-deep);
+    background: rgba(43, 111, 209, 0.12);
+}
+
+.tabulator-data-tree-control:hover {
+    background: rgba(43, 111, 209, 0.25);
+}
+
+.tabulator-data-tree-control-expand,
+.tabulator-data-tree-control-collapse {
+    width: 2px;
+    height: 12px;
+}
+
+.tabulator-data-tree-control-expand {
+    background: var(--brand-blue-deep);
+}
+
+.tabulator-data-tree-control-expand::after,
+.tabulator-data-tree-control-collapse::after {
+    width: 12px;
+    height: 2px;
+    left: -5px;
+    top: 5px;
+    background: var(--brand-blue-deep);
+}
+
 /* "Classic" Tabulator skin -- TRIAL ONLY, opt-in via adding this class
    alongside .data-table-card (outer wrapper) and table-sm (the div
    Tabulator turns into its own .tabulator root). Reproduces the look of

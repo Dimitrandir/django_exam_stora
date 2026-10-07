@@ -321,6 +321,26 @@
             movableColumns: true,
         };
 
+        // Opt-in per table (options.dataTree: the field of the column that
+        // should carry the expand/collapse arrow, e.g. 'name') -- renders
+        // nested rows (each row's own `_children` array, Tabulator's
+        // default dataTreeChildField) as an expandable tree instead of a
+        // flat list. Column header filtering/sorting (dataTreeFilter/
+        // dataTreeSort, both default true) already walk into every nested
+        // row on their own, expanded or not -- nothing extra needed here
+        // for those. A bottomCalc on a dataTree table is NOT safe to add
+        // without checking first -- confirmed live that this vendored
+        // build's dataTree+columnCalcs integration only descends into
+        // nested rows inside a *grouped* table's own per-group calc row,
+        // so a plain table's table-wide bottom row silently counts/sums
+        // top-level rows only, however deep the tree actually goes
+        // (dataTreeChildColumnCalcs:true changes nothing for this case).
+        if (options.dataTree) {
+            tableConfig.dataTree = true;
+            tableConfig.dataTreeElementColumn = options.dataTree;
+            tableConfig.dataTreeStartExpanded = options.dataTreeStartExpanded !== undefined ? options.dataTreeStartExpanded : true;
+        }
+
         // Opt-in per table (options.persist: true, or a string to use as
         // the storage key instead of deriving one from elementSelector) --
         // remembers column order/visibility/width in localStorage across

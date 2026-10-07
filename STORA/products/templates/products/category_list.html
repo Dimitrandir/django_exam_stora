@@ -29,8 +29,8 @@
     {% endif %}
 
     {{ categories_data|json_script:"categories-table-data" }}
-    <div class="data-table-card">
-        <div id="categories-table" class="table-sm"></div>
+    <div class="data-table-card tabulator-classic">
+        <div id="categories-table" class="tabulator-classic"></div>
     </div>
 </div>
 
@@ -99,7 +99,14 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
     columns.push(
-        {title: '{% translate "Name" %}', field: 'name', width: 220, bottomCalc: 'count'},
+        // No bottomCalc here anymore -- the vendored Tabulator build's
+        // dataTree+columnCalcs integration only walks nested rows inside
+        // a *grouped* table's own per-group calc row (groupRows module);
+        // for a plain ungrouped table like this one the table-wide bottom
+        // row quietly only counts top-level rows (confirmed live: showed
+        // "4" for 4 root categories + 2 nested, not 6) -- a wrong total is
+        // worse than no total.
+        {title: '{% translate "Name" %}', field: 'name', width: 220},
         {title: '{% translate "Parent" %}', field: 'parent', width: 180},
         {title: '{% translate "Description" %}', field: 'description', widthGrow: 2, minWidth: 200},
         {
@@ -111,6 +118,10 @@ document.addEventListener('DOMContentLoaded', function () {
     var table = initExcelStyleTable('#categories-table', 'categories-table-data', columns, {
         placeholder: '{% translate "No categories found." %}',
         selectableRows: canDelete ? true : false,
+        // Tree view -- categories_data now arrives nested (each category's
+        // own subcategories under `_children`, see CategoryListView),
+        // 'name' is the column that gets the expand/collapse arrow + indent.
+        dataTree: 'name',
     });
 
     // Click a row to edit it -- guarded off for the selection checkbox
