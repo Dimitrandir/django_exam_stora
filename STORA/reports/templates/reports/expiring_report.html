@@ -3,6 +3,9 @@
 
 {% block title %}STORA - {% translate "Expiring Products" %}{% endblock %}
 
+{% block main_class %}main-wide{% endblock %}
+{% block container_class %}container-fluid{% endblock %}
+
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
 {% endblock %}
@@ -18,42 +21,35 @@
     <div class="form-errors">{{ form.errors }}</div>
     {% endif %}
 
-    <section class="report-filter card shadow-sm border-0 rounded-4 mb-4">
-        <div class="card-body">
-            <form method="get">
-                <fieldset class="report-filter__fieldset border-0 p-0 m-0">
-                    <legend class="h5 mb-3">{% translate "Look-ahead window" %}</legend>
-
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                            <div class="report-filter__field">
-                                {{ form.days_ahead.label_tag }}
-                                {{ form.days_ahead }}
-                                <div class="form-text">{{ form.days_ahead.help_text }}</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="mt-3">
-                        <button type="submit" class="btn btn-primary">{% translate "Show report" %}</button>
-                    </div>
-                </fieldset>
-            </form>
-        </div>
+    <section class="report-page__filter-bar">
+        <form method="get" class="report-page__filter-form">
+            <div class="report-page__filter-field">
+                {{ form.days_ahead.label_tag }}
+                {{ form.days_ahead }}
+            </div>
+            <button type="submit" class="report-page__filter-submit">{% translate "Show report" %}</button>
+        </form>
+        {% comment %}
+        Outside the flex row on purpose -- inside .report-page__filter-field
+        it made that one field's box taller than the button next to it, and
+        align-items: flex-end (shared by every report filter bar) then
+        aligned the BUTTON's bottom edge to the bottom of the help text
+        instead of the input, making it float noticeably above the input
+        instead of lining up with it (flagged live, with a screenshot).
+        {% endcomment %}
+        <p class="report-page__filter-hint">{{ form.days_ahead.help_text }}</p>
     </section>
 
-    <section class="report-section card shadow-sm border-0 rounded-4 mb-4">
-        <div class="card-body">
-            <header class="section-header mb-3">
-                <h2 class="h4 mb-0">{% blocktranslate with days=days_ahead %}Batches expiring within {{ days }} days{% endblocktranslate %}</h2>
-            </header>
+    <section class="report-page__table-section">
+        <header class="report-page__section-header">
+            <h2>{% blocktranslate with days=days_ahead %}Batches expiring within {{ days }} days{% endblocktranslate %}</h2>
+        </header>
 
-            {{ batches_data|json_script:"expiring-table-data" }}
-            <div id="expiring-table-card" class="data-table-card">
-                <div id="expiring-table" class="table-sm"></div>
-            </div>
-            <p class="text-muted small mt-2 mb-0">{% translate "Click a row to open that delivery." %}</p>
+        {{ batches_data|json_script:"expiring-table-data" }}
+        <div id="expiring-table-card" class="data-table-card tabulator-classic">
+            <div id="expiring-table" class="tabulator-classic"></div>
         </div>
+        <p class="text-muted small mt-2 mb-0">{% translate "Click a row to open that delivery." %}</p>
     </section>
 </section>
 {% endblock %}
@@ -98,6 +94,7 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     attachTableExportToToolbar(table, '#expiring-table-card', 'expiring_report.xlsx', 'Expiring');
+    attachTableFocusToggle(table, '#expiring-table-card');
 });
 </script>
 {% endblock %}

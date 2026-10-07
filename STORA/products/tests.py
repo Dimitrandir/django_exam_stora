@@ -1027,7 +1027,12 @@ class FreeInternalCodeTests(TestCase):
 
         self.assertEqual(get_free_internal_codes(), (1, 3))
 
-    def test_create_and_edit_pages_show_the_suggested_codes(self):
+    def test_create_and_edit_pages_expose_the_used_codes(self):
+        # Create/edit no longer get server-computed first_free_code/
+        # next_free_code -- the suggestion is live now (product_create/
+        # edit.html's own JS recomputes "next free after whatever's
+        # typed" on every keystroke), so the page just needs the raw set
+        # of codes already taken.
         manager = Employee.objects.create_user(
             username='manager11', password='pass12345', role=Employee.MANAGER
         )
@@ -1037,12 +1042,70 @@ class FreeInternalCodeTests(TestCase):
         self.client.force_login(manager)
 
         create_response = self.client.get(reverse('product_create'))
-        self.assertEqual(create_response.context['first_free_code'], 1)
-        self.assertEqual(create_response.context['next_free_code'], 7)
+        self.assertEqual(create_response.context['used_internal_codes'], [4, 6])
 
         edit_response = self.client.get(reverse('product_edit', kwargs={'pk': product4.pk}))
-        self.assertEqual(edit_response.context['first_free_code'], 1)
-        self.assertEqual(edit_response.context['next_free_code'], 7)
+        self.assertEqual(edit_response.context['used_internal_codes'], [4, 6])
+
+
+class ProductSaveAndNewTests(TestCase):
+    """"Save and New" (ProductCreateView.form_valid) redirects back to a
+    blank create form instead of the list -- category/tax_group already
+    carried over via the query string (read back in get_initial); name
+    does too now, so a batch of near-identical products (sizes/flavors of
+    the same item) doesn't need retyping almost the same name each time.
+    The create page's own Name field is marked clearable-input (get_form,
+    create-only) so search-clear.js attaches the shared "x" button to it."""
+
+    def setUp(self):
+        self.manager = Employee.objects.create_user(
+            username='manager-savenew', password='pass12345', role=Employee.MANAGER
+        )
+        self.category = Category.objects.create(name='Save And New Category')
+        self.client.force_login(self.manager)
+
+    def _formset_payload(self):
+        return {
+            'barcode-TOTAL_FORMS': '0', 'barcode-INITIAL_FORMS': '0',
+            'barcode-MIN_NUM_FORMS': '0', 'barcode-MAX_NUM_FORMS': '1000',
+            'supplier-TOTAL_FORMS': '0', 'supplier-INITIAL_FORMS': '0',
+            'supplier-MIN_NUM_FORMS': '0', 'supplier-MAX_NUM_FORMS': '1000',
+            'recipe-TOTAL_FORMS': '0', 'recipe-INITIAL_FORMS': '0',
+            'recipe-MIN_NUM_FORMS': '0', 'recipe-MAX_NUM_FORMS': '1000',
+        }
+
+    def test_save_and_new_redirects_to_create_with_name_and_category_prefilled(self):
+        response = self.client.post(reverse('product_create'), {
+            'internal_code': 'SN0001', 'name': 'Cola 0.5L', 'unit_type': 'piece',
+            'sell_price': '2.00', 'quantity': '0', 'category': self.category.pk,
+            'save_and_new': '1',
+            **self._formset_payload(),
+        })
+        expected_url = reverse('product_create') + '?name=Cola+0.5L&category=' + str(self.category.pk)
+        self.assertRedirects(response, expected_url)
+
+    def test_redirected_create_form_has_the_name_prefilled(self):
+        response = self.client.get(reverse('product_create'), {'name': 'Cola 0.5L'})
+        self.assertContains(response, 'value="Cola 0.5L"')
+
+    def test_plain_save_redirects_to_product_list_without_query_string(self):
+        response = self.client.post(reverse('product_create'), {
+            'internal_code': 'SN0002', 'name': 'Plain Save Product', 'unit_type': 'piece',
+            'sell_price': '2.00', 'quantity': '0',
+            **self._formset_payload(),
+        })
+        self.assertRedirects(response, reverse('product_list'))
+
+    def test_create_page_name_field_is_marked_clearable(self):
+        response = self.client.get(reverse('product_create'))
+        self.assertContains(response, 'clearable-input')
+
+    def test_edit_page_name_field_is_not_marked_clearable(self):
+        product = Product.objects.create(
+            internal_code='SN0003', name='Edit Page Product', sell_price=2, quantity=0,
+        )
+        response = self.client.get(reverse('product_edit', kwargs={'pk': product.pk}))
+        self.assertNotContains(response, 'clearable-input')
 
 
 class WeightBasedProductTests(TestCase):

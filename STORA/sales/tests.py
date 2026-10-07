@@ -342,6 +342,31 @@ class PosShowOnPosDataTests(TestCase):
         )
 
 
+class PosArchivedProductDataTests(TestCase):
+    """Unlike show_on_pos (see above), an archived product must NOT reach
+    the register at all -- Product.is_archived means "retired from the
+    catalog", so products_data (the single source findProductByCode/the
+    category panel both read from) excludes it entirely, not just hidden
+    behind a flag."""
+
+    def setUp(self):
+        self.cashier = User.objects.create_user(username='archive-cashier', password='pass12345', role=User.CASHIER)
+        self.client.force_login(self.cashier)
+        self.active_product = Product.objects.create(
+            internal_code='ARC0001', name='Active Product', sell_price=Decimal('2.00'), quantity=10,
+        )
+        self.archived_product = Product.objects.create(
+            internal_code='ARC0002', name='Archived Product', sell_price=Decimal('2.00'), quantity=10,
+            is_archived=True,
+        )
+
+    def test_products_data_excludes_archived_product(self):
+        response = self.client.get(reverse('sale_add'))
+        ids = {p['id'] for p in response.context['products_data']}
+        self.assertIn(self.active_product.pk, ids)
+        self.assertNotIn(self.archived_product.pk, ids)
+
+
 class PosRecentSalesRankingTests(TestCase):
     """products_data carries recent_qty (total sold in the last
     POS_RECENT_SALES_DAYS days) -- the category panel's JS uses it to put
@@ -1074,8 +1099,12 @@ class FiscalPrintReceiptTests(TestCase):
         result = fiscal.print_fiscal_receipt(self.sale)
 
         sent_commands = [call.args[0] for call in mock_post.call_args_list]
+        # FDPrintBarcode after FDTotalSum (not before) -- moved there to
+        # match a real reference receipt from another store, where the
+        # barcode prints between the "paid" and "change" lines, meaning
+        # change itself only prints when the receipt closes (FDEndFiscRcp).
         self.assertEqual(
-            sent_commands, ['FDStartFiscRcp', 'FDSaleItem', 'FDPrintBarcode', 'FDTotalSum', 'FDEndFiscRcp'],
+            sent_commands, ['FDStartFiscRcp', 'FDSaleItem', 'FDTotalSum', 'FDPrintBarcode', 'FDEndFiscRcp'],
         )
         self.assertTrue(result['unic_sale_num'].startswith('DY000001-OP01-'))
         self.assertEqual(result['receipt_number'], 3)

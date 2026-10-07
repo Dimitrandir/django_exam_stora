@@ -10,41 +10,39 @@
             <h1 class="h2 mb-1">{% translate "AI Reports" %}</h1>
             <p class="text-muted mb-0">{% translate "Ask a question about the shop's data in plain language." %}</p>
         </div>
-        <a href="{% url 'ai_report_create' %}" class="btn btn-primary">{% translate "+ New AI report" %}</a>
+        <a href="{% url 'ai_report_create' %}" class="report-page__cta">{% translate "+ New AI report" %}</a>
     </header>
 
-    <section class="report-section card shadow-sm border-0 rounded-4 mb-4">
-        <div class="card-body p-0">
-            <div class="table-responsive">
-                <table class="report-table table table-hover align-middle mb-0">
-                    <thead class="table-dark">
-                        <tr>
-                            <th>{% translate "Question" %}</th>
-                            <th>{% translate "Asked by" %}</th>
-                            <th>{% translate "Created" %}</th>
-                            <th>{% translate "Last regenerated" %}</th>
-                            <th></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for ai_report in ai_reports %}
-                        <tr>
-                            <td><a href="{% url 'ai_report_detail' ai_report.pk %}">{{ ai_report.prompt|truncatechars:100 }}</a></td>
-                            <td>{{ ai_report.created_by|default:'—' }}</td>
-                            <td>{{ ai_report.created_at|date:"Y-m-d H:i" }}</td>
-                            <td>{{ ai_report.last_regenerated_at|date:"Y-m-d H:i"|default:'—' }}</td>
-                            <td class="text-end">
-                                <a href="{% url 'ai_report_delete' ai_report.pk %}" class="btn btn-outline-danger btn-sm">{% translate "Delete" %}</a>
-                            </td>
-                        </tr>
-                        {% empty %}
-                        <tr>
-                            <td colspan="5" class="text-center py-4 text-muted">{% translate "No AI reports saved yet." %}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
+    <section class="report-page__section report-page__section--flush">
+        <div class="table-responsive">
+            <table class="report-table table table-hover align-middle mb-0">
+                <thead class="table-dark">
+                    <tr>
+                        <th>{% translate "Question" %}</th>
+                        <th>{% translate "Asked by" %}</th>
+                        <th>{% translate "Created" %}</th>
+                        <th>{% translate "Last regenerated" %}</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for ai_report in ai_reports %}
+                    <tr>
+                        <td><a href="{% url 'ai_report_detail' ai_report.pk %}">{{ ai_report.prompt|truncatechars:100 }}</a></td>
+                        <td>{{ ai_report.created_by|default:'—' }}</td>
+                        <td>{{ ai_report.created_at|date:"Y-m-d H:i" }}</td>
+                        <td>{{ ai_report.last_regenerated_at|date:"Y-m-d H:i"|default:'—' }}</td>
+                        <td class="text-end">
+                            <a href="{% url 'ai_report_delete' ai_report.pk %}" class="btn btn-outline-danger btn-sm">{% translate "Delete" %}</a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="5" class="text-center py-4 text-muted">{% translate "No AI reports saved yet." %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
     </section>
 </section>

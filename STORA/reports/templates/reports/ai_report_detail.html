@@ -3,6 +3,9 @@
 
 {% block title %}STORA - {% translate "AI Report" %}{% endblock %}
 
+{% block main_class %}main-wide{% endblock %}
+{% block container_class %}container-fluid{% endblock %}
+
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
 {% endblock %}
@@ -23,44 +26,38 @@
     {% endfor %}
     {% endif %}
 
-    <section class="report-section card shadow-sm border-0 rounded-4 mb-4">
-        <div class="card-body">
-            <header class="section-header d-flex justify-content-between align-items-center mb-3">
-                <h2 class="h5 mb-0">{% translate "Answer" %}</h2>
-                <form method="POST" action="{% url 'ai_report_regenerate' ai_report.pk %}" id="regenerate-form">
-                    {% csrf_token %}
-                    <button type="submit" class="btn btn-outline-secondary btn-sm" id="regenerate-btn">{% translate "Regenerate" %}</button>
-                </form>
-            </header>
-            <p class="mb-0" style="white-space: pre-wrap;">{% if ai_report.last_answer %}{{ ai_report.last_answer }}{% else %}{% translate "No answer yet." %}{% endif %}</p>
-        </div>
+    <section class="report-page__section">
+        <header class="report-page__section-header">
+            <h2>{% translate "Answer" %}</h2>
+            <form method="POST" action="{% url 'ai_report_regenerate' ai_report.pk %}" id="regenerate-form">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-outline-secondary btn-sm" id="regenerate-btn">{% translate "Regenerate" %}</button>
+            </form>
+        </header>
+        <p class="mb-0" style="white-space: pre-wrap;">{% if ai_report.last_answer %}{{ ai_report.last_answer }}{% else %}{% translate "No answer yet." %}{% endif %}</p>
     </section>
 
     {% if rerun_error %}
     <div class="form-errors mb-3">{% blocktranslate %}The saved query no longer runs: {{ rerun_error }}. Try Regenerate.{% endblocktranslate %}</div>
     {% endif %}
 
-    <section class="report-section card shadow-sm border-0 rounded-4 mb-4">
-        <div class="card-body">
-            <header class="section-header mb-3">
-                <h2 class="h5 mb-0">{% translate "Data (live, re-run just now)" %}</h2>
-            </header>
+    <section class="report-page__table-section">
+        <header class="report-page__section-header">
+            <h2>{% translate "Data (live, re-run just now)" %}</h2>
+        </header>
 
-            {{ columns|json_script:"ai-report-columns" }}
-            {{ table_data|json_script:"ai-report-table-data" }}
-            <div id="ai-report-table-card" class="data-table-card">
-                <div id="ai-report-table" class="table-sm"></div>
-            </div>
+        {{ columns|json_script:"ai-report-columns" }}
+        {{ table_data|json_script:"ai-report-table-data" }}
+        <div id="ai-report-table-card" class="data-table-card tabulator-classic">
+            <div id="ai-report-table" class="tabulator-classic"></div>
         </div>
     </section>
 
-    <section class="report-section card shadow-sm border-0 rounded-4 mb-4">
-        <div class="card-body">
-            <header class="section-header mb-2">
-                <h2 class="h6 mb-0 text-muted">{% translate "SQL used" %}</h2>
-            </header>
-            <pre class="mb-0 small text-muted" style="white-space: pre-wrap;">{{ ai_report.generated_sql|default:'—' }}</pre>
-        </div>
+    <section class="report-page__section">
+        <header class="report-page__section-header">
+            <h2 style="font-size: 0.85rem; color: #8a94a0;">{% translate "SQL used" %}</h2>
+        </header>
+        <pre class="mb-0 small text-muted" style="white-space: pre-wrap;">{{ ai_report.generated_sql|default:'—' }}</pre>
     </section>
 
     <footer class="report-actions d-flex gap-2">
@@ -89,6 +86,7 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     attachTableExportToToolbar(table, '#ai-report-table-card', 'ai_report.xlsx', 'AI Report');
+    attachTableFocusToggle(table, '#ai-report-table-card');
 
     var regenerateForm = document.getElementById('regenerate-form');
     var regenerateBtn = document.getElementById('regenerate-btn');

@@ -183,7 +183,25 @@ def _run_receipt(start_cmd_data, items, sale_type, amount_in, barcode_data=None)
                 'Netto': '0',
             })
 
+        _post_command('FDTotalSum', {
+            'Text1': '', 'Text2': '',
+            'Payment type': 'В Брой',
+            'AmountIn': str(amount_in),
+        })
+
         if barcode_data:
+            # Moved here (after FDTotalSum, before FDEndFiscRcp) to match a
+            # real reference receipt the user photographed from another
+            # store -- on paper the barcode sits between "В брой евро" and
+            # "Ресто", meaning change is printed when the receipt actually
+            # closes (FDEndFiscRcp), not as part of FDTotalSum itself. Used
+            # to run right after the item loop, before FDTotalSum, which
+            # printed it above the total/payment lines instead. NOT YET
+            # CONFIRMED LIVE on our own device (no physical printer attached
+            # in this environment) -- verify the barcode actually lands
+            # between those two lines next real test print, same as every
+            # other field here that started as "inferred" before being
+            # confirmed.
             _post_command('FDPrintBarcode', {
                 # Type is the device's own NUMERIC barcode-type code, not
                 # the readable name -- confirmed live (2026-09-28): sending
@@ -198,19 +216,21 @@ def _run_receipt(start_cmd_data, items, sale_type, amount_in, barcode_data=None)
                 # ECRWebApp's own FDPrintBarcode dropdown before trusting
                 # it blindly, same way Refund="R" and Reason 0/1/2 were
                 # confirmed rather than guessed.
-                'Type': '3', 'Data': barcode_data, 'Pos': 'C', 'Scale': 0, 'High': 0,
+                # Scale -- "width of the barcode's thinnest line, in
+                # pixels; 0 uses the device's own default width" per the
+                # guide's own field description (not a documented default
+                # value, just "0 = default"). A small explicit value prints
+                # thinner than that default, asked for live after the same
+                # photo comparison. Also not yet confirmed live -- if 2px
+                # turns out too thin to scan reliably on the real printer,
+                # go up from there rather than back to 0.
+                'Type': '3', 'Data': barcode_data, 'Pos': 'C', 'Scale': 2, 'High': 0,
                 # PrnText is a JSON bool here, not the string '0'/'1' the
                 # doc's own field description implies -- the worked example
                 # sends `"PrnText": true` literally; also confirmed live
                 # that the string form was part of what failed.
                 'PrnText': True,
             })
-
-        _post_command('FDTotalSum', {
-            'Text1': '', 'Text2': '',
-            'Payment type': 'В Брой',
-            'AmountIn': str(amount_in),
-        })
 
         end_result = _post_command('FDEndFiscRcp', {})
         receipt_open = False

@@ -321,6 +321,26 @@
             movableColumns: true,
         };
 
+        // Opt-in per table (options.dataTree: the field of the column that
+        // should carry the expand/collapse arrow, e.g. 'name') -- renders
+        // nested rows (each row's own `_children` array, Tabulator's
+        // default dataTreeChildField) as an expandable tree instead of a
+        // flat list. Column header filtering/sorting (dataTreeFilter/
+        // dataTreeSort, both default true) already walk into every nested
+        // row on their own, expanded or not -- nothing extra needed here
+        // for those. A bottomCalc on a dataTree table is NOT safe to add
+        // without checking first -- confirmed live that this vendored
+        // build's dataTree+columnCalcs integration only descends into
+        // nested rows inside a *grouped* table's own per-group calc row,
+        // so a plain table's table-wide bottom row silently counts/sums
+        // top-level rows only, however deep the tree actually goes
+        // (dataTreeChildColumnCalcs:true changes nothing for this case).
+        if (options.dataTree) {
+            tableConfig.dataTree = true;
+            tableConfig.dataTreeElementColumn = options.dataTree;
+            tableConfig.dataTreeStartExpanded = options.dataTreeStartExpanded !== undefined ? options.dataTreeStartExpanded : true;
+        }
+
         // Opt-in per table (options.persist: true, or a string to use as
         // the storage key instead of deriving one from elementSelector) --
         // remembers column order/visibility/width in localStorage across
@@ -535,6 +555,89 @@
             actionsGroup.appendChild(exportBtn);
 
             bar.appendChild(actionsGroup);
+        });
+    };
+
+    /**
+     * "Full Screen" focus-mode toggle for a Tabulator table -- hides the
+     * site nav and lets the table's own card take over the page, so only
+     * the toolbar + grid are left on screen. Generalized from the
+     * page-specific version first built for products_list.html (same
+     * body.products-table-focus idea, see that page's own CSS comment in
+     * style.css) into a shared helper every report page can call, instead
+     * of each one copy-pasting its own version -- flagged live after a
+     * report page ended up with the filter bar's own card, this table's
+     * card, AND the page's container all nested (three visual "layers"
+     * squeezing the grid's actual usable width down to almost nothing).
+     * Uses a DIFFERENT body class (report-table-focus, not
+     * products-table-focus) and plain `main`/`.container` selectors
+     * instead of that page's own `.products-page-main` -- report pages
+     * don't have that class, and this way the two toggles can't interfere
+     * with each other if a future page somehow used both.
+     *
+     * Call AFTER attachTableExportToToolbar() (same ordering requirement:
+     * the toolbar bar + "Columns ▾" widget need to already exist).
+     *
+     * @param table         the Tabulator instance from initExcelStyleTable
+     * @param cardSelector  CSS selector for the .data-table-card wrapping
+     *                      this table (same one passed to
+     *                      attachTableExportToToolbar)
+     */
+    global.attachTableFocusToggle = function (table, cardSelector) {
+        table.on('tableBuilt', function () {
+            var card = document.querySelector(cardSelector);
+            if (!card) return;
+            var bar = card.querySelector(':scope > .data-table-card__toolbar');
+            var columnsWidget = bar ? bar.querySelector(':scope > .excel-filter') : null;
+            if (!bar || !columnsWidget) return;
+
+            var focusBtn = document.createElement('button');
+            focusBtn.type = 'button';
+            focusBtn.className = 'icon-btn icon-btn--outline icon-btn--sm';
+            focusBtn.innerHTML =
+                '<span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--fullscreen"></span></span>' +
+                '<span class="icon-btn__label">' + t('fullScreen', 'Full Screen') + '</span>';
+
+            // Same "wrap both in one flex group" fix as the Columns ▾/
+            // Export pairing above -- a loose sibling dropped into a
+            // `justify-content: space-between` bar gets its own equal
+            // share of space instead of sitting next to the eye icon.
+            var leftGroup = document.createElement('div');
+            leftGroup.className = 'data-table-card__toolbar-actions';
+            bar.insertBefore(leftGroup, columnsWidget);
+            leftGroup.appendChild(columnsWidget);
+            leftGroup.appendChild(focusBtn);
+
+            // Tabulator's own height option (if the page set one, e.g.
+            // Stock Balance's bounded grid) needs to be put back exactly
+            // as it was on exit -- captured once up front rather than
+            // assumed to be empty, so this doesn't clobber a page that
+            // relied on its own fixed height outside focus mode.
+            var originalHeight = table.element.style.height;
+
+            focusBtn.addEventListener('click', function () {
+                var on = document.body.classList.toggle('report-table-focus');
+                focusBtn.classList.toggle('is-active', on);
+                focusBtn.querySelector('.icon-btn__label').textContent =
+                    on ? t('exitFullScreen', 'Exit Full Screen') : t('fullScreen', 'Full Screen');
+                if (on) {
+                    document.documentElement.requestFullscreen().catch(function () {});
+                    // Smaller offset than the nav alone would need -- focus
+                    // mode also hides the page title and the filter bar
+                    // (see body.report-table-focus in style.css), leaving
+                    // only this table's own small heading + toolbar above
+                    // the grid, so there's more room to give back to it.
+                    table.element.style.setProperty('height', 'calc(100vh - 135px)', 'important');
+                } else {
+                    if (document.fullscreenElement) document.exitFullscreen();
+                    table.element.style.height = originalHeight;
+                }
+                // Tabulator doesn't know its container just got taller/
+                // shorter on its own -- its own 'resize' listener (see
+                // initExcelStyleTable above) is what actually recalculates
+                // row virtualization/column widths for the new size.
+                window.dispatchEvent(new Event('resize'));
+            });
         });
     };
 })(window);

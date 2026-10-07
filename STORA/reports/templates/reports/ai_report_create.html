@@ -14,19 +14,17 @@
     <div class="form-errors mb-3">{{ error }}</div>
     {% endif %}
 
-    <section class="report-filter card shadow-sm border-0 rounded-4 mb-4">
-        <div class="card-body">
-            <form method="POST">
-                {% csrf_token %}
-                <div class="mb-3">
-                    <label for="id_prompt" class="form-label">{% translate "Question" %}</label>
-                    <textarea id="id_prompt" name="prompt" class="form-control" rows="3"
-                              placeholder="{% translate "e.g. What was the shop turnover yesterday, and which category sold the most?" %}"
-                              required>{{ prompt|default:'' }}</textarea>
-                </div>
-                <button type="submit" class="btn btn-primary" id="ask-btn">{% translate "Ask" %}</button>
-            </form>
-        </div>
+    <section class="report-page__section">
+        <form method="POST">
+            {% csrf_token %}
+            <div class="report-page__filter-field mb-3">
+                <label for="id_prompt">{% translate "Question" %}</label>
+                <textarea id="id_prompt" name="prompt" class="form-control" rows="3"
+                          placeholder="{% translate "e.g. What was the shop turnover yesterday, and which category sold the most?" %}"
+                          required>{{ prompt|default:'' }}</textarea>
+            </div>
+            <button type="submit" class="report-page__filter-submit" id="ask-btn">{% translate "Ask" %}</button>
+        </form>
     </section>
 
     <p class="text-muted small">{% translate "This can take a few seconds -- the AI may run several queries before answering." %}</p>

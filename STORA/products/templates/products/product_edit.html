@@ -32,9 +32,9 @@
         <div class="product-form__grid is-grouped" id="core-fields-grid">
             <div class="field">
                 {{ form.internal_code.label_tag }}
-                <div class="field__row">
+                <div style="position: relative;">
                     {{ form.internal_code }}
-                    <button type="button" id="suggest-next-free-code-btn" class="field__chip">{% blocktranslate with code=next_free_code %}Next free ({{ code }}){% endblocktranslate %}</button>
+                    <button type="button" id="suggest-next-free-code-btn" class="field__inline-suggest" title="{% translate 'Next free code -- click to use it' %}"></button>
                 </div>
                 {{ form.internal_code.errors }}
             </div>
@@ -207,12 +207,40 @@
 </form>
 
 {{ tax_group_rates|json_script:"tax-group-rates" }}
+{{ used_internal_codes|json_script:"used-internal-codes" }}
 
 <script src="{% static_v 'js/category-tree-picker.js' %}"></script>
 <script>
-document.getElementById('suggest-next-free-code-btn').addEventListener('click', function () {
-    document.getElementById('id_internal_code').value = '{{ next_free_code }}';
-});
+// Live "next free code" suggestion -- see product_create.html's own copy
+// of this for the full reasoning (one rule: smallest unused number
+// strictly greater than whatever's typed, recomputed on every keystroke
+// from used_internal_codes). No "fill if empty on load" step here, unlike
+// create -- an existing product's code is never empty to begin with.
+(function () {
+    var usedCodes = new Set(JSON.parse(document.getElementById('used-internal-codes').textContent));
+    var codeInput = document.getElementById('id_internal_code');
+    var suggestBtn = document.getElementById('suggest-next-free-code-btn');
+
+    function nextFreeAfter(after) {
+        var n = after + 1;
+        while (usedCodes.has(n)) n++;
+        return n;
+    }
+
+    function refreshSuggestion() {
+        var current = parseInt(codeInput.value, 10);
+        suggestBtn.textContent = nextFreeAfter(isNaN(current) ? 0 : current);
+    }
+
+    codeInput.addEventListener('input', refreshSuggestion);
+    suggestBtn.addEventListener('click', function () {
+        codeInput.value = suggestBtn.textContent;
+        codeInput.dispatchEvent(new Event('input', {bubbles: true}));
+        codeInput.focus();
+    });
+
+    refreshSuggestion();
+})();
 
 (function () {
     var checkbox = document.getElementById('id_is_recipe');

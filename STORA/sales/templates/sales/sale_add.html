@@ -386,6 +386,10 @@
                             <span class="checkout-tile__label">{% translate "Price" %}</span>
                             <span class="checkout-tile__value" id="edit-line-price-display">0.00</span>
                         </div>
+                        <div class="checkout-tile checkout-tile--input" id="edit-line-discount-tile">
+                            <span class="checkout-tile__label">{% translate "Discount %" %}</span>
+                            <span class="checkout-tile__value" id="edit-line-discount-display">0</span>
+                        </div>
                     </div>
                     <div class="checkout-keypad" id="edit-line-keypad">
                         <button type="button" class="keypad-btn" data-key="7">7</button>
@@ -690,6 +694,10 @@
 
         function round2(n) {
             return Math.round((n + Number.EPSILON) * 100) / 100;
+        }
+
+        function round1(n) {
+            return Math.round((n + Number.EPSILON) * 10) / 10;
         }
 
         function updateTransactionTotal() {
@@ -1074,36 +1082,71 @@
         });
 
         // "Edit Line" -- opens a keypad modal for the selected row's
-        // Quantity (everyone) and Price (Manager/admin only -- see
-        // can_edit_price from the view). Reuses the checkout modal's own
-        // tile+keypad look; tapping a tile picks which one the keypad
+        // Quantity (everyone), Price and Discount % (Manager/admin only --
+        // see can_edit_price from the view). Reuses the checkout modal's
+        // own tile+keypad look; tapping a tile picks which one the keypad
         // types into, same idea as Paid/Card-amount there.
         const canEditPrice = {{ can_edit_price|yesno:"true,false" }};
         const editLineModalEl = document.getElementById('editLineModal');
         const editLineQtyTile = document.getElementById('edit-line-qty-tile');
         const editLinePriceTile = document.getElementById('edit-line-price-tile');
+        const editLineDiscountTile = document.getElementById('edit-line-discount-tile');
         const editLineQtyDisplay = document.getElementById('edit-line-qty-display');
         const editLinePriceDisplay = document.getElementById('edit-line-price-display');
+        const editLineDiscountDisplay = document.getElementById('edit-line-discount-display');
         let editLineTarget = 'qty';
         let editLineNeedsReset = true;
+        // The product's own catalog/effective sell_price (promo/price-list
+        // already resolved, see productsData's own comment) -- Discount %
+        // is always computed FROM this fixed point, not from whatever the
+        // Price tile currently shows. Anchoring to the live price instead
+        // would make the discount compound on itself every time Edit Line
+        // is reopened on an already-discounted line (10% off, reopen,
+        // "10%" again would knock off ANOTHER 10% of the already-reduced
+        // price, silently landing at 19% total instead of 10%).
+        let editLineBasePrice = 0;
 
         function setEditLineTarget(target) {
-            if (target === 'price' && !canEditPrice) return;
+            if (target !== 'qty' && !canEditPrice) return;
             editLineTarget = target;
             editLineNeedsReset = true;
             editLineQtyTile.classList.toggle('is-editing', target === 'qty');
             editLinePriceTile.classList.toggle('is-editing', target === 'price');
+            editLineDiscountTile.classList.toggle('is-editing', target === 'discount');
         }
 
         editLineQtyTile.addEventListener('click', () => setEditLineTarget('qty'));
         editLinePriceTile.addEventListener('click', () => setEditLineTarget('price'));
+        editLineDiscountTile.addEventListener('click', () => setEditLineTarget('discount'));
         editLinePriceTile.classList.toggle('checkout-tile--readonly', !canEditPrice);
+        editLineDiscountTile.classList.toggle('checkout-tile--readonly', !canEditPrice);
+
+        // Keeps Price and Discount % in sync with each other, live, same
+        // relationship as Deliveries' Markup % <-> Sell Price (see
+        // _delivery_items_table.html) -- whichever tile was just typed
+        // into drives the other, never both drive each other at once (that
+        // would just fight itself / infinite-loop).
+        function recalcEditLineFromTarget() {
+            if (editLineBasePrice <= 0) return;
+            if (editLineTarget === 'price') {
+                const price = parseFloat(editLinePriceDisplay.textContent);
+                if (!isNaN(price)) {
+                    editLineDiscountDisplay.textContent = String(round1((editLineBasePrice - price) / editLineBasePrice * 100));
+                }
+            } else if (editLineTarget === 'discount') {
+                const discount = parseFloat(editLineDiscountDisplay.textContent);
+                if (!isNaN(discount)) {
+                    editLinePriceDisplay.textContent = round2(editLineBasePrice * (1 - discount / 100)).toFixed(2);
+                }
+            }
+        }
 
         document.getElementById('edit-line-keypad').addEventListener('click', (e) => {
             const btn = e.target.closest('.keypad-btn');
-            if (!btn || (editLineTarget === 'price' && !canEditPrice)) return;
+            if (!btn || (editLineTarget !== 'qty' && !canEditPrice)) return;
             const key = btn.dataset.key;
-            const display = editLineTarget === 'qty' ? editLineQtyDisplay : editLinePriceDisplay;
+            const display = editLineTarget === 'qty' ? editLineQtyDisplay
+                : editLineTarget === 'price' ? editLinePriceDisplay : editLineDiscountDisplay;
             if (editLineNeedsReset && key !== 'del') {
                 display.textContent = '';
                 editLineNeedsReset = false;
@@ -1115,6 +1158,7 @@
             } else {
                 display.textContent += key;
             }
+            recalcEditLineFromTarget();
         });
 
         document.getElementById('edit-line-btn').addEventListener('click', () => {
@@ -1123,8 +1167,18 @@
                 return;
             }
             const data = selectedRowForDelete.getData();
+            const product = productsData.find(p => String(p.id) === String(data.sale_item));
+            // Falls back to the row's own current price if the product
+            // somehow isn't in productsData (shouldn't happen -- every
+            // sellable product is in that dump) -- 0% discount rather than
+            // a crash either way.
+            editLineBasePrice = product ? (parseFloat(product.sell_price) || 0) : (parseFloat(data.price_at_sale) || 0);
+            const currentPrice = parseFloat(data.price_at_sale) || 0;
             editLineQtyDisplay.textContent = String(data.sale_quantity);
-            editLinePriceDisplay.textContent = Number(data.price_at_sale || 0).toFixed(2);
+            editLinePriceDisplay.textContent = currentPrice.toFixed(2);
+            editLineDiscountDisplay.textContent = String(
+                editLineBasePrice > 0 ? round1((editLineBasePrice - currentPrice) / editLineBasePrice * 100) : 0
+            );
             setEditLineTarget('qty');
             // Lazy reference -- bootstrap.bundle.min.js loads after this
             // content block in base.html (see CLAUDE.md "Технически капани").

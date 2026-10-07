@@ -32,16 +32,25 @@ from STORA.sales.models import SaleAttributes, SaleItems
 from STORA.sales.tasks import backfill_recipe_ingredient_stock
 
 
-def get_free_internal_codes():
-    """(first free, next free) internal_code numbers -- only considers
-    codes that are purely digits (internal_code is a free-text CharField,
-    so non-numeric codes are just ignored for this suggestion).
-    first free = smallest unused number counting up from 1 (fills gaps).
-    next free = one past the highest number in use (appends at the end)."""
-    used = {
+def get_used_internal_codes():
+    """Every purely-numeric internal_code currently in use, as ints --
+    internal_code is a free-text CharField, so non-numeric codes are just
+    ignored for the "next free code" suggestion. Shared by
+    get_free_internal_codes() below and product_create/edit.html's own
+    live suggestion (see their JS) -- the client recomputes "next free
+    after whatever's typed" on every keystroke from this same set,
+    instead of asking the server again on every key."""
+    return {
         int(code) for code in Product.objects.values_list('internal_code', flat=True)
         if code and code.isdigit()
     }
+
+
+def get_free_internal_codes():
+    """(first free, next free) internal_code numbers.
+    first free = smallest unused number counting up from 1 (fills gaps).
+    next free = one past the highest number in use (appends at the end)."""
+    used = get_used_internal_codes()
     first_free = 1
     while first_free in used:
         first_free += 1
@@ -590,13 +599,30 @@ class ProductCreateView(LoginRequiredMixin, StaffPermissionRequiredMixin, Create
     def get_initial(self):
         # "Save and New" (see form_valid) redirects back here with these in
         # the query string, so the next product in the same batch doesn't
-        # need them re-picked by hand.
+        # need them re-picked by hand. name included for the same reason --
+        # a batch of similar products (different sizes/flavors of the same
+        # base item) usually share most of the name, so starting from the
+        # last one typed beats retyping it from scratch -- the "x" button
+        # on the field (see get_form) clears it in one tap when the next
+        # product's name has nothing in common with it.
         initial = super().get_initial()
         if 'category' in self.request.GET:
             initial['category'] = self.request.GET['category']
         if 'tax_group' in self.request.GET:
             initial['tax_group'] = self.request.GET['tax_group']
+        if 'name' in self.request.GET:
+            initial['name'] = self.request.GET['name']
         return initial
+
+    def get_form(self, form_class=None):
+        form = super().get_form(form_class)
+        # Only this view overrides get_form -- ProductUpdateView (edit)
+        # shares ProductForms but not this method, so the Name field there
+        # is unaffected. Paired with the name carrying over through "Save
+        # and New" above; see static/js/search-clear.js for what this
+        # class wires up.
+        form.fields['name'].widget.attrs['class'] = 'clearable-input'
+        return form
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -608,7 +634,7 @@ class ProductCreateView(LoginRequiredMixin, StaffPermissionRequiredMixin, Create
             context['barcode_formset'] = BarcodeFormSet()
             context['supplier_formset'] = ProductSupplierFormSet(prefix='supplier')
             context['recipe_formset'] = RecipeIngredientFormSet(prefix='recipe')
-        context['first_free_code'], context['next_free_code'] = get_free_internal_codes()
+        context['used_internal_codes'] = sorted(get_used_internal_codes())
         context['tax_group_rates'] = {str(tg.pk): str(tg.rate) for tg in TaxGroup.objects.all()}
         return context
 
@@ -641,10 +667,12 @@ class ProductCreateView(LoginRequiredMixin, StaffPermissionRequiredMixin, Create
             dispatch_task(backfill_recipe_ingredient_stock, self.object.pk)
 
         if 'save_and_new' in self.request.POST:
-            # Category/Tax Group carry over via the query string (read back
-            # in get_initial) -- handy when adding a batch of products from
-            # the same delivery/category one after another.
-            params = {}
+            # Category/Tax Group/Name carry over via the query string (read
+            # back in get_initial) -- handy when adding a batch of products
+            # from the same delivery/category one after another, or a run
+            # of near-identical products (sizes/flavors of the same item)
+            # where retyping almost the same name each time is pure friction.
+            params = {'name': self.object.name}
             if self.object.category_id:
                 params['category'] = self.object.category_id
             if self.object.tax_group_id:
@@ -679,7 +707,7 @@ class ProductUpdateView(LoginRequiredMixin, StaffPermissionRequiredMixin, Update
             context['barcode_formset'] = BarcodeFormSet(instance=self.object)
             context['supplier_formset'] = ProductSupplierFormSet(instance=self.object, prefix='supplier')
             context['recipe_formset'] = RecipeIngredientFormSet(instance=self.object, prefix='recipe')
-        context['first_free_code'], context['next_free_code'] = get_free_internal_codes()
+        context['used_internal_codes'] = sorted(get_used_internal_codes())
         context['tax_group_rates'] = {str(tg.pk): str(tg.rate) for tg in TaxGroup.objects.all()}
         return context
 
@@ -774,8 +802,24 @@ class CategoryListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListVie
         # grid's own bulk delete.
         can_edit = self.request.user.has_perm('products.change_category')
         can_delete = self.request.user.has_perm('products.delete_category')
-        categories_data = [
-            {
+
+        # Nested (not flat) -- each node carries its own subcategories under
+        # `_children`, Tabulator's own dataTree child-field convention (see
+        # category_list.html) -- an expand/collapse tree instead of a flat
+        # table with a "Parent" text column, same hierarchy the POS category
+        # panel/the "Browse" picker already show, just rendered as rows here
+        # instead of folders/an indented list. Parent stays as its own
+        # column too (direct parent name) -- still useful at a glance once a
+        # tree goes several levels deep, where the nesting alone only shows
+        # position, not the name without expanding upward.
+        by_parent_id = {}
+        for category in context['categories']:
+            by_parent_id.setdefault(category.parent_id, []).append(category)
+        for siblings in by_parent_id.values():
+            siblings.sort(key=lambda c: c.name or '')
+
+        def serialize(category):
+            node = {
                 'id': category.pk,
                 'name': category.name,
                 'parent': category.parent.name if category.parent else '',
@@ -783,9 +827,12 @@ class CategoryListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListVie
                 'show_on_pos': category.show_on_pos,
                 'edit_url': reverse('category_edit', kwargs={'pk': category.pk}) if can_edit else '',
             }
-            for category in context['categories']
-        ]
-        context['categories_data'] = categories_data
+            children = by_parent_id.get(category.pk)
+            if children:
+                node['_children'] = [serialize(child) for child in children]
+            return node
+
+        context['categories_data'] = [serialize(category) for category in by_parent_id.get(None, [])]
         context['can_edit_category'] = can_edit
         context['can_delete_category'] = can_delete
         return context

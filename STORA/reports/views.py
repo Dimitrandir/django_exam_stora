@@ -138,6 +138,12 @@ class SalesReportView(StaffPermissionRequiredMixin, ReportsBaseView):
                 'date': local_time.strftime('%Y-%m-%d'),
                 'time': local_time.strftime('%H:%M'),
                 'cashier': str(sale.cashier),
+                # Nullable on the model (a sale from before the checkout
+                # screen tracked payment method at all) -- '—' rather than
+                # a blank cell so it's visibly "not recorded", not just
+                # empty space that looks like a rendering gap.
+                'payment_method': sale.payment_method or '',
+                'payment_method_label': sale.get_payment_method_display() if sale.payment_method else '—',
                 'item_qty': float(item_qty),
                 'total_amount': float(sale.total_amount or 0),
                 'refunded_amount': float(refunded_amount),

@@ -159,6 +159,51 @@ body.products-table-focus #products-table {
     height: calc(100vh - 60px) !important;
 }
 
+/* Same "Full Screen" focus mode, generalized for every report page's
+   Tabulator table (attachTableFocusToggle in data-table.js) -- separate
+   class/selectors from products-table-focus above since report pages
+   don't have .products-page-main, most use the plain .container (not
+   -fluid), and the table's own height is set by JS at toggle time instead
+   of a per-page #id selector here (one shared helper, any table id).
+   Expanding the container, not just hiding the nav, is what actually frees
+   up the width that was getting squeezed between the page container, the
+   filter-bar/section card, and the table's own card (flagged live with a
+   screenshot -- "3 layers"). */
+body.report-table-focus nav.navbar {
+    display: none;
+}
+
+body.report-table-focus main {
+    /* The base `main { padding: 2rem }` rule above still applies to a
+       main-wide page (that rule only resets max-width/width/margin/
+       shadow/radius, not padding) -- left unzeroed here, the container's
+       own padding reaching 0 still left a real 2rem gap on each side from
+       <main> itself, re-adding back almost exactly what zeroing the
+       container was supposed to remove (flagged live: still visibly not
+       edge-to-edge after that first pass). */
+    padding: 0.5rem 0 0 !important;
+}
+
+body.report-table-focus .container,
+body.report-table-focus .container-fluid {
+    max-width: 100% !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+}
+
+/* "ONLY the table" -- the page title and the period/filter bar (dates +
+   "Show report") were still sitting above the grid in focus mode, eating
+   into exactly the vertical room this mode is supposed to free up
+   (flagged live: "без горе датите" -- without the dates up top). The
+   table's own small section heading (e.g. "Movements in Period") stays --
+   compact, one line, and still useful context once everything bigger
+   above it is gone. */
+body.report-table-focus .page-header,
+body.report-table-focus .report-page__filter-bar,
+body.report-table-focus .form-errors {
+    display: none;
+}
+
 /* The standalone heading block above the grid was tried two ways (soft
    restyle, then just a smaller plain h1) and both left "too much empty
    space" above the table (flagged live) -- removed entirely. The title
@@ -479,22 +524,6 @@ input[type="text"], input[type="number"], input[type="email"], select, textarea 
     font-size: var(--sale-table-font-size);
 }
 
-/* Stock Balance Report -- 12 columns (several short numeric ones) wrapped
-   badly with the vendor theme's default header font, even mid-word
-   ("Nam"/"Piece" broken across lines -- flagged live from a real
-   screenshot, made worse by the table being squeezed into the centered
-   container before main-wide/container-fluid were added here too).
-   Smaller font + forced single line (ellipsis if a header still doesn't
-   fit, rather than the vendor's own wrap-by-default) keeps every header
-   readable at a glance regardless of how many optional columns (Written
-   off, Used in recipes, ...) are toggled visible via Columns. */
-#stock-balance-table .tabulator-col-title {
-    font-size: 0.8rem !important;
-    white-space: nowrap !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-}
-
 /* Tucked into the Name column's own bottom-calc cell (nothing else uses
    that space -- Name has no sum) instead of a separate row above the
    table, per live feedback ("да не заемат от мястото"). Sized to fit the
@@ -573,6 +602,21 @@ input[type="text"], input[type="number"], input[type="email"], select, textarea 
 }
 
 .form-errors li {
+    font-weight: 600;
+}
+
+/* Django's per-field {{ form.X.errors }} output (<ul class="errorlist">,
+   e.g. the "already exists" message under the product form's Name field)
+   has no color of its own anywhere in the project -- plain black text,
+   easy to miss right under a field. Applies globally (no page styles this
+   class today), same reasoning as .form-errors above for the top-of-form
+   banner. */
+.errorlist {
+    list-style: none;
+    margin: 0.3rem 0 0;
+    padding: 0;
+    color: var(--danger-color);
+    font-size: 0.85rem;
     font-weight: 600;
 }
 
@@ -1260,6 +1304,48 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
     white-space: nowrap !important;
 }
 
+/* The dataTree expand/collapse control (Categories List's subcategory
+   toggle, see category_list.html) -- the vendor default is a tiny 11x11px
+   box with a 1px-thick +/- drawn in #333/#ccc, easy to miss and hard to
+   tap accurately, especially on a touch screen (the project's recurring
+   concern elsewhere -- see the on-screen keypad/keyboard work). Scaled up
+   ~1.7x (11px -> 20px box, the 1px strokes -> 2px, their 7px length ->
+   12px) and recolored to the brand blue instead of near-black/gray, for
+   a clearly bigger, higher-contrast target against the white row
+   background. Applies to every Tabulator table in the project, not just
+   this one -- nothing here is Categories-specific, it's just the only
+   table using dataTree so far. */
+.tabulator-data-tree-control {
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    border: 1px solid var(--brand-blue-deep);
+    background: rgba(43, 111, 209, 0.12);
+}
+
+.tabulator-data-tree-control:hover {
+    background: rgba(43, 111, 209, 0.25);
+}
+
+.tabulator-data-tree-control-expand,
+.tabulator-data-tree-control-collapse {
+    width: 2px;
+    height: 12px;
+}
+
+.tabulator-data-tree-control-expand {
+    background: var(--brand-blue-deep);
+}
+
+.tabulator-data-tree-control-expand::after,
+.tabulator-data-tree-control-collapse::after {
+    width: 12px;
+    height: 2px;
+    left: -5px;
+    top: 5px;
+    background: var(--brand-blue-deep);
+}
+
 /* "Classic" Tabulator skin -- TRIAL ONLY, opt-in via adding this class
    alongside .data-table-card (outer wrapper) and table-sm (the div
    Tabulator turns into its own .tabulator root). Reproduces the look of
@@ -1320,6 +1406,14 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
     /* 700 (not 600) -- matches Suppliers List's <th>, which gets browsers'
        default bold weight for table headers with no explicit override. */
     font-weight: 700;
+    /* Smaller than the vendor theme's default (16px) -- asked for live
+       after Bulgarian column titles (routinely longer than the English
+       originals) wrapped onto 2-3 lines at the bigger size, eating header
+       height even with wrapping already fixed below. Same 0.8rem already
+       used by Stock Balance Report's own one-off header-font override
+       (now removed -- this shared rule covers it instead, the same way
+       as every other report table). */
+    font-size: 0.8rem;
     text-align: center !important;
     /* Wrap instead of ellipsis-truncate on a narrowed column -- same
        reasoning as the body-cell wrap fix above (see its own comment):
@@ -1845,40 +1939,45 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
     padding: 0.5rem 0 1rem;
 }
 
-/* ===== Reports Dashboard redesign (STYLES.md palette) =====
-   Scoped entirely to .reports-dashboard__* classes, new to this page --
-   .report-filter__field/.report-card__value/.report-link above are left
-   untouched since sales_report.html/deliveries_report.html still use them
-   (redesign is dashboard-only, confirmed with the user; those two pages
-   keep their current look). */
+/* ===== Report page chrome (STYLES.md palette) =====
+   Started as the Reports Dashboard redesign, then extended to every
+   individual report screen (Sales/Stock Balance/Deliveries/AI Reports/...)
+   once the user saw the dashboard and asked for the same look everywhere --
+   renamed from .reports-dashboard__filter-* to the neutral .report-page__*
+   prefix used here so one set of rules serves both. The actual Tabulator
+   data tables are NOT part of this -- only the surrounding chrome (filter
+   bar, section cards) changed. .report-filter__field/.report-card__value/
+   .report-link above are now unused leftovers from the old look; left in
+   place rather than deleted in case a page still references them. */
 
-/* Period filter -- a quick, forgettable control, not a destination, so it
-   reads as a slim inline bar instead of a bordered card competing with
-   the actual report links below it. */
-.reports-dashboard__filter-bar {
+/* Period/filter bar -- a quick, forgettable control, not a destination, so
+   it reads as a slim inline bar instead of a bordered card competing with
+   the actual report content below it. */
+.report-page__filter-bar {
     margin-bottom: 1.5rem;
 }
 
-.reports-dashboard__filter-form {
+.report-page__filter-form {
     display: flex;
     align-items: flex-end;
     flex-wrap: wrap;
     gap: 1rem;
 }
 
-.reports-dashboard__filter-field {
+.report-page__filter-field {
     display: flex;
     flex-direction: column;
     gap: 0.3rem;
 }
 
-.reports-dashboard__filter-field label {
+.report-page__filter-field label {
     font-size: 0.8rem;
     font-weight: 600;
     color: #5f6a70;
 }
 
-.reports-dashboard__filter-field input {
+.report-page__filter-field input,
+.report-page__filter-field select {
     height: 44px;
     padding: 0 0.9rem;
     border: 1px solid #d7dee3;
@@ -1887,13 +1986,28 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
     font-size: 0.9rem;
 }
 
-.reports-dashboard__filter-field input:focus {
+/* The supplier-search field on Stock Movements wraps its pill input in
+   .pill-search-wrapper (same searchable-picker component used in the
+   delivery form) -- that component sets its own height/padding/radius on
+   the input, so the bare rule above would just fight it. */
+.report-page__filter-field .pill-search-wrapper {
+    min-width: 240px;
+}
+
+.report-page__filter-field input:focus,
+.report-page__filter-field select:focus {
     outline: none;
     border-color: var(--brand-cyan-mid);
     box-shadow: 0 0 0 3px rgba(59, 184, 232, 0.2);
 }
 
-.reports-dashboard__filter-submit {
+.report-page__filter-hint {
+    margin: 0.5rem 0 0;
+    font-size: 0.8rem;
+    color: #8a94a0;
+}
+
+.report-page__filter-submit {
     height: 44px;
     padding: 0 1.4rem;
     border: none;
@@ -1907,8 +2021,80 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
     transition: box-shadow 0.15s ease;
 }
 
-.reports-dashboard__filter-submit:hover {
+.report-page__filter-submit:hover {
     box-shadow: 0 6px 14px rgba(43, 111, 209, 0.35);
+}
+
+/* Content section below the filter bar (the table card, AI answer text,
+   SQL preview, ...) -- same soft-shadow/radius/white-card language as
+   .reports-dashboard__card, so a report page reads as part of the same
+   family as the dashboard it's linked from. */
+.report-page__section {
+    background: #ffffff;
+    border-radius: 1.25rem;
+    padding: 1.5rem 1.75rem;
+    box-shadow: 0 4px 18px rgba(43, 111, 209, 0.08);
+    margin-bottom: 1.5rem;
+}
+
+/* Plain HTML tables (AI Reports list isn't a Tabulator grid) need to butt
+   right up against the card's own edges -- the table's own header/row
+   backgrounds would otherwise show square corners poking past the card's
+   rounded ones. */
+.report-page__section--flush {
+    padding: 0;
+    overflow: hidden;
+}
+
+/* For a section whose content is a Tabulator grid (.data-table-card) --
+   that card already draws its OWN white/rounded/shadowed box around the
+   toolbar+grid, so wrapping it in .report-page__section too just nests one
+   card inside an identical-looking one for no reason, eating into the
+   grid's actual usable width (flagged live with a screenshot -- "3
+   layers": page container, this section, the table's own card). No
+   background/padding/shadow here at all, just the heading above the table
+   plus normal spacing below it -- .report-page__section stays reserved for
+   sections that AREN'T just a table card (e.g. the AI report's answer/SQL
+   text). */
+.report-page__table-section {
+    margin-bottom: 1.5rem;
+}
+
+.report-page__section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.report-page__section-header h2 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--primary-color);
+}
+
+/* "+ New AI report" -- same green create-action pill as
+   .reports-dashboard__card-cta ("+ New order"), reused here as a real
+   class (not just a shared look) since both mean the same thing: add a
+   new record, not navigate/filter. */
+.report-page__cta {
+    display: inline-block;
+    padding: 0.55rem 1.2rem;
+    border-radius: 999px;
+    background: linear-gradient(135deg, var(--brand-green-light), var(--brand-green-deep));
+    color: #ffffff;
+    font-weight: 600;
+    font-size: 0.875rem;
+    text-decoration: none;
+    box-shadow: 0 4px 10px rgba(30, 122, 76, 0.28);
+    transition: box-shadow 0.15s ease;
+}
+
+.report-page__cta:hover {
+    color: #ffffff;
+    box-shadow: 0 6px 14px rgba(30, 122, 76, 0.38);
 }
 
 /* AI Reports -- the one bold moment on this screen (natural-language
@@ -2628,6 +2814,36 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
     transform: translateY(-50%) rotate(-135deg);
 }
 
+/* Bootstrap's default modal entrance slides the dialog DOWN into place
+   (starts 50px above its resting spot, animates to 0) -- but that same
+   rule also governs the EXIT, so closing the modal (pick a category, or
+   dismiss it) slides it back UP and away ("изкача"), which is the half
+   of the animation actually visible most often (every successful pick
+   closes it). Flipped to start/end 50px BELOW instead, so closing sinks
+   the dialog down out of view ("да потъва") -- asked for live. This
+   necessarily flips the entrance too (now rises up from below instead
+   of descending), there's no way to make a plain two-state CSS
+   transition sink on both ends without separate enter/exit keyframes. */
+#categoryTreeModal.fade .modal-dialog {
+    transform: translate(0, 50px);
+}
+
+/* Without this, the rule above (an ID selector) outranks Bootstrap's own
+   .modal.show .modal-dialog{transform:none} (plain classes, lower
+   specificity) EVEN while the modal is open -- the dialog got stuck
+   translated 50px down permanently instead of settling into place,
+   confirmed live right after adding the rule above. Equal specificity to
+   the rule above (same ID) should let source order break the tie, but
+   that did NOT win live either (confirmed by inspecting the matched
+   CSSOM rules directly, not just guessing) -- !important forces it,
+   same escape hatch already used elsewhere in this file for the same
+   class of problem (see .tabulator-cell above). Removing .show on close
+   falls back to the translate(0,50px) rule above again, which is the
+   actual point of this whole override. */
+#categoryTreeModal.show .modal-dialog {
+    transform: none !important;
+}
+
 /* "Choose a category" tree modal (static/js/category-tree-picker.js) --
    alternative to typing in the search box, for browsing Category.parent's
    hierarchy directly. Rows sized for a touchscreen tap, not just a mouse
@@ -2693,15 +2909,38 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
     flex-wrap: wrap;
 }
 
-.field__chip {
-    border: 1px solid #d3d9de;
-    background: white;
-    color: var(--secondary-color);
+/* "Next free code" suggestion, product_create/edit.html's Internal Code
+   field -- used to be a separate "Следващ свободен (N)" chip button next
+   to the input (.field__chip, removed -- its text overflowed the narrow
+   Internal Code column once wrapped, see git history for that saga). Now
+   sits INSIDE the field itself, right edge, same positioning idea as
+   .search-clear-btn/.pill-search-wrapper__browse-btn -- just the bare
+   number (JS fills it live, see that template's own script), so it fits
+   in far less space and never needs to wrap at all. */
+.field__inline-suggest {
+    position: absolute;
+    top: 50%;
+    right: 0.4rem;
+    transform: translateY(-50%);
+    border: none;
+    background: var(--light-bg);
     border-radius: 999px;
-    padding: 0.3rem 0.7rem;
+    padding: 0.25rem 0.6rem;
     font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--brand-blue-deep);
     cursor: pointer;
-    white-space: nowrap;
+}
+
+.field__inline-suggest:hover {
+    background: #e4ebf2;
+}
+
+/* Room for the badge above so typed digits don't run underneath it. ID
+   selector, not a reusable class -- this exact field only exists on these
+   two pages. */
+#id_internal_code {
+    padding-right: 2.6rem;
 }
 
 .field__aux-link {
@@ -2794,6 +3033,53 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
     align-items: center;
     gap: 0.75rem;
     flex-wrap: wrap;
+}
+
+/* Primary form submit -- same cyan/blue gradient pill as
+   .report-page__filter-submit (STYLES.md: blue = confirm/apply), given
+   its own neutral name here since this is used outside Reports too
+   (Category form first, see its own comment for why that page needed
+   this). Product create/edit's own Save button is intentionally left
+   alone -- out of scope for the pass that introduced this class. */
+.form-submit-btn {
+    height: 44px;
+    padding: 0 1.6rem;
+    border: none;
+    border-radius: 999px;
+    background: linear-gradient(135deg, var(--brand-cyan-mid), var(--brand-blue-deep));
+    color: #ffffff;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    box-shadow: 0 4px 10px rgba(43, 111, 209, 0.25);
+    transition: box-shadow 0.15s ease;
+}
+
+.form-submit-btn:hover {
+    box-shadow: 0 6px 14px rgba(43, 111, 209, 0.35);
+}
+
+/* Secondary action next to .form-submit-btn -- outline, not filled, so
+   Save stays the one loud thing in the row (same "quiet secondary"
+   language as .reports-dashboard__hero-btn--ghost). */
+.form-cancel-btn {
+    height: 44px;
+    padding: 0 1.4rem;
+    border: 1.5px solid #d7dee3;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--secondary-color);
+    font-weight: 600;
+    font-size: 0.9rem;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.form-cancel-btn:hover {
+    border-color: var(--brand-blue-deep);
+    color: var(--brand-blue-deep);
 }
 
 /* Data table card -- pilot started on Categories List for the STYLES.md
