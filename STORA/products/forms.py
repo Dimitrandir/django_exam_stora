@@ -30,6 +30,18 @@ class ProductForms(forms.ModelForm):
             'show_on_pos': _('Show on POS screen'),
         }
 
+        # Replaces Django's own default uniqueness message ("Product with
+        # this product name already exists.") -- grammatically awkward
+        # once translated to Bulgarian (field's verbose_name inserted raw
+        # mid-sentence: "Продукт с този Име на продукта вече съществува.").
+        # 'unique' is the exact error code Model.validate_unique() raises
+        # for a unique=True field (see BaseModelForm._update_errors,
+        # matched by ValidationError.code) -- Django substitutes this
+        # message in automatically, nothing else needs to change.
+        error_messages = {
+            'name': {'unique': _('A product with this name already exists.')},
+        }
+
         widgets = {
             # A plain <select> doesn't scale as the category list grows
             # (subcategories can nest arbitrarily deep, see Category.parent)

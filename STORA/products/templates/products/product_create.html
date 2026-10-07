@@ -41,16 +41,18 @@
             <div class="product-form__grid is-grouped" id="core-fields-grid">
                 <div class="field">
                     {{ form.internal_code.label_tag }}
-                    <div class="field__row">
+                    <div style="position: relative;">
                         {{ form.internal_code }}
-                        <button type="button" id="suggest-next-free-code-btn" class="field__chip">{% blocktranslate with code=next_free_code %}Next free ({{ code }}){% endblocktranslate %}</button>
+                        <button type="button" id="suggest-next-free-code-btn" class="field__inline-suggest" title="{% translate 'Next free code -- click to use it' %}"></button>
                     </div>
                     {{ form.internal_code.errors }}
                 </div>
 
                 <div class="field">
                     {{ form.name.label_tag }}
-                    {{ form.name }}
+                    <div style="position: relative;">
+                        {{ form.name }}
+                    </div>
                     {{ form.name.errors }}
                 </div>
 
@@ -201,19 +203,50 @@
     </form>
 
     {{ tax_group_rates|json_script:"tax-group-rates" }}
+    {{ used_internal_codes|json_script:"used-internal-codes" }}
 
     <script src="{% static_v 'js/category-tree-picker.js' %}"></script>
     <script>
-    document.getElementById('suggest-next-free-code-btn').addEventListener('click', function () {
-        document.getElementById('id_internal_code').value = '{{ next_free_code }}';
-    });
-
-    // Empty only on a fresh page load -- if this is a re-render after a
-    // validation error, Django already filled it back in with what the user
-    // submitted, and that must not be overwritten.
+    // Live "next free code" suggestion -- one rule instead of the old
+    // separate first-free/next-free split: smallest unused number
+    // STRICTLY GREATER than whatever's currently typed (0 if the field is
+    // empty). That collapses to the old "first free" behavior on an empty
+    // field (smallest free number from 1 up) for free -- no separate case
+    // needed. Recomputed on every keystroke (used_internal_codes is the
+    // one piece of data this needs, already in the page), not a server
+    // round trip per key.
     (function () {
+        var usedCodes = new Set(JSON.parse(document.getElementById('used-internal-codes').textContent));
         var codeInput = document.getElementById('id_internal_code');
-        if (!codeInput.value) codeInput.value = '{{ first_free_code }}';
+        var suggestBtn = document.getElementById('suggest-next-free-code-btn');
+
+        function nextFreeAfter(after) {
+            var n = after + 1;
+            while (usedCodes.has(n)) n++;
+            return n;
+        }
+
+        function refreshSuggestion() {
+            var current = parseInt(codeInput.value, 10);
+            suggestBtn.textContent = nextFreeAfter(isNaN(current) ? 0 : current);
+        }
+
+        codeInput.addEventListener('input', refreshSuggestion);
+        suggestBtn.addEventListener('click', function () {
+            codeInput.value = suggestBtn.textContent;
+            // Real 'input' event, not just setting .value -- refreshSuggestion
+            // above is wired to that, this is what makes the badge
+            // immediately re-offer the NEXT one after the one just accepted
+            // (handy when adding several products in a row via "Save and New").
+            codeInput.dispatchEvent(new Event('input', {bubbles: true}));
+            codeInput.focus();
+        });
+
+        // Empty only on a fresh page load -- if this is a re-render after a
+        // validation error, Django already filled it back in with what the user
+        // submitted, and that must not be overwritten.
+        if (!codeInput.value) codeInput.value = nextFreeAfter(0);
+        refreshSuggestion();
     })();
 
     (function () {

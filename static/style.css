@@ -605,6 +605,21 @@ input[type="text"], input[type="number"], input[type="email"], select, textarea 
     font-weight: 600;
 }
 
+/* Django's per-field {{ form.X.errors }} output (<ul class="errorlist">,
+   e.g. the "already exists" message under the product form's Name field)
+   has no color of its own anywhere in the project -- plain black text,
+   easy to miss right under a field. Applies globally (no page styles this
+   class today), same reasoning as .form-errors above for the top-of-form
+   banner. */
+.errorlist {
+    list-style: none;
+    margin: 0.3rem 0 0;
+    padding: 0;
+    color: var(--danger-color);
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
 .sale-form {
     background: white;
     padding: 1.5rem;
@@ -2894,15 +2909,38 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
     flex-wrap: wrap;
 }
 
-.field__chip {
-    border: 1px solid #d3d9de;
-    background: white;
-    color: var(--secondary-color);
+/* "Next free code" suggestion, product_create/edit.html's Internal Code
+   field -- used to be a separate "Следващ свободен (N)" chip button next
+   to the input (.field__chip, removed -- its text overflowed the narrow
+   Internal Code column once wrapped, see git history for that saga). Now
+   sits INSIDE the field itself, right edge, same positioning idea as
+   .search-clear-btn/.pill-search-wrapper__browse-btn -- just the bare
+   number (JS fills it live, see that template's own script), so it fits
+   in far less space and never needs to wrap at all. */
+.field__inline-suggest {
+    position: absolute;
+    top: 50%;
+    right: 0.4rem;
+    transform: translateY(-50%);
+    border: none;
+    background: var(--light-bg);
     border-radius: 999px;
-    padding: 0.3rem 0.7rem;
+    padding: 0.25rem 0.6rem;
     font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--brand-blue-deep);
     cursor: pointer;
-    white-space: nowrap;
+}
+
+.field__inline-suggest:hover {
+    background: #e4ebf2;
+}
+
+/* Room for the badge above so typed digits don't run underneath it. ID
+   selector, not a reusable class -- this exact field only exists on these
+   two pages. */
+#id_internal_code {
+    padding-right: 2.6rem;
 }
 
 .field__aux-link {

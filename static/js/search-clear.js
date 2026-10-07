@@ -2,15 +2,21 @@
 // once it has something typed in it -- asked for live, project-wide
 // ("в цялата програма ... да се появява един х лесно да триеш написаното").
 //
-// Scope: any <input> that sits directly before a `.global-search-results`
-// dropdown -- that DOM pairing (input, then its own results box right
-// after it) is already the universal marker for "this is a live search
-// box" across the whole app (supplier search, product search, category
-// search, the navbar's global search, batch search, ...), regardless of
-// which visual class a given page happens to use for the input itself
-// (`.pill-input` in most places, plain Bootstrap `.form-control` in a
-// couple of older screens like order_new.html) -- so this one file covers
-// all of them without editing every template individually.
+// Scope, two kinds of input:
+// 1. Any <input> that sits directly before a `.global-search-results`
+//    dropdown -- that DOM pairing (input, then its own results box right
+//    after it) is already the universal marker for "this is a live search
+//    box" across the whole app (supplier search, product search, category
+//    search, the navbar's global search, batch search, ...), regardless of
+//    which visual class a given page happens to use for the input itself
+//    (`.pill-input` in most places, plain Bootstrap `.form-control` in a
+//    couple of older screens like order_new.html) -- so this one file covers
+//    all of them without editing every template individually.
+// 2. Any plain (non-search) <input class="clearable-input"> -- opted in
+//    explicitly per field, for a value that can arrive pre-filled from
+//    somewhere other than typing (e.g. the product form's Name field,
+//    carried over by "Save and New") where a one-tap clear matters just as
+//    much as it does for a search box.
 //
 // Loaded once from templates/base.html (like popup-tip.js), not per-page.
 (function () {
@@ -32,6 +38,61 @@
         });
     }
 
+    // Shared by both passes below -- builds the button, wires it up, and
+    // returns it (or null if this input already has one). Caller decides
+    // where the button ends up positioned (a "Browse" pill next to a
+    // search box needs to be dodged; a plain field doesn't).
+    function makeClearButton(input, parent) {
+        if (input.dataset.hasClearBtn) return null;
+        input.dataset.hasClearBtn = '1';
+
+        // Every search box this targets already happens to sit inside a
+        // positioned wrapper (`.pill-search-wrapper`, or a `.position-
+        // relative` filter field) in practice, but forcing it here too
+        // means this still works correctly even on a future page that
+        // forgets to add that class itself.
+        if (getComputedStyle(parent).position === 'static') {
+            parent.style.position = 'relative';
+        }
+
+        var clearBtn = document.createElement('button');
+        clearBtn.type = 'button';
+        clearBtn.className = 'search-clear-btn';
+        // Same window.DataTableI18n blob data-table.js reads (see its
+        // own comment) -- base.html renders it once with real
+        // {% translate %} tags, every static .js file that needs a
+        // translated string just reads a key off it.
+        clearBtn.setAttribute('aria-label', (window.DataTableI18n && window.DataTableI18n.clear) || 'Clear');
+        clearBtn.textContent = '×';
+        parent.insertBefore(clearBtn, input.nextSibling);
+
+        function refreshVisibility() {
+            clearBtn.classList.toggle('is-visible', input.value.length > 0);
+        }
+
+        input.addEventListener('input', refreshVisibility);
+        refreshVisibility();
+        managed.push({input: input, clearBtn: clearBtn});
+
+        clearBtn.addEventListener('click', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            input.value = '';
+            // A real 'input' event, not just clearing .value -- every
+            // search box's own listener is wired to 'input' already
+            // (re-running the search, closing its dropdown, clearing
+            // whatever hidden id field it tracks), so this one
+            // dispatch is all it takes to hook into each page's
+            // existing behavior without this file knowing anything
+            // about it.
+            input.dispatchEvent(new Event('input', {bubbles: true}));
+            refreshVisibility();
+            input.focus();
+        });
+
+        return clearBtn;
+    }
+
     function attachClearButtons() {
         document.querySelectorAll('.global-search-results').forEach(function (resultsBox) {
             // Usually the input immediately before this results box, but
@@ -45,29 +106,10 @@
             }
             if (!input) return;
             if (input.type !== 'text' && input.type !== 'search') return;
-            if (input.dataset.hasClearBtn) return;
-            input.dataset.hasClearBtn = '1';
 
             var parent = input.parentElement;
-            // Every search box this targets already happens to sit inside a
-            // positioned wrapper (`.pill-search-wrapper`, or a `.position-
-            // relative` filter field) in practice, but forcing it here too
-            // means this still works correctly even on a future page that
-            // forgets to add that class itself.
-            if (getComputedStyle(parent).position === 'static') {
-                parent.style.position = 'relative';
-            }
-
-            var clearBtn = document.createElement('button');
-            clearBtn.type = 'button';
-            clearBtn.className = 'search-clear-btn';
-            // Same window.DataTableI18n blob data-table.js reads (see its
-            // own comment) -- base.html renders it once with real
-            // {% translate %} tags, every static .js file that needs a
-            // translated string just reads a key off it.
-            clearBtn.setAttribute('aria-label', (window.DataTableI18n && window.DataTableI18n.clear) || 'Clear');
-            clearBtn.textContent = '×';
-            parent.insertBefore(clearBtn, input.nextSibling);
+            var clearBtn = makeClearButton(input, parent);
+            if (!clearBtn) return;
 
             // A "Browse" pill (category pickers, see
             // .pill-search-wrapper__browse-btn) already occupies the
@@ -82,30 +124,17 @@
             } else {
                 input.classList.add('has-clear-btn');
             }
+        });
 
-            function refreshVisibility() {
-                clearBtn.classList.toggle('is-visible', input.value.length > 0);
-            }
-
-            input.addEventListener('input', refreshVisibility);
-            refreshVisibility();
-            managed.push({input: input, clearBtn: clearBtn});
-
-            clearBtn.addEventListener('click', function (e) {
-                e.preventDefault();
-                e.stopPropagation();
-                input.value = '';
-                // A real 'input' event, not just clearing .value -- every
-                // search box's own listener is wired to 'input' already
-                // (re-running the search, closing its dropdown, clearing
-                // whatever hidden id field it tracks), so this one
-                // dispatch is all it takes to hook into each page's
-                // existing behavior without this file knowing anything
-                // about it.
-                input.dispatchEvent(new Event('input', {bubbles: true}));
-                refreshVisibility();
-                input.focus();
-            });
+        // Plain fields that aren't a live search box at all, explicitly
+        // opted in via this class -- e.g. the product form's Name field,
+        // prefilled by "Save and New" (ProductCreateView.form_valid) so a
+        // batch of similar products doesn't need retyping a name that
+        // mostly repeats. No Browse-pill dodging needed here, just the
+        // plain right-edge placement.
+        document.querySelectorAll('.clearable-input').forEach(function (input) {
+            var clearBtn = makeClearButton(input, input.parentElement);
+            if (clearBtn) input.classList.add('has-clear-btn');
         });
     }
 
