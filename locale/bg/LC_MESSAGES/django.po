@@ -4328,3 +4328,39 @@ msgstr "Към продажбите"
 #: templates/index.html:23
 msgid "Quick Access"
 msgstr "Бърз достъп"
+
+#: STORA/sales/models.py
+msgid "Waiting to print"
+msgstr "Чака печат"
+
+#: STORA/sales/context_processors.py
+msgid "Printing the fiscal receipt..."
+msgstr "Фискалният бон се печата..."
+
+#: STORA/sales/context_processors.py
+msgid "Fiscal receipt printed."
+msgstr "Фискалният бон е отпечатан."
+
+#: STORA/sales/context_processors.py
+msgid ""
+"The fiscal bridge on this computer is not running or not reachable. The sale"
+" is saved -- start the bridge and use Retry Fiscal Print."
+msgstr ""
+"Мостът към касата на този компютър не работи или не отговаря. Продажбата е "
+"записана -- пусни моста и натисни „Опитай фискален печат отново“."
+
+#: STORA/sales/templates/sales/sale_details.html
+msgid ""
+"Fiscal receipt is waiting to be printed by the fiscal bridge on the till "
+"computer. If nothing printed, use Retry Fiscal Print."
+msgstr ""
+"Фискалният бон чака да бъде отпечатан от моста на касовия компютър. Ако нищо"
+" не е излязло, натисни „Опитай фискален печат отново“."
+
+#: STORA/sales/templates/sales/refund_details.html
+msgid ""
+"Fiscal storno receipt is waiting to be printed by the fiscal bridge on the "
+"till computer. If nothing printed, use Retry Fiscal Print."
+msgstr ""
+"Сторно бонът чака да бъде отпечатан от моста на касовия компютър. Ако нищо "
+"не е излязло, натисни „Опитай фискален печат отново“."

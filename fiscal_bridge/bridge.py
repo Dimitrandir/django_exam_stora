@@ -37,6 +37,17 @@ MAX_BODY_BYTES = 256 * 1024
 _device_lock = threading.Lock()
 
 
+def _int_setting(section, key, default):
+    # Same int() the local STORA applies to FISCAL_OPERATOR_NUM/_PASSWORD.
+    value = section.get(key, '').strip()
+    if not value:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        raise SystemExit(f'bridge.ini: {key} must be a number, got "{value}"')
+
+
 def load_settings(path):
     parser = configparser.ConfigParser()
     if not parser.read(path, encoding='utf-8'):
@@ -47,6 +58,8 @@ def load_settings(path):
         raise SystemExit('bridge.ini: allowed_origins is empty -- set it to the STORA address, e.g. https://stora.example.com')
     return {
         'listen_port': section.getint('listen_port', 7777),
+        'operator_num': _int_setting(section, 'operator_num', 1),
+        'operator_password': _int_setting(section, 'operator_password', 0),
         'allowed_origins': allowed,
         'device': ecr_runner.DeviceConfig(
             api_url=section.get('ecr_api_url', 'http://127.0.0.1:7000/Api'),
@@ -69,6 +82,18 @@ def validate_commands(payload):
         if not isinstance(command, dict) or not isinstance(command.get('cmd'), str) \
                 or not isinstance(command.get('data'), dict):
             raise ValueError('Every command needs a "cmd" string and a "data" object.')
+    return commands
+
+
+def apply_operator(commands, settings):
+    """Every receipt opens with FDStartFiscRcp, which needs the device
+    operator's number and password. Those live only here, in bridge.ini --
+    STORA in the cloud leaves them out so they never pass through the
+    browser."""
+    for command in commands:
+        if command['cmd'] == ecr_runner.OPEN_RECEIPT_CMD:
+            command['data']['Operator'] = settings['operator_num']
+            command['data']['Password'] = settings['operator_password']
     return commands
 
 
@@ -140,7 +165,9 @@ def make_handler(settings, run_job=ecr_runner.run_job):
                 self._send_json(400, {'ok': False, 'error': 'Missing or too large body.'})
                 return
             try:
-                commands = validate_commands(json.loads(self.rfile.read(length).decode('utf-8')))
+                commands = apply_operator(
+                    validate_commands(json.loads(self.rfile.read(length).decode('utf-8'))), settings,
+                )
             except ValueError as exc:  # json.JSONDecodeError is a ValueError too
                 self._send_json(400, {'ok': False, 'error': str(exc)})
                 return

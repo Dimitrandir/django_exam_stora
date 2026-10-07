@@ -161,8 +161,15 @@ def sales_add(request):
             # outcome on the sale (see STORA.sales.fiscal). CARD/MIXED are
             # skipped entirely for now -- no fiscal Payment type mapped for
             # them yet (see the memory notes from the hardware session).
+            # In the cloud install (bridge mode) the printer isn't reachable
+            # from here: the receipt is handed to the cashier's browser
+            # instead, which prints it on the next page (the fresh New Sale
+            # screen below) -- see fiscal.prepare_sale_for_bridge.
             if settings.FISCAL_ENABLED and sale.payment_method == SaleAttributes.CASH:
-                fiscal.attempt_print(sale)
+                if fiscal.bridge_mode():
+                    fiscal.queue_bridge_job(request, fiscal.prepare_sale_for_bridge(sale))
+                else:
+                    fiscal.attempt_print(sale)
 
             if sale.change_due is not None:
                 set_last_change(request, active_tab, sale.change_due)
@@ -295,8 +302,49 @@ def sale_fiscal_retry(request, pk):
     to the printer waiting to see if it works this time."""
     sale = get_object_or_404(SaleAttributes, pk=pk)
     if settings.FISCAL_ENABLED:
-        fiscal.attempt_print(sale)
+        if fiscal.bridge_mode():
+            _queue_bridge_job_for_details(request, fiscal.prepare_sale_for_bridge(sale))
+        else:
+            fiscal.attempt_print(sale)
     return redirect('sale_details', pk=sale.pk)
+
+
+def _queue_bridge_job_for_details(request, job):
+    # A retry and a new refund both land on the record's own details page,
+    # which then shows a stale "waiting to print" -- reload it once the
+    # bridge answers.
+    if job:
+        job['reload'] = True
+    fiscal.queue_bridge_job(request, job)
+
+
+@login_required
+@permission_required('sales.add_saleattributes', raise_exception=True)
+@require_POST
+def fiscal_bridge_result(request):
+    """Bridge mode only: the cashier's browser reports what the till-PC
+    bridge answered for a PENDING sale/refund (static/js/fiscal-bridge.js).
+    Only a PENDING record can be settled this way -- see
+    fiscal.record_bridge_result."""
+    if not fiscal.bridge_mode():
+        return JsonResponse({'error': 'Fiscal bridge mode is off.'}, status=404)
+    try:
+        payload = json.loads(request.body)
+        model = {'sale': SaleAttributes, 'refund': RefundAttributes}[payload['kind']]
+        record_id = int(payload['id'])
+        ok = payload['ok']
+        if not isinstance(ok, bool):
+            raise ValueError
+        error = str(payload.get('error') or '')[:2000]
+        results = payload.get('results') or []
+        if not isinstance(results, list):
+            raise ValueError
+    except (ValueError, KeyError, TypeError):
+        return JsonResponse({'error': 'Bad request.'}, status=400)
+    record = get_object_or_404(model, pk=record_id)
+    if not fiscal.record_bridge_result(record, ok, error, results):
+        return JsonResponse({'error': 'This receipt is not waiting to be printed.'}, status=409)
+    return JsonResponse({'ok': True, 'status': record.fiscal_status})
 
 
 @login_required
@@ -309,12 +357,22 @@ def fiscal_reports(request):
     return render(request, 'sales/fiscal_reports.html', {'fiscal_enabled': settings.FISCAL_ENABLED})
 
 
+def _bridge_report_response(commands):
+    """Bridge mode: a report isn't printed from here -- its commands go
+    back to fiscal_reports.html, whose JS hands them to the till-PC bridge."""
+    if not settings.FISCAL_ENABLED:
+        return JsonResponse({'error': 'Fiscal printing is disabled (FISCAL_ENABLED).'}, status=502)
+    return JsonResponse({'ok': True, 'bridge_commands': commands})
+
+
 @login_required
 @permission_required('sales.add_saleattributes', raise_exception=True)
 @require_POST
 def fiscal_report_x(request):
     """On-demand action, not tied to any STORA record -- errors go straight
     back as JSON for the page's own JS to alert(), nothing to retry later."""
+    if fiscal.bridge_mode():
+        return _bridge_report_response(fiscal.x_report_commands())
     try:
         fiscal.print_x_report()
     except fiscal.FiscalPrintError as exc:
@@ -326,6 +384,8 @@ def fiscal_report_x(request):
 @permission_required('sales.add_saleattributes', raise_exception=True)
 @require_POST
 def fiscal_report_z(request):
+    if fiscal.bridge_mode():
+        return _bridge_report_response(fiscal.z_report_commands())
     try:
         fiscal.print_z_report()
     except fiscal.FiscalPrintError as exc:
@@ -343,6 +403,8 @@ def fiscal_report_period(request):
         return JsonResponse({'error': _('Pick both a start and an end date.')}, status=400)
     if end_date < start_date:
         return JsonResponse({'error': _('End date must be on or after the start date.')}, status=400)
+    if fiscal.bridge_mode():
+        return _bridge_report_response(fiscal.period_report_commands(start_date, end_date))
     try:
         fiscal.print_period_report(start_date, end_date)
     except fiscal.FiscalPrintError as exc:
@@ -656,7 +718,10 @@ def refund_new(request, pk):
             # itself fiscally printed (see fiscal.print_fiscal_refund) --
             # skipped silently otherwise, same as a CARD original sale.
             if settings.FISCAL_ENABLED and sale.payment_method == SaleAttributes.CASH:
-                fiscal.attempt_print_refund(refund)
+                if fiscal.bridge_mode():
+                    _queue_bridge_job_for_details(request, fiscal.prepare_refund_for_bridge(refund))
+                else:
+                    fiscal.attempt_print_refund(refund)
 
             return redirect('refund_details', pk=refund.pk)
 
@@ -694,5 +759,8 @@ def refund_fiscal_retry(request, pk):
     failed -- same pattern as sale_fiscal_retry."""
     refund = get_object_or_404(RefundAttributes, pk=pk)
     if settings.FISCAL_ENABLED:
-        fiscal.attempt_print_refund(refund)
+        if fiscal.bridge_mode():
+            _queue_bridge_job_for_details(request, fiscal.prepare_refund_for_bridge(refund))
+        else:
+            fiscal.attempt_print_refund(refund)
     return redirect('refund_details', pk=refund.pk)

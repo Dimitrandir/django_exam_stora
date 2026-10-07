@@ -12,5 +12,11 @@ ecrcommapp_path =
 com_port = COM4
 ecr_api_url = http://127.0.0.1:7000/Api
 
+; Operator number and password programmed on the device itself
+; (FISCAL_OPERATOR_NUM / FISCAL_OPERATOR_PASSWORD in a local STORA's .env).
+; They stay on this PC -- the cloud STORA never sees them.
+operator_num = 1
+operator_password =
+
 ; true = log every command sent to the printer.
 debug = false

@@ -341,6 +341,12 @@
 <script src="{% static_v 'js/popup-tip.js' %}"></script>
 <script src="{% static_v 'js/search-clear.js' %}"></script>
 <script src="{% static_v 'js/onscreen-keyboard.js' %}"></script>
+{% if fiscal_bridge_config %}
+{# Cloud install only (FISCAL_MODE=bridge) -- see static/js/fiscal-bridge.js. #}
+{{ fiscal_bridge_config|json_script:"fiscal-bridge-config" }}
+{% with job=fiscal_bridge_job %}{% if job %}{{ job|json_script:"fiscal-bridge-job" }}{% endif %}{% endwith %}
+<script src="{% static_v 'js/fiscal-bridge.js' %}"></script>
+{% endif %}
 {% block extra_js %}{% endblock %}
 </body>
 </html>

@@ -94,6 +94,7 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
                 'django.template.context_processors.i18n',
+                'STORA.sales.context_processors.fiscal_bridge',
             ],
         },
     },
@@ -255,6 +256,13 @@ FISCAL_OPERATOR_PASSWORD = os.environ.get('FISCAL_OPERATOR_PASSWORD', '1')
 # 'STORA.sales.fiscal' logger entry below, which this depends on to
 # actually reach the console/log file.
 FISCAL_DEBUG = os.environ.get('FISCAL_DEBUG', 'False') == 'True'
+# Where the printer is reached from. 'local' (default, the shop installs):
+# STORA runs on the till PC and starts ECRCommApp itself. 'bridge' (the
+# cloud install): STORA can't reach the printer, so the cashier's browser
+# hands each receipt to fiscal_bridge/bridge.py on the till PC at
+# FISCAL_BRIDGE_URL -- see STORA.sales.fiscal and DEPLOYMENT_SUPERHOSTING.md.
+FISCAL_MODE = os.environ.get('FISCAL_MODE', 'local')
+FISCAL_BRIDGE_URL = os.environ.get('FISCAL_BRIDGE_URL', 'http://127.0.0.1:7777')
 
 CELERY_BROKER_URL = 'redis://localhost:6379/0'
 CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'

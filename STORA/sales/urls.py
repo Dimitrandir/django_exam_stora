@@ -18,6 +18,7 @@ urlpatterns = [
     path('<int:pk>/fiscal-retry/', views.sale_fiscal_retry, name='sale_fiscal_retry'),
     path('delete/<int:pk>/', SalesDeleteView.as_view(), name='sale_delete'),
     path('fiscal-reports/', views.fiscal_reports, name='fiscal_reports'),
+    path('fiscal-bridge/result/', views.fiscal_bridge_result, name='fiscal_bridge_result'),
     path('fiscal-reports/x/', views.fiscal_report_x, name='fiscal_report_x'),
     path('fiscal-reports/z/', views.fiscal_report_z, name='fiscal_report_z'),
     path('fiscal-reports/period/', views.fiscal_report_period, name='fiscal_report_period'),

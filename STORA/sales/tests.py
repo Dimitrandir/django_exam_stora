@@ -1596,3 +1596,159 @@ class RefundFiscalRetryViewTests(TestCase):
         response = self.client.post(reverse('refund_fiscal_retry', kwargs={'pk': self.refund.pk}))
         self.assertEqual(response.status_code, 302)
         self.assertIn('/accounts/login/', response.url)
+
+
+BRIDGE_SETTINGS = dict(FISCAL_SETTINGS, FISCAL_MODE='bridge', FISCAL_BRIDGE_URL='http://127.0.0.1:7777')
+
+
+@override_settings(**BRIDGE_SETTINGS)
+class FiscalBridgeModeTests(TestCase):
+    """Cloud install (FISCAL_MODE=bridge): STORA never talks to the printer
+    itself, it hands the receipt to the browser and records what the
+    till-PC bridge answered."""
+
+    def setUp(self):
+        self.tax_group = TaxGroup.objects.create(name='Standard', rate=Decimal('20.00'), fiscal_letter='Б')
+        self.product = Product.objects.create(
+            internal_code='P0000050', name='Bridge Product', sell_price=Decimal('2.00'), quantity=Decimal('10.000'),
+            tax_group=self.tax_group,
+        )
+        self.cashier = User.objects.create_user(username='bridge-cashier', password='pass12345', role=User.CASHIER)
+        self.client.force_login(self.cashier)
+
+    def _make_sale(self, product=None):
+        sale = SaleAttributes.objects.create(
+            cashier=self.cashier, payment_method=SaleAttributes.CASH, amount_paid=Decimal('2.00'),
+        )
+        SaleItems.objects.create(
+            sale=sale, sale_item=product or self.product, sale_quantity=Decimal('1.000'),
+            price_at_sale=Decimal('2.00'),
+        )
+        return sale
+
+    def _post_sale(self):
+        return self.client.post(reverse('sale_add'), {
+            'cashier': self.cashier.pk, 'payment_method': SaleAttributes.CASH,
+            'amount_paid': '2.00', 'change_due': '0.00',
+            'items-TOTAL_FORMS': '1', 'items-INITIAL_FORMS': '0',
+            'items-MIN_NUM_FORMS': '0', 'items-MAX_NUM_FORMS': '1000',
+            'items-0-sale_item': self.product.pk, 'items-0-sale_quantity': '1',
+            'items-0-price_at_sale': '2.00', 'items-0-total_price_row': '2.00', 'items-0-DELETE': '',
+        })
+
+    @patch('STORA.sales.fiscal._start_ecrcommapp')
+    def test_prepare_marks_pending_and_never_touches_the_printer(self, mock_start):
+        sale = self._make_sale()
+        job = fiscal.prepare_sale_for_bridge(sale)
+        mock_start.assert_not_called()
+        sale.refresh_from_db()
+        self.assertEqual(sale.fiscal_status, SaleAttributes.FISCAL_PENDING)
+        self.assertTrue(sale.fiscal_unic_sale_num.startswith('DY000001-OP01-'))
+        self.assertEqual(job['kind'], 'sale')
+        self.assertEqual(job['id'], sale.pk)
+        self.assertEqual([c['cmd'] for c in job['commands']],
+                         ['FDStartFiscRcp', 'FDSaleItem', 'FDTotalSum', 'FDPrintBarcode', 'FDEndFiscRcp'])
+        # The browser must never see the device operator's password --
+        # the bridge adds it from its own bridge.ini.
+        self.assertNotIn('Password', job['commands'][0]['data'])
+        self.assertNotIn('Operator', job['commands'][0]['data'])
+        json.dumps(job)  # must survive the JSON session serializer
+
+    def test_prepare_with_missing_tax_letter_fails_right_away(self):
+        untaxed = Product.objects.create(
+            internal_code='P0000051', name='No Letter', sell_price=Decimal('2.00'), quantity=Decimal('1.000'),
+        )
+        sale = self._make_sale(product=untaxed)
+        self.assertIsNone(fiscal.prepare_sale_for_bridge(sale))
+        sale.refresh_from_db()
+        self.assertEqual(sale.fiscal_status, SaleAttributes.FISCAL_FAILED)
+
+    @patch('STORA.sales.views.fiscal.attempt_print')
+    def test_cash_sale_queues_job_and_next_page_hands_it_to_the_browser(self, mock_attempt):
+        response = self._post_sale()
+        # Not followed -- following it would already hand the job over.
+        self.assertRedirects(response, reverse('sale_add'), fetch_redirect_response=False)
+        mock_attempt.assert_not_called()
+        sale = SaleAttributes.objects.latest('pk')
+        self.assertEqual(sale.fiscal_status, SaleAttributes.FISCAL_PENDING)
+
+        page = self.client.get(reverse('sale_add'))
+        self.assertContains(page, 'id="fiscal-bridge-job"')
+        self.assertContains(page, 'js/fiscal-bridge.js')
+        # Handed over once -- a reload must not print the receipt again.
+        again = self.client.get(reverse('sale_add'))
+        self.assertNotContains(again, 'id="fiscal-bridge-job"')
+        self.assertContains(again, 'id="fiscal-bridge-config"')
+
+    def test_result_ok_marks_printed_with_receipt_number(self):
+        sale = self._make_sale()
+        fiscal.prepare_sale_for_bridge(sale)
+        response = self.client.post(
+            reverse('fiscal_bridge_result'),
+            data=json.dumps({'kind': 'sale', 'id': sale.pk, 'ok': True, 'results': [{}, {'FiscReceipt': 17}]}),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+        sale.refresh_from_db()
+        self.assertEqual(sale.fiscal_status, SaleAttributes.FISCAL_PRINTED)
+        self.assertEqual(sale.fiscal_receipt_number, 17)
+        self.assertIsNotNone(sale.fiscal_printed_at)
+
+    def test_result_failure_marks_failed_with_error(self):
+        sale = self._make_sale()
+        fiscal.prepare_sale_for_bridge(sale)
+        self.client.post(
+            reverse('fiscal_bridge_result'),
+            data=json.dumps({'kind': 'sale', 'id': sale.pk, 'ok': False, 'error': 'bridge not running'}),
+            content_type='application/json',
+        )
+        sale.refresh_from_db()
+        self.assertEqual(sale.fiscal_status, SaleAttributes.FISCAL_FAILED)
+        self.assertEqual(sale.fiscal_error, 'bridge not running')
+
+    def test_result_cannot_overwrite_a_settled_sale(self):
+        sale = self._make_sale()
+        sale.fiscal_status = SaleAttributes.FISCAL_FAILED
+        sale.save()
+        response = self.client.post(
+            reverse('fiscal_bridge_result'),
+            data=json.dumps({'kind': 'sale', 'id': sale.pk, 'ok': True, 'results': [{'FiscReceipt': 1}]}),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 409)
+        sale.refresh_from_db()
+        self.assertEqual(sale.fiscal_status, SaleAttributes.FISCAL_FAILED)
+
+    def test_result_rejects_malformed_body(self):
+        response = self.client.post(
+            reverse('fiscal_bridge_result'), data=json.dumps({'kind': 'nope', 'id': 1, 'ok': True}),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_x_report_returns_commands_for_the_bridge(self):
+        response = self.client.post(reverse('fiscal_report_x'))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json()['bridge_commands'], [{'cmd': 'FDDailyRpt', 'data': {'Item': 1, 'Option': ''}}],
+        )
+
+
+class FiscalLocalModeUnchangedTests(TestCase):
+    """The shop installs (default FISCAL_MODE=local) get none of the bridge
+    plumbing."""
+
+    def setUp(self):
+        self.cashier = User.objects.create_user(username='local-cashier', password='pass12345', role=User.CASHIER)
+        self.client.force_login(self.cashier)
+
+    def test_pages_do_not_load_the_bridge_script(self):
+        page = self.client.get(reverse('sale_add'))
+        self.assertNotContains(page, 'fiscal-bridge')
+
+    def test_result_endpoint_is_off(self):
+        response = self.client.post(
+            reverse('fiscal_bridge_result'), data=json.dumps({'kind': 'sale', 'id': 1, 'ok': True}),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 404)

@@ -50,8 +50,12 @@ class SaleAttributes(models.Model):
     FISCAL_NONE = 'NONE'
     FISCAL_PRINTED = 'PRINTED'
     FISCAL_FAILED = 'FAILED'
+    # Cloud install only (FISCAL_MODE=bridge): the receipt was handed to the
+    # cashier's browser for the till-PC bridge, no answer back yet.
+    FISCAL_PENDING = 'PENDING'
     FISCAL_STATUS_CHOICES = [
         (FISCAL_NONE, _('Not fiscalized')), (FISCAL_PRINTED, _('Printed')), (FISCAL_FAILED, _('Failed')),
+        (FISCAL_PENDING, _('Waiting to print')),
     ]
     fiscal_status = models.CharField(max_length=7, choices=FISCAL_STATUS_CHOICES, default=FISCAL_NONE)
     # The exact УНП (UnicSaleNum) sent on the last attempt -- kept for

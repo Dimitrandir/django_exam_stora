@@ -132,6 +132,8 @@ class BridgeHttpTests(unittest.TestCase):
 
         settings = {
             'listen_port': 0,
+            'operator_num': 20,
+            'operator_password': 9999,
             'allowed_origins': [ORIGIN],
             'device': ecr_runner.DeviceConfig(api_url='', com_port='COM4', ecrcommapp_path=''),
         }
@@ -175,7 +177,14 @@ class BridgeHttpTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(body, {'ok': True, 'results': [{'FiscReceipt': 12}]})
         self.assertEqual(headers['Access-Control-Allow-Origin'], ORIGIN)
-        self.assertEqual(self.jobs, [commands])
+        self.assertEqual([c['cmd'] for c in self.jobs[0]], ['FDStartFiscRcp'])
+
+    def test_run_adds_the_operator_from_bridge_ini(self):
+        commands = [{'cmd': 'FDStartFiscRcp', 'data': {'UnicSaleNum': 'X'}}, {'cmd': 'FDEndFiscRcp', 'data': {}}]
+        self._request('POST', '/run', {'commands': commands})
+        sent = self.jobs[0]
+        self.assertEqual(sent[0]['data'], {'UnicSaleNum': 'X', 'Operator': 20, 'Password': 9999})
+        self.assertEqual(sent[1]['data'], {})
 
     def test_run_from_another_site_is_refused_without_printing(self):
         status, _, body = self._request(
@@ -222,11 +231,13 @@ class LoadSettingsTests(unittest.TestCase):
             path = os.path.join(tmp, 'bridge.ini')
             with open(path, 'w', encoding='utf-8') as f:
                 f.write('[bridge]\nallowed_origins = https://a.example.com/, https://b.example.com\n'
-                        'com_port = COM7\nlisten_port = 7788\n')
+                        'com_port = COM7\nlisten_port = 7788\noperator_num = 20\noperator_password =\n')
             settings = bridge.load_settings(path)
         self.assertEqual(settings['allowed_origins'], ['https://a.example.com', 'https://b.example.com'])
         self.assertEqual(settings['listen_port'], 7788)
         self.assertEqual(settings['device'].com_port, 'COM7')
+        self.assertEqual(settings['operator_num'], 20)
+        self.assertEqual(settings['operator_password'], 0)
 
     def test_missing_allowed_origins_stops(self):
         import os

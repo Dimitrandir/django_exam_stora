@@ -52,6 +52,13 @@ document.addEventListener('DOMContentLoaded', function () {
             .then(function (r) { return r.json().then(function (data) { return {ok: r.ok, data: data}; }); })
             .then(function (result) {
                 if (!result.ok) { alert(result.data.error || '{% translate "Report failed." %}'); return; }
+                // Cloud install: the server only sends the report back,
+                // the bridge on this computer prints it (fiscal-bridge.js).
+                if (result.data.bridge_commands && window.StoraFiscalBridge) {
+                    return window.StoraFiscalBridge.runCommands(result.data.bridge_commands).then(function (outcome) {
+                        alert(outcome.ok ? '{% translate "Done -- check the printer." %}' : (outcome.error || '{% translate "Report failed." %}'));
+                    });
+                }
                 alert('{% translate "Done -- check the printer." %}');
             })
             .catch(function () { alert('{% translate "Network error -- check your connection and try again." %}'); })

@@ -3692,3 +3692,31 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
 .site-navbar .lang-switch {
     width: fit-content;
 }
+
+/* Cloud install fiscal-print status (static/js/fiscal-bridge.js) -- a
+   small card in the corner, not a modal, so the cashier can keep ringing
+   up the next customer while the receipt prints. */
+.fiscal-toast {
+    position: fixed;
+    right: 1rem;
+    bottom: 1rem;
+    z-index: 2000;
+    max-width: 26rem;
+    padding: 0.8rem 1.1rem;
+    border-radius: 0.75rem;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+    font-weight: 600;
+    cursor: pointer;
+    color: #ffffff;
+    background-color: #2B6FD1;
+}
+
+.fiscal-toast--ok {
+    background-color: #1E7A4C;
+}
+
+.fiscal-toast--error {
+    background-color: #fdecea;
+    border: 1px solid var(--danger-color);
+    color: #7a1f14;
+}

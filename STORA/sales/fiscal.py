@@ -159,17 +159,9 @@ def _receipt_commands(start_cmd_data, items, sale_type, amount_in, barcode_data=
     return commands
 
 
-def print_fiscal_receipt(sale):
-    """Prints a real fiscal receipt for `sale` on the Daisy Perfect S01.
-    Raises FiscalPrintError on any failure. Only meaningful for CASH sales
-    right now (see sales_add) -- CARD/MIXED have no fiscal Payment type
-    mapped yet. Returns {'unic_sale_num', 'receipt_number'} -- the latter is
-    needed later to storno this exact receipt (see print_fiscal_refund).
-    Callers that must not let a failure here block anything (i.e. every real
-    caller) should use `attempt_print` instead."""
-    if not settings.FISCAL_ENABLED:
-        raise FiscalPrintError('Fiscal printing is disabled (FISCAL_ENABLED).')
-
+def _sale_receipt_commands(sale):
+    """Validates `sale` and builds its receipt. Draws a new УНП from
+    FiscalCounter every call. Returns (commands, unic_sale_num)."""
     sale_items = _validate_items(sale)
     unic_sale_num = _next_unic_sale_num()
     items = [
@@ -185,6 +177,21 @@ def print_fiscal_receipt(sale):
         'Reason': 0, 'DocLink': 0, 'DocLinkDT': '', 'FiskMem': '', 'InvLink': '',
     }
     commands = _receipt_commands(start_data, items, 'Sale', sale.amount_paid, barcode_data=str(sale.pk))
+    return commands, unic_sale_num
+
+
+def print_fiscal_receipt(sale):
+    """Prints a real fiscal receipt for `sale` on the Daisy Perfect S01.
+    Raises FiscalPrintError on any failure. Only meaningful for CASH sales
+    right now (see sales_add) -- CARD/MIXED have no fiscal Payment type
+    mapped yet. Returns {'unic_sale_num', 'receipt_number'} -- the latter is
+    needed later to storno this exact receipt (see print_fiscal_refund).
+    Callers that must not let a failure here block anything (i.e. every real
+    caller) should use `attempt_print` instead."""
+    if not settings.FISCAL_ENABLED:
+        raise FiscalPrintError('Fiscal printing is disabled (FISCAL_ENABLED).')
+
+    commands, unic_sale_num = _sale_receipt_commands(sale)
     end_result = _run_commands(commands)[-1]
     return {'unic_sale_num': unic_sale_num, 'receipt_number': end_result.get('FiscReceipt')}
 
@@ -243,17 +250,10 @@ def _validate_refund_items(refund):
     return items
 
 
-def print_fiscal_refund(refund):
-    """Prints a real storno fiscal receipt for `refund`, referencing the
-    original sale's own fiscal receipt on the device (FDStartFiscRcp's
-    DocLink/DocLinkDT/FiskMem) -- only possible if that original sale was
-    itself fiscally printed. Only meaningful for a CASH original sale, same
-    boundary as print_fiscal_receipt. Use `attempt_print_refund` from a
-    view, never this directly."""
+def _refund_receipt_commands(refund):
+    """Validates `refund` and builds its storno receipt -- see
+    print_fiscal_refund. Returns (commands, unic_sale_num)."""
     from .models import SaleAttributes
-
-    if not settings.FISCAL_ENABLED:
-        raise FiscalPrintError('Fiscal printing is disabled (FISCAL_ENABLED).')
 
     original_sale = refund.original_sale
     if original_sale.fiscal_status != SaleAttributes.FISCAL_PRINTED or not original_sale.fiscal_receipt_number:
@@ -287,12 +287,26 @@ def print_fiscal_refund(refund):
         # (see the guide's separate Credit-only field table). The guide's
         # one full worked Refund="R" example doesn't include either key,
         # even blank. A normal sale tolerates them present-but-empty fine
-        # (see print_fiscal_receipt's start_data), so the two together
+        # (see _sale_receipt_commands' start_data), so the two together
         # alongside Refund="R" -- still service error 7 even after fixing
         # Reason/DocLinkDT above -- is the remaining suspect, not yet
         # confirmed live either way.
     }
-    _run_commands(_receipt_commands(start_data, items, 'Refund', refund.total_amount))
+    return _receipt_commands(start_data, items, 'Refund', refund.total_amount), unic_sale_num
+
+
+def print_fiscal_refund(refund):
+    """Prints a real storno fiscal receipt for `refund`, referencing the
+    original sale's own fiscal receipt on the device (FDStartFiscRcp's
+    DocLink/DocLinkDT/FiskMem) -- only possible if that original sale was
+    itself fiscally printed. Only meaningful for a CASH original sale, same
+    boundary as print_fiscal_receipt. Use `attempt_print_refund` from a
+    view, never this directly."""
+    if not settings.FISCAL_ENABLED:
+        raise FiscalPrintError('Fiscal printing is disabled (FISCAL_ENABLED).')
+
+    commands, unic_sale_num = _refund_receipt_commands(refund)
+    _run_commands(commands)
     return unic_sale_num
 
 
@@ -319,12 +333,138 @@ def attempt_print_refund(refund):
             logger.info('Fiscal: Refund #%s storno printed -- УНП %s', refund.pk, unic_sale_num)
 
 
+# ---------------------------------------------------------------------------
+# Bridge mode (FISCAL_MODE=bridge, the cloud install). STORA can't reach the
+# printer, so instead of running the commands it hands them to the
+# cashier's browser (queue_bridge_job -> context_processors.fiscal_bridge ->
+# static/js/fiscal-bridge.js), which POSTs them to fiscal_bridge/bridge.py
+# on the till PC and reports the outcome back (record_bridge_result, via
+# the fiscal_bridge_result view). Building the commands is the exact same
+# code as local mode above.
+# ---------------------------------------------------------------------------
+
+BRIDGE_JOB_SESSION_KEY = 'fiscal_bridge_job'
+
+
+def bridge_mode():
+    return settings.FISCAL_MODE == 'bridge'
+
+
+def _mark_failed(record, exc):
+    from .models import SaleAttributes
+
+    record.fiscal_status = SaleAttributes.FISCAL_FAILED
+    record.fiscal_error = str(exc)
+    record.save(update_fields=['fiscal_status', 'fiscal_error'])
+    logger.warning('Fiscal print failed for %s #%s: %s', type(record).__name__, record.pk, exc)
+
+
+def _prepare_bridge_job(record, kind, build):
+    """Shared by prepare_sale_for_bridge/prepare_refund_for_bridge. Never
+    raises -- a receipt that can't even be built (missing tax letter, ...)
+    marks the record FAILED right away, the same as attempt_print would."""
+    from .models import SaleAttributes
+
+    try:
+        if not settings.FISCAL_ENABLED:
+            raise FiscalPrintError('Fiscal printing is disabled (FISCAL_ENABLED).')
+        commands, unic_sale_num = build(record)
+    except FiscalPrintError as exc:
+        _mark_failed(record, exc)
+        return None
+    # The device's operator password stays on the till PC -- the bridge
+    # fills Operator/Password in from its own bridge.ini, so it never
+    # passes through the browser (where anyone could read it).
+    for command in commands:
+        if command['cmd'] == ecr_runner.OPEN_RECEIPT_CMD:
+            command['data'].pop('Operator', None)
+            command['data'].pop('Password', None)
+    record.fiscal_status = SaleAttributes.FISCAL_PENDING
+    record.fiscal_error = ''
+    record.fiscal_unic_sale_num = unic_sale_num
+    record.save(update_fields=['fiscal_status', 'fiscal_error', 'fiscal_unic_sale_num'])
+    return {'kind': kind, 'id': record.pk, 'commands': commands}
+
+
+def prepare_sale_for_bridge(sale):
+    """Bridge-mode counterpart of attempt_print: builds the receipt, marks
+    the sale PENDING and returns the job for the browser (None if it
+    couldn't be built -- the sale is FAILED then)."""
+    return _prepare_bridge_job(sale, 'sale', _sale_receipt_commands)
+
+
+def prepare_refund_for_bridge(refund):
+    """Bridge-mode counterpart of attempt_print_refund."""
+    return _prepare_bridge_job(refund, 'refund', _refund_receipt_commands)
+
+
+def queue_bridge_job(request, job):
+    """Parks `job` in the session; the next full page the cashier sees picks
+    it up (context_processors.fiscal_bridge) and the browser runs it.
+    Survives the redirect after a completed sale."""
+    if job:
+        request.session[BRIDGE_JOB_SESSION_KEY] = job
+
+
+def record_bridge_result(record, ok, error='', results=None):
+    """Stores what the bridge answered for a PENDING sale/refund. Returns
+    False (and changes nothing) if the record isn't PENDING -- a result
+    can't overwrite one that's already settled."""
+    from .models import SaleAttributes
+
+    if record.fiscal_status != SaleAttributes.FISCAL_PENDING:
+        return False
+    if not ok:
+        _mark_failed(record, error or 'The fiscal bridge reported a failure without details.')
+        return True
+    record.fiscal_status = SaleAttributes.FISCAL_PRINTED
+    record.fiscal_error = ''
+    record.fiscal_printed_at = timezone.now()
+    fields = ['fiscal_status', 'fiscal_error', 'fiscal_printed_at']
+    if isinstance(record, SaleAttributes):
+        # FDEndFiscRcp is always the last command, so its answer (with the
+        # device's own receipt number, needed later for storno) is last.
+        end_result = (results or [{}])[-1]
+        receipt_number = end_result.get('FiscReceipt') if isinstance(end_result, dict) else None
+        try:
+            record.fiscal_receipt_number = int(receipt_number) if receipt_number is not None else None
+        except (TypeError, ValueError):
+            record.fiscal_receipt_number = None
+        fields.append('fiscal_receipt_number')
+    record.save(update_fields=fields)
+    return True
+
+
 # Daily report Item values, straight from the FDDailyRpt table in
 # kasov_aparat_ECRCommApp_Guide.pdf (order they're listed in, 0-indexed --
 # confirmed by the worked example there, which used Item=0 for the Z report
 # it showed a real response for).
 _DAILY_RPT_ITEM_Z = 0
 _DAILY_RPT_ITEM_X = 1
+
+
+def daily_report_commands(item):
+    # Option='' -- "No operator clear" (confirmed the actual, working
+    # request in the guide's own worked example uses this, not the
+    # separately-illustrated "Operator clear" string); a single-till
+    # pilot store has no separate per-operator totals worth resetting.
+    return [{'cmd': 'FDDailyRpt', 'data': {'Item': item, 'Option': ''}}]
+
+
+def x_report_commands():
+    return daily_report_commands(_DAILY_RPT_ITEM_X)
+
+
+def z_report_commands():
+    return daily_report_commands(_DAILY_RPT_ITEM_Z)
+
+
+def period_report_commands(start_date, end_date):
+    return [{'cmd': 'FDRptFromFMByDate', 'data': {
+        'StartDate': start_date.strftime('%d%m%y'),
+        'EndDate': end_date.strftime('%d%m%y'),
+        'PAY': 'PAY',
+    }}]
 
 
 def _print_daily_report(item):
@@ -334,11 +474,7 @@ def _print_daily_report(item):
     shows it directly, there's nothing to persist a retry-able status on."""
     if not settings.FISCAL_ENABLED:
         raise FiscalPrintError('Fiscal printing is disabled (FISCAL_ENABLED).')
-    # Option='' -- "No operator clear" (confirmed the actual, working
-    # request in the guide's own worked example uses this, not the
-    # separately-illustrated "Operator clear" string); a single-till
-    # pilot store has no separate per-operator totals worth resetting.
-    _run_commands([{'cmd': 'FDDailyRpt', 'data': {'Item': item, 'Option': ''}}])
+    _run_commands(daily_report_commands(item))
 
 
 def print_x_report():
@@ -365,8 +501,4 @@ def print_period_report(start_date, end_date):
     STORA itself."""
     if not settings.FISCAL_ENABLED:
         raise FiscalPrintError('Fiscal printing is disabled (FISCAL_ENABLED).')
-    _run_commands([{'cmd': 'FDRptFromFMByDate', 'data': {
-        'StartDate': start_date.strftime('%d%m%y'),
-        'EndDate': end_date.strftime('%d%m%y'),
-        'PAY': 'PAY',
-    }}])
+    _run_commands(period_report_commands(start_date, end_date))
