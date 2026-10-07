@@ -1,0 +1,16 @@
+; Copy this file to bridge.ini (same folder) and fill it in.
+[bridge]
+; The STORA address the cashier opens in the browser. Only pages from here
+; may send receipts to this bridge. Several addresses: comma-separated.
+allowed_origins = https://stora.petarstoychev.com
+
+; Port the bridge listens on (127.0.0.1 only).
+listen_port = 7777
+
+; Same values as FISCAL_* in a local STORA's .env (see DEPLOYMENT.md).
+ecrcommapp_path = 
+com_port = COM4
+ecr_api_url = http://127.0.0.1:7000/Api
+
+; true = log every command sent to the printer.
+debug = false

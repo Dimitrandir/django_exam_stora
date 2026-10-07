@@ -10,122 +10,48 @@ Only call `attempt_print` (never `print_fiscal_receipt` directly) from a
 view -- it never raises, so a fiscal failure can never block a sale that's
 already been saved to the DB.
 """
-import json
 import logging
-import subprocess
-import time
-import urllib.error
-import urllib.request
 
 from django.conf import settings
 from django.utils import timezone
 
+from fiscal_bridge import ecr_runner
+
 logger = logging.getLogger(__name__)
 
+# The actual talking to ECRCommApp lives in fiscal_bridge/ecr_runner.py
+# (no Django there), so the cloud install's bridge on the till PC can run
+# the exact same code. This module only BUILDS the command list for a
+# receipt/report from STORA's own records, then runs it locally through
+# the wrappers below.
+FiscalPrintError = ecr_runner.FiscalPrintError
 
-class FiscalPrintError(Exception):
-    """Any failure talking to the fiscal device -- message is safe to store
-    in SaleAttributes.fiscal_error and show to a cashier/manager."""
+
+def _device_config():
+    return ecr_runner.DeviceConfig(
+        api_url=settings.FISCAL_API_URL,
+        com_port=settings.FISCAL_COM_PORT,
+        ecrcommapp_path=settings.FISCAL_ECRCOMMAPP_PATH,
+        debug=settings.FISCAL_DEBUG,
+    )
 
 
 def _post_command(cmd, cmd_data, timeout=15):
-    """POSTs one ReqCommand to ECRCommApp and returns the ResCommand's
-    CmdData dict on success. Raises FiscalPrintError on any transport,
-    service, or device-reported error. Every error message names the COM
-    port that was used -- asked for live so a failure on screen says
-    exactly what was tried and where, not just that something failed (the
-    port is the one thing that's actually changed between working and
-    failing sessions so far, see the COM4->COM7 drift noted in
-    DEPLOYMENT.md/CLAUDE.md)."""
-    port = settings.FISCAL_COM_PORT
-    if settings.FISCAL_DEBUG:
-        logger.info('Fiscal: sending %s on %s -- %s', cmd, port, cmd_data)
-    body = {
-        'WebSrvCmd': {
-            'CmdType': 'CmdCOMPort',
-            'Cmd': {
-                'ComPortName': port,
-                'COMPortMsgList': [{'ReqCommand': {'Cmd': cmd, 'CmdData': cmd_data}}],
-            },
-        },
-    }
-    request = urllib.request.Request(
-        settings.FISCAL_API_URL, data=json.dumps(body).encode('utf-8'), method='POST',
-        headers={'Content-Type': 'application/json; charset=utf-8'},
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            result = json.loads(response.read().decode('utf-8'))
-    except (urllib.error.URLError, OSError, ValueError) as exc:
-        raise FiscalPrintError(f'{cmd} on {port}: could not reach the fiscal device service -- {exc}') from exc
-
-    web_srv_cmd = result.get('WebSrvCmd', {})
-    if web_srv_cmd.get('HasErr'):
-        raise FiscalPrintError(f'{cmd} on {port}: fiscal device service error -- {web_srv_cmd.get("Res")}')
-
-    msg_list = web_srv_cmd.get('Cmd', {}).get('COMPortMsgList') or []
-    if not msg_list:
-        raise FiscalPrintError(f'{cmd} on {port}: fiscal device service returned an empty response.')
-    msg = msg_list[0]
-    if msg.get('HasErr'):
-        raise FiscalPrintError(f'{cmd} on {port}: fiscal device COM error -- {msg.get("Res")}')
-
-    res_command = msg.get('ResCommand', {})
-    if not res_command.get('IsValid') or res_command.get('ErrorCode', 0) != 0:
-        raise FiscalPrintError(f'{cmd} on {port}: device error code {res_command.get("ErrorCode")}')
-    if settings.FISCAL_DEBUG:
-        logger.info('Fiscal: %s on %s succeeded -- %s', cmd, port, res_command.get('CmdData', {}))
-    return res_command.get('CmdData', {})
-
-
-def _wait_for_server(process, timeout=10):
-    """Polls with a real (harmless, read-only) FDStatus call -- confirms
-    both the HTTP service AND the COM port are actually reachable, not just
-    that the process started."""
-    deadline = time.monotonic() + timeout
-    last_error = None
-    while time.monotonic() < deadline:
-        if process.poll() is not None:
-            raise FiscalPrintError('ECRCommApp exited before it became ready.')
-        try:
-            _post_command('FDStatus', {}, timeout=2)
-            return
-        except FiscalPrintError as exc:
-            last_error = exc
-            time.sleep(0.5)
-    raise FiscalPrintError(
-        f'ECRCommApp did not become ready in time on {settings.FISCAL_COM_PORT} '
-        f'(last attempt: {last_error}).'
-    )
+    return ecr_runner.post_command(_device_config(), cmd, cmd_data, timeout=timeout)
 
 
 def _start_ecrcommapp():
-    if not settings.FISCAL_ECRCOMMAPP_PATH:
-        raise FiscalPrintError('FISCAL_ECRCOMMAPP_PATH is not configured.')
-    if settings.FISCAL_DEBUG:
-        logger.info('Fiscal: starting ECRCommApp (%s) for %s', settings.FISCAL_ECRCOMMAPP_PATH, settings.FISCAL_COM_PORT)
-    try:
-        process = subprocess.Popen([settings.FISCAL_ECRCOMMAPP_PATH])
-    except OSError as exc:
-        raise FiscalPrintError(f'Could not start ECRCommApp ({settings.FISCAL_ECRCOMMAPP_PATH}): {exc}') from exc
-    _wait_for_server(process)
-    if settings.FISCAL_DEBUG:
-        logger.info('Fiscal: ECRCommApp is ready on %s', settings.FISCAL_COM_PORT)
-    return process
+    return ecr_runner.start_ecrcommapp(_device_config())
 
 
 def _stop_ecrcommapp(process):
-    if process is None:
-        return
-    try:
-        process.terminate()
-        process.wait(timeout=5)
-    except Exception:
-        logger.warning('ECRCommApp (pid %s) did not exit cleanly -- killing it', process.pid)
-        try:
-            process.kill()
-        except Exception:
-            logger.exception('Could not kill ECRCommApp process %s', process.pid)
+    ecr_runner.stop_ecrcommapp(process)
+
+
+def _run_commands(commands):
+    """Runs `commands` on the printer attached to THIS machine. Looks the
+    three wrappers up at call time, so tests can mock them out."""
+    return ecr_runner.run_commands(commands, post=_post_command, start=_start_ecrcommapp, stop=_stop_ecrcommapp)
 
 
 def _next_unic_sale_num():
@@ -153,8 +79,8 @@ def _validate_items(sale):
     return items
 
 
-def _run_receipt(start_cmd_data, items, sale_type, amount_in, barcode_data=None):
-    """Shared open -> sell -> total -> close sequence for both a real sale
+def _receipt_commands(start_cmd_data, items, sale_type, amount_in, barcode_data=None):
+    """Builds the shared open -> sell -> total -> close sequence for both a real sale
     and a storno -- only what differs between them (FDStartFiscRcp's extra
     fields, whether each line is a Sale or Refund, the paid/refunded amount)
     is passed in. `items` is a list of {'name', 'tax_letter', 'price', 'qty'}
@@ -163,97 +89,74 @@ def _run_receipt(start_cmd_data, items, sale_type, amount_in, barcode_data=None)
     printed standalone after the fact) -- used so a printed sale receipt can
     later be scanned straight into the "Refund a Sale" search screen (its
     numeric-query handling already treats a bare number as an exact sale ID,
-    see refund_find). Returns FDEndFiscRcp's response CmdData (has
-    FiscReceipt/AllReceipt)."""
-    process = _start_ecrcommapp()
-    receipt_open = False
-    try:
-        _post_command('FDStartFiscRcp', start_cmd_data)
-        receipt_open = True
+    see refund_find). Returns the command list -- see _run_commands; if
+    any of it fails once the receipt is open, ecr_runner.run_commands
+    cancels the receipt on the device."""
+    commands = [{'cmd': 'FDStartFiscRcp', 'data': start_cmd_data}]
 
-        for item in items:
-            _post_command('FDSaleItem', {
-                'Text1': item['name'][:28],
-                'Text2': '',
-                'TaxGrp': item['tax_letter'],
-                'Sale type': sale_type,
-                'Price': str(item['price']),
-                'Qty': str(item['qty']),
-                'Percent': '0',
-                'Netto': '0',
-            })
+    for item in items:
+        commands.append({'cmd': 'FDSaleItem', 'data': {
+            'Text1': item['name'][:28],
+            'Text2': '',
+            'TaxGrp': item['tax_letter'],
+            'Sale type': sale_type,
+            'Price': str(item['price']),
+            'Qty': str(item['qty']),
+            'Percent': '0',
+            'Netto': '0',
+        }})
 
-        _post_command('FDTotalSum', {
-            'Text1': '', 'Text2': '',
-            'Payment type': 'В Брой',
-            'AmountIn': str(amount_in),
-        })
+    commands.append({'cmd': 'FDTotalSum', 'data': {
+        'Text1': '', 'Text2': '',
+        'Payment type': 'В Брой',
+        'AmountIn': str(amount_in),
+    }})
 
-        if barcode_data:
-            # Moved here (after FDTotalSum, before FDEndFiscRcp) to match a
-            # real reference receipt the user photographed from another
-            # store -- on paper the barcode sits between "В брой евро" and
-            # "Ресто", meaning change is printed when the receipt actually
-            # closes (FDEndFiscRcp), not as part of FDTotalSum itself. Used
-            # to run right after the item loop, before FDTotalSum, which
-            # printed it above the total/payment lines instead. NOT YET
-            # CONFIRMED LIVE on our own device (no physical printer attached
-            # in this environment) -- verify the barcode actually lands
-            # between those two lines next real test print, same as every
-            # other field here that started as "inferred" before being
-            # confirmed.
-            _post_command('FDPrintBarcode', {
-                # Type is the device's own NUMERIC barcode-type code, not
-                # the readable name -- confirmed live (2026-09-28): sending
-                # the string "Code128" here made FDPrintBarcode fail
-                # outright with a service-level error, on a receipt that
-                # had already opened and sold an item fine. The guide's own
-                # worked example uses Type "1" with 7-digit data, matching
-                # EAN8's documented "7 bytes" spec exactly, so "3" for
-                # Code128 here is inferred from that table's row order
-                # (1=EAN8, 2=EAN13, 3=Code128, ...), not from an explicit
-                # numbered table in the doc (none exists) -- confirm via
-                # ECRWebApp's own FDPrintBarcode dropdown before trusting
-                # it blindly, same way Refund="R" and Reason 0/1/2 were
-                # confirmed rather than guessed.
-                # Scale -- "width of the barcode's thinnest line, in
-                # pixels; 0 uses the device's own default width" per the
-                # guide's own field description (not a documented default
-                # value, just "0 = default"). A small explicit value prints
-                # thinner than that default, asked for live after the same
-                # photo comparison. Also not yet confirmed live -- if 2px
-                # turns out too thin to scan reliably on the real printer,
-                # go up from there rather than back to 0.
-                'Type': '3', 'Data': barcode_data, 'Pos': 'C', 'Scale': 2, 'High': 0,
-                # PrnText is a JSON bool here, not the string '0'/'1' the
-                # doc's own field description implies -- the worked example
-                # sends `"PrnText": true` literally; also confirmed live
-                # that the string form was part of what failed.
-                'PrnText': True,
-            })
+    if barcode_data:
+        # Moved here (after FDTotalSum, before FDEndFiscRcp) to match a
+        # real reference receipt the user photographed from another
+        # store -- on paper the barcode sits between "В брой евро" and
+        # "Ресто", meaning change is printed when the receipt actually
+        # closes (FDEndFiscRcp), not as part of FDTotalSum itself. Used
+        # to run right after the item loop, before FDTotalSum, which
+        # printed it above the total/payment lines instead. NOT YET
+        # CONFIRMED LIVE on our own device (no physical printer attached
+        # in this environment) -- verify the barcode actually lands
+        # between those two lines next real test print, same as every
+        # other field here that started as "inferred" before being
+        # confirmed.
+        commands.append({'cmd': 'FDPrintBarcode', 'data': {
+            # Type is the device's own NUMERIC barcode-type code, not
+            # the readable name -- confirmed live (2026-09-28): sending
+            # the string "Code128" here made FDPrintBarcode fail
+            # outright with a service-level error, on a receipt that
+            # had already opened and sold an item fine. The guide's own
+            # worked example uses Type "1" with 7-digit data, matching
+            # EAN8's documented "7 bytes" spec exactly, so "3" for
+            # Code128 here is inferred from that table's row order
+            # (1=EAN8, 2=EAN13, 3=Code128, ...), not from an explicit
+            # numbered table in the doc (none exists) -- confirm via
+            # ECRWebApp's own FDPrintBarcode dropdown before trusting
+            # it blindly, same way Refund="R" and Reason 0/1/2 were
+            # confirmed rather than guessed.
+            # Scale -- "width of the barcode's thinnest line, in
+            # pixels; 0 uses the device's own default width" per the
+            # guide's own field description (not a documented default
+            # value, just "0 = default"). A small explicit value prints
+            # thinner than that default, asked for live after the same
+            # photo comparison. Also not yet confirmed live -- if 2px
+            # turns out too thin to scan reliably on the real printer,
+            # go up from there rather than back to 0.
+            'Type': '3', 'Data': barcode_data, 'Pos': 'C', 'Scale': 2, 'High': 0,
+            # PrnText is a JSON bool here, not the string '0'/'1' the
+            # doc's own field description implies -- the worked example
+            # sends `"PrnText": true` literally; also confirmed live
+            # that the string form was part of what failed.
+            'PrnText': True,
+        }})
 
-        end_result = _post_command('FDEndFiscRcp', {})
-        receipt_open = False
-    except FiscalPrintError:
-        if receipt_open:
-            # Best-effort only -- may itself fail, which is logged rather
-            # than raised, since we're already inside a failure path and
-            # must not mask the original error. Confirmed live (2026-09-28,
-            # a FDPrintBarcode failure mid-receipt): this genuinely prints
-            # a real fiscal "АНУЛИРАН БОН" (voided receipt) with its own
-            # valid signature/QR code -- the device won't just silently
-            # drop a half-open fiscal receipt, it formally voids it on
-            # paper. That receipt is the correct, expected outcome of a
-            # failure here, not a sign that something is stuck/corrupted.
-            try:
-                _post_command('FDCancelRcp', {})
-            except FiscalPrintError:
-                logger.warning('Could not cancel a half-open fiscal receipt.')
-        raise
-    finally:
-        _stop_ecrcommapp(process)
-
-    return end_result
+    commands.append({'cmd': 'FDEndFiscRcp', 'data': {}})
+    return commands
 
 
 def print_fiscal_receipt(sale):
@@ -281,7 +184,8 @@ def print_fiscal_receipt(sale):
         'Invoice': '', 'Refund': '', 'Credit': '',
         'Reason': 0, 'DocLink': 0, 'DocLinkDT': '', 'FiskMem': '', 'InvLink': '',
     }
-    end_result = _run_receipt(start_data, items, 'Sale', sale.amount_paid, barcode_data=str(sale.pk))
+    commands = _receipt_commands(start_data, items, 'Sale', sale.amount_paid, barcode_data=str(sale.pk))
+    end_result = _run_commands(commands)[-1]
     return {'unic_sale_num': unic_sale_num, 'receipt_number': end_result.get('FiscReceipt')}
 
 
@@ -388,7 +292,7 @@ def print_fiscal_refund(refund):
         # Reason/DocLinkDT above -- is the remaining suspect, not yet
         # confirmed live either way.
     }
-    _run_receipt(start_data, items, 'Refund', refund.total_amount)
+    _run_commands(_receipt_commands(start_data, items, 'Refund', refund.total_amount))
     return unic_sale_num
 
 
@@ -430,15 +334,11 @@ def _print_daily_report(item):
     shows it directly, there's nothing to persist a retry-able status on."""
     if not settings.FISCAL_ENABLED:
         raise FiscalPrintError('Fiscal printing is disabled (FISCAL_ENABLED).')
-    process = _start_ecrcommapp()
-    try:
-        # Option='' -- "No operator clear" (confirmed the actual, working
-        # request in the guide's own worked example uses this, not the
-        # separately-illustrated "Operator clear" string); a single-till
-        # pilot store has no separate per-operator totals worth resetting.
-        _post_command('FDDailyRpt', {'Item': item, 'Option': ''})
-    finally:
-        _stop_ecrcommapp(process)
+    # Option='' -- "No operator clear" (confirmed the actual, working
+    # request in the guide's own worked example uses this, not the
+    # separately-illustrated "Operator clear" string); a single-till
+    # pilot store has no separate per-operator totals worth resetting.
+    _run_commands([{'cmd': 'FDDailyRpt', 'data': {'Item': item, 'Option': ''}}])
 
 
 def print_x_report():
@@ -465,12 +365,8 @@ def print_period_report(start_date, end_date):
     STORA itself."""
     if not settings.FISCAL_ENABLED:
         raise FiscalPrintError('Fiscal printing is disabled (FISCAL_ENABLED).')
-    process = _start_ecrcommapp()
-    try:
-        _post_command('FDRptFromFMByDate', {
-            'StartDate': start_date.strftime('%d%m%y'),
-            'EndDate': end_date.strftime('%d%m%y'),
-            'PAY': 'PAY',
-        })
-    finally:
-        _stop_ecrcommapp(process)
+    _run_commands([{'cmd': 'FDRptFromFMByDate', 'data': {
+        'StartDate': start_date.strftime('%d%m%y'),
+        'EndDate': end_date.strftime('%d%m%y'),
+        'PAY': 'PAY',
+    }}])

@@ -57,3 +57,5 @@ Thumbs.db
 # key.
 ecrcommapp/
 /db.json
+# Fiscal bridge settings on a till PC (copied from bridge.ini.example)
+fiscal_bridge/bridge.ini
