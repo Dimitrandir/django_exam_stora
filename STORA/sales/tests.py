@@ -1,5 +1,5 @@
 import json
-from datetime import timedelta
+from datetime import timedelta, timezone as dt_timezone
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
@@ -1400,7 +1400,8 @@ class FiscalRefundTests(TestCase):
         self.sale = SaleAttributes.objects.create(
             cashier=self.cashier, payment_method=SaleAttributes.CASH, amount_paid=Decimal('5.00'),
             fiscal_status=SaleAttributes.FISCAL_PRINTED, fiscal_receipt_number=3,
-            fiscal_printed_at=timezone.datetime(2026, 3, 14, 12, 30, tzinfo=timezone.get_current_timezone()),
+            # 12:30 UTC = 14:30 in Sofia (EET, UTC+2 in March).
+            fiscal_printed_at=timezone.datetime(2026, 3, 14, 12, 30, tzinfo=dt_timezone.utc),
         )
         self.sale_item = SaleItems.objects.create(
             sale=self.sale, sale_item=self.product, sale_quantity=Decimal('1.000'), price_at_sale=Decimal('5.00'),
@@ -1446,7 +1447,7 @@ class FiscalRefundTests(TestCase):
         self.assertEqual(start_data['Refund'], 'R')
         self.assertEqual(start_data['Reason'], '0')  # RETURN_COMPLAINT -> "0" (string, not int)
         self.assertEqual(start_data['DocLink'], 3)
-        self.assertEqual(start_data['DocLinkDT'], '14-03-26 12:30:00')
+        self.assertEqual(start_data['DocLinkDT'], '14-03-26 14:30:00')
 
         item_call = mock_post.call_args_list[1]
         item_data = item_call.args[1]

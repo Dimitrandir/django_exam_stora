@@ -245,6 +245,9 @@ FISCAL_DEVICE_SERIAL = os.environ.get('FISCAL_DEVICE_SERIAL', '')
 # in Daisy Manager, a different number than the device's own serial. Only
 # needed for storno (FDStartFiscRcp's FiskMem field), not a normal sale.
 FISCAL_DEVICE_FM_NUMBER = os.environ.get('FISCAL_DEVICE_FM_NUMBER', '')
+# Time zone of the device's own clock -- the original receipt's time on a
+# storno (DocLinkDT) must be in this zone, not in UTC.
+FISCAL_DEVICE_TIME_ZONE = os.environ.get('FISCAL_DEVICE_TIME_ZONE', 'Europe/Sofia')
 FISCAL_OPERATOR_NUM = os.environ.get('FISCAL_OPERATOR_NUM', '1')
 FISCAL_OPERATOR_PASSWORD = os.environ.get('FISCAL_OPERATOR_PASSWORD', '1')
 # Verbose step-by-step logging (every command sent to ECRCommApp + its

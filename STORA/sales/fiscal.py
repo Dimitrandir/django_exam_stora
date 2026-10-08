@@ -11,6 +11,7 @@ view -- it never raises, so a fiscal failure can never block a sale that's
 already been saved to the DB.
 """
 import logging
+from zoneinfo import ZoneInfo
 
 from django.conf import settings
 from django.utils import timezone
@@ -280,7 +281,12 @@ def _refund_receipt_commands(refund):
         # Guide's format spec (and its worked example, "26-06-19 13:41:00")
         # both include seconds -- confirmed live (2026-09-28) that leaving
         # them off ("28-09-26 09:13") made FDStartFiscRcp fail outright.
-        'DocLinkDT': original_sale.fiscal_printed_at.strftime('%d-%m-%y %H:%M:%S'),
+        # The device keeps its own clock in local shop time, but STORA stores
+        # times in UTC (TIME_ZONE='UTC'), so convert first -- otherwise the
+        # link points 2-3 hours before the real original receipt.
+        'DocLinkDT': original_sale.fiscal_printed_at.astimezone(
+            ZoneInfo(settings.FISCAL_DEVICE_TIME_ZONE)
+        ).strftime('%d-%m-%y %H:%M:%S'),
         'FiskMem': settings.FISCAL_DEVICE_FM_NUMBER,
         # Credit/InvLink deliberately NOT sent at all -- they're for a
         # credit-note document, a different operation from a plain storno
