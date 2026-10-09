@@ -710,7 +710,18 @@
         // see last_change in the view) until the cashier rings up the next
         // customer -- the moment a product is added, it's stale and goes
         // away immediately, without waiting on the saveDraft() round trip.
+        //
+        // Tracks what the header should TRULY show right now, separate
+        // from the checkout modal's own live preview (see its own comment
+        // further down) -- needed so canceling checkout without completing
+        // the sale can put the real value back instead of leaving that
+        // in-progress preview stuck on screen forever (flagged live: typed
+        // 555 as Paid just to try it, closed the modal without completing,
+        // "Ресто 457.96" stayed showing with no sale ever made).
+        let trueHeaderChange = document.getElementById('header-change-due').textContent;
+
         function clearHeaderChangeDisplay() {
+            trueHeaderChange = '0.00';
             document.getElementById('header-change-due').textContent = '0.00';
         }
 
@@ -2016,10 +2027,17 @@
             }
 
             // Mirrors into the always-visible header panel (top right) --
-            // it just shows whatever this last computed, staying put once
-            // the modal closes until the next round of input changes it
-            // again (a fresh Paid amount, a new item, etc.).
+            // a live PREVIEW of what the change would be if the sale were
+            // completed right now, so the cashier can see it even with the
+            // modal covering the cart. Not yet real until the sale actually
+            // completes -- 'hidden.bs.modal' below puts trueHeaderChange
+            // (see clearHeaderChangeDisplay's own comment) back once the
+            // modal closes WITHOUT that happening (Cancel/X), so this
+            // preview can't outlive the modal it only makes sense inside.
             const headerChangeEl = document.getElementById('header-change-due');
+            modalEl.addEventListener('hidden.bs.modal', function () {
+                headerChangeEl.textContent = trueHeaderChange;
+            });
 
             function recompute() {
                 const total = currentTotal();
