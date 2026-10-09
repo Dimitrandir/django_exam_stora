@@ -14,6 +14,7 @@ from STORA.deliveries.models import DeliveryAttributes, DeliveryItems, DocumentT
 from STORA.products.forms import ProductForms, RecipeIngredientForm, TaxGroupForm
 from STORA.products.models import (
     Product, Barcode, Category, Suppliers, ProductSupplier, RecipeIngredient, TaxGroup, ProductChangeLog,
+    ProductAttribute,
 )
 from STORA.products.scale_barcode import ean13_check_digit, is_valid_ean13, decode_scale_barcode
 from STORA.products.templatetags.currency_filters import quantity_display
@@ -1617,6 +1618,262 @@ class ScaleBarcodeTests(TestCase):
         self.assertTrue(barcode_row['is_scale_code'])
         product_row = next(p for p in response.context['products_data'] if p['id'] == product.pk)
         self.assertEqual(product_row['unit_type'], 'weight')
+
+
+class ProductAttributeModelTests(TestCase):
+    """ProductAttribute -- a shop-defined custom categorization field
+    (Brand/Color/Size/...), stored as a flat global list. Values live on
+    Product.attributes (JSONField), keyed by str(attribute.id) so renaming
+    an attribute later doesn't orphan already-stored values. CRUD screen
+    and product-form wiring come in later steps -- this just covers the
+    model itself."""
+
+    def test_str_is_the_name(self):
+        attribute = ProductAttribute.objects.create(name='Color')
+        self.assertEqual(str(attribute), 'Color')
+
+    def test_choices_default_to_empty_list(self):
+        # Empty choices = free text field (see the model's own docstring),
+        # not a dropdown -- the default has to actually be [], not None,
+        # for the product form to treat "no choices defined yet" the same
+        # way as "deliberately free text".
+        attribute = ProductAttribute.objects.create(name='Notes')
+        self.assertEqual(attribute.choices, [])
+
+    def test_choices_can_hold_a_predefined_list(self):
+        attribute = ProductAttribute.objects.create(name='Size', choices=['S', 'M', 'L'])
+        attribute.refresh_from_db()
+        self.assertEqual(attribute.choices, ['S', 'M', 'L'])
+
+    def test_name_must_be_unique(self):
+        ProductAttribute.objects.create(name='Color')
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                ProductAttribute.objects.create(name='Color')
+
+    def test_product_attributes_default_to_empty_dict(self):
+        product = Product.objects.create(internal_code='ATTR001', name='Attr Test Product', sell_price=1, quantity=0)
+        self.assertEqual(product.attributes, {})
+
+    def test_product_can_store_attribute_values_keyed_by_attribute_id(self):
+        color = ProductAttribute.objects.create(name='Color', choices=['Red', 'Blue'])
+        product = Product.objects.create(
+            internal_code='ATTR002', name='Attr Test Product 2', sell_price=1, quantity=0,
+            attributes={str(color.pk): 'Red'},
+        )
+        product.refresh_from_db()
+        self.assertEqual(product.attributes, {str(color.pk): 'Red'})
+
+
+class ProductAttributeCRUDTests(TestCase):
+    """The management screen (list/create/edit/delete) -- same permission
+    tier as Tax Groups (see accounts/signals.py): Manager and Warehouse can
+    view/add/change, delete is Manager-only, Cashier has no access at all."""
+
+    def setUp(self):
+        self.manager = Employee.objects.create_user(
+            username='manager-attr', password='pass12345', role=Employee.MANAGER
+        )
+        self.warehouse = Employee.objects.create_user(
+            username='warehouse-attr', password='pass12345', role=Employee.WAREHOUSE
+        )
+        self.cashier = Employee.objects.create_user(
+            username='cashier-attr', password='pass12345', role=Employee.CASHIER
+        )
+        self.color = ProductAttribute.objects.create(name='Color', choices=['Red', 'Blue'])
+
+    def test_cashier_cannot_view_list(self):
+        self.client.force_login(self.cashier)
+        response = self.client.get(reverse('product_attribute_list'))
+        self.assertEqual(response.status_code, 403)
+
+    def test_warehouse_can_list_and_create(self):
+        self.client.force_login(self.warehouse)
+        self.assertEqual(self.client.get(reverse('product_attribute_list')).status_code, 200)
+        response = self.client.post(reverse('product_attribute_create'), {
+            'name': 'Size', 'choices': 'S\nM\nL',
+        })
+        self.assertEqual(response.status_code, 302)
+        created = ProductAttribute.objects.get(name='Size')
+        self.assertEqual(created.choices, ['S', 'M', 'L'])
+
+    def test_blank_choices_textarea_saves_as_empty_list(self):
+        # Empty = free text field on the product form (see the model's own
+        # docstring) -- blank lines/whitespace-only input must not survive
+        # as garbage entries like ['', ' '].
+        self.client.force_login(self.manager)
+        response = self.client.post(reverse('product_attribute_create'), {
+            'name': 'Notes', 'choices': '  \n\n',
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(ProductAttribute.objects.get(name='Notes').choices, [])
+
+    def test_edit_form_shows_existing_choices_one_per_line(self):
+        self.client.force_login(self.manager)
+        response = self.client.get(reverse('product_attribute_edit', kwargs={'pk': self.color.pk}))
+        self.assertEqual(response.context['form']['choices'].value(), 'Red\nBlue')
+
+    def test_warehouse_cannot_delete(self):
+        self.client.force_login(self.warehouse)
+        response = self.client.get(reverse('product_attribute_delete', kwargs={'pk': self.color.pk}))
+        self.assertEqual(response.status_code, 403)
+
+    def test_manager_can_delete(self):
+        self.client.force_login(self.manager)
+        response = self.client.post(reverse('product_attribute_delete', kwargs={'pk': self.color.pk}))
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(ProductAttribute.objects.filter(pk=self.color.pk).exists())
+
+
+class ProductAttributeBulkDeleteViewTests(TestCase):
+    """Backs the (now Tabulator-based, see product_attribute_list.html)
+    list's checkbox column + bulk bar Delete button -- mirrors
+    CategoryBulkDeleteViewTests."""
+
+    def setUp(self):
+        self.manager = Employee.objects.create_user(
+            username='manager-attrbulk', password='pass12345', role=Employee.MANAGER
+        )
+        self.cashier = Employee.objects.create_user(
+            username='cashier-attrbulk', password='pass12345', role=Employee.CASHIER
+        )
+        self.attr_a = ProductAttribute.objects.create(name='Bulk Delete A')
+        self.attr_b = ProductAttribute.objects.create(name='Bulk Delete B')
+
+    def _post(self, ids):
+        return self.client.post(reverse('product_attribute_bulk_delete'), {'ids': ids})
+
+    def test_cashier_cannot_bulk_delete(self):
+        self.client.force_login(self.cashier)
+        response = self._post([self.attr_a.pk])
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(ProductAttribute.objects.filter(pk=self.attr_a.pk).exists())
+
+    def test_manager_can_bulk_delete(self):
+        self.client.force_login(self.manager)
+        response = self._post([self.attr_a.pk, self.attr_b.pk])
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['deleted'], 2)
+        self.assertFalse(ProductAttribute.objects.filter(pk__in=[self.attr_a.pk, self.attr_b.pk]).exists())
+
+
+class ProductAttributeFieldsOnFormTests(TestCase):
+    """The product create/edit form grows one extra field per defined
+    ProductAttribute (ProductForms.__init__/save/attribute_bound_fields) --
+    not real Meta.fields, collected back into Product.attributes on save,
+    keyed by attribute id. Choice attributes render as a dropdown
+    restricted to the predefined list; attributes with no predefined
+    choices render as plain free text."""
+
+    def setUp(self):
+        self.manager = Employee.objects.create_user(
+            username='manager-attrform', password='pass12345', role=Employee.MANAGER
+        )
+        self.client.force_login(self.manager)
+        self.color = ProductAttribute.objects.create(name='Color', choices=['Red', 'Blue'])
+        self.notes = ProductAttribute.objects.create(name='Notes')
+
+    def _formset_payload(self):
+        return {
+            'barcode-TOTAL_FORMS': '0', 'barcode-INITIAL_FORMS': '0',
+            'barcode-MIN_NUM_FORMS': '0', 'barcode-MAX_NUM_FORMS': '1000',
+            'supplier-TOTAL_FORMS': '0', 'supplier-INITIAL_FORMS': '0',
+            'supplier-MIN_NUM_FORMS': '0', 'supplier-MAX_NUM_FORMS': '1000',
+            'recipe-TOTAL_FORMS': '0', 'recipe-INITIAL_FORMS': '0',
+            'recipe-MIN_NUM_FORMS': '0', 'recipe-MAX_NUM_FORMS': '1000',
+        }
+
+    def test_create_page_renders_one_field_per_attribute(self):
+        response = self.client.get(reverse('product_create'))
+        content = response.content.decode()
+        self.assertIn(f'attribute_{self.color.pk}', content)
+        self.assertIn(f'attribute_{self.notes.pk}', content)
+
+    def test_create_page_attributes_section_sits_before_barcode_and_starts_hidden(self):
+        # Asked for live: Attributes moved right after the Product section
+        # (above Barcode/Price/Supplier), collapsed by default behind a
+        # "+ Add attributes" toggle next to Category -- most products won't
+        # use this, so it shouldn't clutter the form unless opened.
+        response = self.client.get(reverse('product_create'))
+        content = response.content.decode()
+        self.assertLess(content.index('id="attributes-section"'), content.index('id="barcode-forms-container"'))
+        self.assertIn('id="toggle-attributes-btn"', content)
+        self.assertIn('id="attributes-section" style="display: none;"', content)
+
+    def test_submitting_attribute_values_stores_them_keyed_by_id(self):
+        response = self.client.post(reverse('product_create'), {
+            'internal_code': 'ATF001', 'name': 'Attr Form Product', 'unit_type': 'piece',
+            'sell_price': '2.00', 'quantity': '0',
+            f'attribute_{self.color.pk}': 'Red',
+            f'attribute_{self.notes.pk}': 'Fragile',
+            **self._formset_payload(),
+        })
+        self.assertEqual(response.status_code, 302)
+        product = Product.objects.get(internal_code='ATF001')
+        self.assertEqual(product.attributes, {str(self.color.pk): 'Red', str(self.notes.pk): 'Fragile'})
+
+    def test_blank_attribute_values_are_not_stored(self):
+        response = self.client.post(reverse('product_create'), {
+            'internal_code': 'ATF002', 'name': 'Attr Form Product 2', 'unit_type': 'piece',
+            'sell_price': '2.00', 'quantity': '0',
+            f'attribute_{self.color.pk}': '',
+            **self._formset_payload(),
+        })
+        self.assertEqual(response.status_code, 302)
+        product = Product.objects.get(internal_code='ATF002')
+        self.assertEqual(product.attributes, {})
+
+    def test_choice_attribute_rejects_a_value_outside_the_predefined_list(self):
+        response = self.client.post(reverse('product_create'), {
+            'internal_code': 'ATF003', 'name': 'Attr Form Product 3', 'unit_type': 'piece',
+            'sell_price': '2.00', 'quantity': '0',
+            f'attribute_{self.color.pk}': 'Purple',
+            **self._formset_payload(),
+        })
+        self.assertEqual(response.status_code, 200)  # re-rendered with errors, not saved
+        self.assertFalse(Product.objects.filter(internal_code='ATF003').exists())
+
+    def test_edit_form_prefills_existing_attribute_values(self):
+        product = Product.objects.create(
+            internal_code='ATF004', name='Attr Form Product 4', sell_price=2, quantity=0,
+            attributes={str(self.color.pk): 'Blue'},
+        )
+        response = self.client.get(reverse('product_edit', kwargs={'pk': product.pk}))
+        self.assertEqual(response.context['form'][f'attribute_{self.color.pk}'].value(), 'Blue')
+
+
+class ProductListAttributeColumnTests(TestCase):
+    """Products List grows one column per defined ProductAttribute (see
+    ProductListView.get_context_data) -- Excel-style filter/sort/export
+    come for free from the shared table convention once a column exists,
+    nothing special-cased for these."""
+
+    def setUp(self):
+        self.manager = Employee.objects.create_user(
+            username='manager-attrgrid', password='pass12345', role=Employee.MANAGER
+        )
+        self.client.force_login(self.manager)
+        self.color = ProductAttribute.objects.create(name='Color', choices=['Red', 'Blue'])
+        self.with_value = Product.objects.create(
+            internal_code='AG0001', name='Has Color', sell_price=1, quantity=0,
+            attributes={str(self.color.pk): 'Red'},
+        )
+        self.without_value = Product.objects.create(
+            internal_code='AG0002', name='No Color', sell_price=1, quantity=0,
+        )
+
+    def test_context_exposes_the_attribute_list_and_per_row_values(self):
+        response = self.client.get(reverse('product_list'))
+        self.assertIn(self.color, response.context['product_attributes'])
+        rows = {r['id']: r for r in response.context['products_data']}
+        self.assertEqual(rows[self.with_value.pk][f'attribute_{self.color.pk}'], 'Red')
+        self.assertEqual(rows[self.without_value.pk][f'attribute_{self.color.pk}'], '')
+
+    def test_list_page_renders_the_attribute_as_a_column(self):
+        response = self.client.get(reverse('product_list'))
+        content = response.content.decode()
+        self.assertIn(f"field: 'attribute_{self.color.pk}'", content)
+        self.assertIn('Color', content)
 
 
 class TaxGroupTests(TestCase):

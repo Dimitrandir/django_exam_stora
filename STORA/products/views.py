@@ -24,12 +24,23 @@ from STORA.deliveries.models import DeliveryAttributes, DeliveryItems, DeliveryI
 from STORA.revisions.models import RevisionAttributes, RevisionItems
 from STORA.products.forms import (
     ProductForms, ProductInlineEditForm, CategoryForm, SuppliersForm, BarcodeFormSet, ProductSupplierFormSet,
-    RecipeIngredientFormSet, ProductHistoryPeriodForm, TaxGroupForm,
+    RecipeIngredientFormSet, ProductHistoryPeriodForm, TaxGroupForm, ProductAttributeForm,
 )
-from STORA.products.models import Product, Barcode, Category, Suppliers, TaxGroup
+from STORA.products.models import Product, Barcode, Category, Suppliers, TaxGroup, ProductAttribute
 from STORA.pricelists.services import resolve_prices
 from STORA.sales.models import SaleAttributes, SaleItems
 from STORA.sales.tasks import backfill_recipe_ingredient_stock
+
+
+def flatten_product_attributes(product, attributes):
+    """A product's own ProductAttribute values, flattened to
+    `attribute_<id>` keys -- the one convention every Tabulator grid that
+    shows a per-product attribute column uses (Products List here, and the
+    Reports/Orders screens that import this). `attributes` is the full
+    ProductAttribute list -- fetch it ONCE per page (ProductAttribute.
+    objects.all(), outside whatever per-row loop builds the grid data) and
+    pass the same list to every call, not a fresh query per row."""
+    return {f'attribute_{a.pk}': product.attributes.get(str(a.pk), '') for a in attributes}
 
 
 def get_used_internal_codes():
@@ -83,6 +94,10 @@ class ProductListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListView
         products_data = []
         products_list = list(context['products'])
         price_list_matches = resolve_prices(products_list)
+        # Fetched once, not per product -- one column per shop-defined
+        # attribute (see ProductAttribute's own docstring), read-only here
+        # for now (not wired into the "Enable Edit" inline-update flow).
+        product_attributes = list(ProductAttribute.objects.all())
         for product in products_list:
             barcodes = list(product.barcode.all())
             suppliers = list(product.product_suppliers.all())
@@ -123,9 +138,11 @@ class ProductListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListView
             for i in range(self.GRID_SLOT_COUNT):
                 row[f'barcode_{i + 1}'] = barcodes[i].code if i < len(barcodes) else ''
                 row[f'supplier_{i + 1}'] = suppliers[i].supplier.name if i < len(suppliers) else ''
+            row.update(flatten_product_attributes(product, product_attributes))
             products_data.append(row)
 
         context['products_data'] = products_data
+        context['product_attributes'] = product_attributes
         return context
 
 
@@ -972,6 +989,78 @@ class TaxGroupDeleteView(LoginRequiredMixin, StaffPermissionRequiredMixin, Delet
     model = TaxGroup
     template_name = 'products/tax_group_confirm_delete.html'
     success_url = reverse_lazy('tax_group_list')
+
+
+class ProductAttributeListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListView):
+    permission_required = 'products.view_productattribute'
+    model = ProductAttribute
+    template_name = 'products/product_attribute_list.html'
+    context_object_name = 'product_attributes'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        can_edit = self.request.user.has_perm('products.change_productattribute')
+        context['product_attributes_data'] = [
+            {
+                'id': attribute.pk,
+                'name': attribute.name,
+                # "Free text" is already translated via Django's own
+                # NON_FIELD choices-empty convention elsewhere -- simplest
+                # here to just use the same literal the old plain-table
+                # version showed, now serialized server-side instead of in
+                # the template, since this row feeds Tabulator as JSON.
+                'choices_display': ', '.join(attribute.choices) if attribute.choices else _('Free text'),
+                'edit_url': reverse('product_attribute_edit', kwargs={'pk': attribute.pk}) if can_edit else '',
+            }
+            for attribute in context['product_attributes']
+        ]
+        return context
+
+
+class ProductAttributeCreateView(LoginRequiredMixin, StaffPermissionRequiredMixin, CreateView):
+    permission_required = 'products.add_productattribute'
+    model = ProductAttribute
+    form_class = ProductAttributeForm
+    template_name = 'products/product_attribute_form.html'
+    success_url = reverse_lazy('product_attribute_list')
+
+
+class ProductAttributeUpdateView(LoginRequiredMixin, StaffPermissionRequiredMixin, UpdateView):
+    permission_required = 'products.change_productattribute'
+    model = ProductAttribute
+    form_class = ProductAttributeForm
+    template_name = 'products/product_attribute_form.html'
+    context_object_name = 'product_attribute'
+    success_url = reverse_lazy('product_attribute_list')
+
+
+class ProductAttributeDeleteView(LoginRequiredMixin, StaffPermissionRequiredMixin, DeleteView):
+    permission_required = 'products.delete_productattribute'
+    model = ProductAttribute
+    template_name = 'products/product_attribute_confirm_delete.html'
+    success_url = reverse_lazy('product_attribute_list')
+
+
+class ProductAttributeBulkDeleteView(LoginRequiredMixin, StaffPermissionRequiredMixin, View):
+    """Mirrors CategoryBulkDeleteView -- what the list's own checkbox + bulk
+    bar posts to, one object at a time (not queryset.delete()). No
+    ProtectedError risk here at all (nothing FKs to ProductAttribute --
+    values live in Product.attributes, a plain JSON blob, not a real
+    relation), but looping anyway keeps this consistent with the other
+    bulk-delete endpoints in case that ever changes."""
+
+    permission_required = 'products.delete_productattribute'
+
+    def post(self, request):
+        ids = request.POST.getlist('ids')
+        if not ids:
+            return JsonResponse({'error': _('No attributes selected.')}, status=400)
+
+        deleted = 0
+        for attribute in ProductAttribute.objects.filter(pk__in=ids):
+            attribute.delete()
+            deleted += 1
+        return JsonResponse({'deleted': deleted})
 
 
 class SuppliersListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListView):

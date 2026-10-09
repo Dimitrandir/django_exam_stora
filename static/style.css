@@ -2948,6 +2948,26 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
     color: var(--accent-color);
     text-decoration: none;
     align-self: flex-start;
+    /* Explicit reset -- this class used to only ever sit on an <a> (plain
+       text link, nothing to reset). The "+ Add attributes" toggle button
+       put it on a <button> for the first time, which inherited the
+       global `button { background-color: var(--accent-color); color:
+       white }` rule (see CLAUDE.md's own notes on this exact trap) --
+       this class selector already beats that element selector on
+       specificity for `color` (confirmed: the text WAS rendering, just
+       in the same accent-color blue as the background it also inherited,
+       so it looked blank), but background/padding/border/display still
+       came through unchallenged, producing an oversized solid block
+       instead of plain link text. Resetting all of it here means any
+       FUTURE <button class="field__aux-link"> is safe by default too,
+       not just this one. */
+    background: none;
+    border: none;
+    padding: 0;
+    border-radius: 0;
+    display: inline;
+    font-weight: 400;
+    cursor: pointer;
 }
 
 .field--checkbox {

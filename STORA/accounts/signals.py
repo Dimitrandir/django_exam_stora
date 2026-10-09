@@ -51,6 +51,12 @@ def create_default_groups(sender, **kwargs):
             'view_taxgroup',
             'add_taxgroup',
             'change_taxgroup',
+            # Same manageable-list tier as Tax Groups -- Warehouse/Manager
+            # both define what a product can be described by, delete stays
+            # Manager-only (not listed here, see managers_group above).
+            'view_productattribute',
+            'add_productattribute',
+            'change_productattribute',
         ]
     )
     # Warehouse receives deliveries day-to-day (add/change) but deleting one

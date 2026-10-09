@@ -346,6 +346,9 @@ document.addEventListener('DOMContentLoaded', function () {
         {title: '{% translate "Supplier (Primary)" %}', field: 'supplier_1', width: 160},
         {title: '{% translate "Alt Supplier 1" %}', field: 'supplier_2', width: 160, visible: false},
         {title: '{% translate "Alt Supplier 2" %}', field: 'supplier_3', width: 160, visible: false},
+        {% for attribute in product_attributes %}
+        {title: '{{ attribute.name|escapejs }}', field: 'attribute_{{ attribute.pk }}', width: 120},
+        {% endfor %}
     ], {
         placeholder: '{% translate "No products found." %}', selectableRows: true,
         // Bumped from 'products-list' to '-v2' when the column titles were

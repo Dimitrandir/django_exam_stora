@@ -105,6 +105,49 @@ class TaxGroup(models.Model):
         return f'{self.name} ({self.rate}%)'
 
 
+class ProductAttribute(models.Model):
+    """A custom categorization field a shop defines for itself -- e.g. a
+    clothing store wants Brand/Color/Gender/Size, another shop wants
+    something else entirely, and neither is known in advance. One flat,
+    global list (not scoped to a Category) -- the person filling in a
+    product's form just leaves whichever ones don't apply blank, simpler
+    than teaching every screen "which attributes go with which category"
+    (discussed live, deliberately chosen over that extra layer).
+
+    Same manageable-list pattern as Category/TaxGroup/DocumentType -- a
+    CRUD screen, not hardcoded Python choices, since what a shop wants to
+    track about its products is exactly the kind of thing that varies by
+    shop and changes over time.
+
+    Values themselves live on Product.attributes (a JSONField), not a
+    separate per-value row (EAV) -- one JSON blob per product reads/writes
+    in one go, no joins, and Postgres JSONB (already used elsewhere in this
+    project) keeps it filterable/indexable if that's ever needed. Keyed by
+    this attribute's own id (str(pk), JSON object keys are always strings)
+    rather than by `name` -- renaming an attribute later must not silently
+    orphan every product's already-stored value for it.
+    """
+
+    name = models.CharField(max_length=50, unique=True, verbose_name=_('name'))
+    # Empty list = free text field; a non-empty list = dropdown restricted
+    # to exactly these values. Stored as JSON rather than a separate
+    # Choice-row model -- the list itself is small/simple enough (a handful
+    # of short strings) that a dedicated table would be pure overhead here,
+    # unlike Category/TaxGroup which carry their own real relations.
+    choices = models.JSONField(
+        default=list, blank=True, verbose_name=_('choices'),
+        help_text=_('Leave empty for free text. Otherwise, one value per line -- the product form will show a dropdown.'),
+    )
+
+    class Meta:
+        verbose_name = _('Product Attribute')
+        verbose_name_plural = _('Product Attributes')
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
 class Barcode(models.Model):
     code = models.CharField(max_length=13, null=True, blank=True, unique=True, verbose_name=_('Barcode number'),
                             help_text=_('Scan the barcode or enter the EAN-13 number'))
@@ -180,6 +223,13 @@ class Product(models.Model):
         default=False, verbose_name=_('Archived'),
         help_text=_('Hides this product from the everyday Products list without deleting its history.'),
     )
+    # {str(ProductAttribute.id): value, ...} -- see ProductAttribute's own
+    # docstring for why this is a flat JSON blob on the product itself
+    # (not a separate per-value table) and why it's keyed by id, not name.
+    # A product with none set just stays {} -- most products on a shop that
+    # only defines a couple of attributes for a few categories of its
+    # catalog will never touch this at all.
+    attributes = models.JSONField(default=dict, blank=True, verbose_name=_('attributes'))
     supplier = models.ManyToManyField(Suppliers, through='ProductSupplier', blank=True, related_name='products')
     is_recipe = models.BooleanField(
         default=False, blank=True, verbose_name=_('Made from other products (recipe)'),
