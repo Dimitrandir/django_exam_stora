@@ -129,6 +129,9 @@ document.addEventListener('DOMContentLoaded', function () {
             title: '{% translate "Closing Value (Purchase, no VAT)" %}', field: 'closing_purchase_value_no_vat', width: 190, hozAlign: 'right',
             formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter, visible: false,
         },
+        {% for attribute in product_attributes %}
+        {title: '{{ attribute.name|escapejs }}', field: 'attribute_{{ attribute.pk }}', width: 120, visible: false},
+        {% endfor %}
     ], {placeholder: '{% translate "No stock movement in the selected period." %}'});
 
     // fitColumns only fits column widths to the container once, at

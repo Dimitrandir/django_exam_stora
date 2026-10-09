@@ -86,6 +86,9 @@ document.addEventListener('DOMContentLoaded', function () {
         {title: '{% translate "Quantity" %}', field: 'quantity', width: 110, hozAlign: 'right'},
         {title: '{% translate "Expiry Date" %}', field: 'expiry_date', width: 130},
         {title: '{% translate "Days Left" %}', field: 'days_left', width: 150, hozAlign: 'right', formatter: daysLeftFormatter},
+        {% for attribute in product_attributes %}
+        {title: '{{ attribute.name|escapejs }}', field: 'attribute_{{ attribute.pk }}', width: 120, visible: false},
+        {% endfor %}
     ], {placeholder: '{% translate "No batches with an expiry date in this window." %}'});
 
     table.on('rowClick', function (e, row) {

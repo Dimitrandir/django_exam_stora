@@ -18,7 +18,8 @@ from django.views.generic import DetailView, ListView
 
 from STORA.accounts.models import CompanyProfile
 from STORA.core.mixins import StaffPermissionRequiredMixin
-from STORA.products.models import Barcode, Product, Suppliers
+from STORA.products.models import Barcode, Product, ProductAttribute, Suppliers
+from STORA.products.views import flatten_product_attributes
 from STORA.reports.ai_service import AIReportsNotConfigured
 from STORA.sales.models import SaleItems
 
@@ -122,6 +123,7 @@ def _build_candidate_lines(supplier, positions, start_date, end_date, existing_q
         )
     }
     barcode_by_product = _barcode_by_product(products)
+    product_attributes = list(ProductAttribute.objects.all())
 
     return [
         {
@@ -145,6 +147,7 @@ def _build_candidate_lines(supplier, positions, start_date, end_date, existing_q
             # -- same "line total, computed live off today's catalog price"
             # reasoning as the Orders list's own Total column (_order_totals).
             'delivery_price': float(product.delivery_price) if product.delivery_price is not None else 0,
+            **flatten_product_attributes(product, product_attributes),
         }
         for product in products
     ]
@@ -255,6 +258,7 @@ def order_new(request):
         'preload_count': preload_count,
         'error': error,
         'ai_available': bool(settings.ANTHROPIC_API_KEY),
+        'product_attributes': ProductAttribute.objects.all(),
     })
 
 
@@ -296,6 +300,7 @@ def order_edit(request, pk):
         'lines_data': lines_data,
         'error': error,
         'ai_available': bool(settings.ANTHROPIC_API_KEY),
+        'product_attributes': ProductAttribute.objects.all(),
     })
 
 

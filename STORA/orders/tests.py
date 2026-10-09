@@ -10,7 +10,7 @@ from django.utils import timezone, translation
 from STORA.accounts.models import CompanyProfile
 from STORA.orders.ai_service import _extract_quantities
 from STORA.orders.models import OrderAttributes, OrderItems
-from STORA.products.models import Product, ProductSupplier, Suppliers
+from STORA.products.models import Product, ProductAttribute, ProductSupplier, Suppliers
 from STORA.reports.ai_service import AIReportsNotConfigured
 from STORA.sales.models import SaleAttributes, SaleItems
 
@@ -113,6 +113,18 @@ class OrderViewTests(TestCase):
         line = next(l for l in response.context['lines_data'] if l['product_id'] == self.product.pk)
         self.assertEqual(line['sold_qty'], 3.0)
         self.assertEqual(line['sale_count'], 1)
+
+    def test_candidate_line_carries_the_product_attribute_value(self):
+        color = ProductAttribute.objects.create(name='Color', choices=['Red', 'Blue'])
+        self.product.attributes = {str(color.pk): 'Blue'}
+        self.product.save(update_fields=['attributes'])
+        response = self.client.get(reverse('order_new'), {
+            'supplier': self.supplier.pk, 'supplier_position': [1],
+            'start_date': timezone.localdate() - timedelta(days=7), 'end_date': timezone.localdate(),
+        })
+        self.assertIn(color, response.context['product_attributes'])
+        line = next(l for l in response.context['lines_data'] if l['product_id'] == self.product.pk)
+        self.assertEqual(line[f'attribute_{color.pk}'], 'Blue')
 
     def test_posting_an_order_creates_attributes_and_items(self):
         response = self.client.post(reverse('order_new'), {

@@ -134,6 +134,9 @@ document.addEventListener('DOMContentLoaded', function () {
             title: '{% translate "Value" %}', field: 'line_value', width: 130, hozAlign: 'right',
             formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
         },
+        {% for attribute in product_attributes %}
+        {title: '{{ attribute.name|escapejs }}', field: 'attribute_{{ attribute.pk }}', width: 120, visible: false},
+        {% endfor %}
     ], {placeholder: '{% translate "No products found for this supplier/position." %}'});
 
     // Seed line_value for every row already on the grid (server-rendered
