@@ -215,6 +215,25 @@ STORAGES = {
 SESSION_EXPIRE_AT_BROWSER_CLOSE = False
 SESSION_COOKIE_AGE = 60 * 60 * 24 * 7  # 7 days
 
+# Django отказва POST с над 1000 общо полета по подразбиране (защита срещу
+# DoS атака с огромна заявка) -- неприложимо за вътрешно складово
+# приложение, но удря реално голяма доставка: Tabulator-ският ред праща 9
+# скрити полета на артикул (delivery_item/delivery_quantity/
+# price_at_delivery/total_price_row/expiry_date/source_item/scrap_reason +
+# id/DELETE), значи ~110 артикула вече стигат тавана. При удар заявката
+# гърми с TooManyFieldsSent ОЩЕ в CSRF middleware-а, преди view-кода (и
+# session-draft пазенето му) да изпълни и ред -- доставката се губи
+# напълно, не просто не се запазва (видяно на живо на пилотната Windows
+# машина, доставка с над ~110 реда). Вдигнато достатъчно високо, за да не
+# притеснява и най-големите реалистични доставки.
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 20000
+# Same reasoning, different axis: Django also caps the raw size of a
+# non-file POST body at 2.5 MB by default (DATA_UPLOAD_MAX_MEMORY_SIZE) --
+# a very large delivery/sale wouldn't realistically reach that on field
+# count alone, but better to close this one too rather than wait for a
+# second version of the same incident.
+DATA_UPLOAD_MAX_MEMORY_SIZE = 20 * 1024 * 1024  # 20 MB
+
 # Reports app "AI mode" -- natural-language report generation. Queries run
 # through the genuinely read-only 'readonly' DB connection above (see
 # db_create_ai_readonly_role.sql), not this key -- the key is only for

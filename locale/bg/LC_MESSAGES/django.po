@@ -5,7 +5,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: STORA\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-09 09:06+0000\n"
+"POT-Creation-Date: 2026-10-13 16:28+0000\n"
 "PO-Revision-Date: 2026-10-02 00:00+0000\n"
 "Language-Team: Bulgarian\n"
 "Language: bg\n"
@@ -1120,9 +1120,29 @@ msgstr "Добави нова причина за брак"
 msgid "No scrap reasons found."
 msgstr "Няма намерени причини за брак."
 
-#: STORA/deliveries/views.py:386
+#: STORA/deliveries/views.py:303
+msgid ""
+"Saving failed due to an unexpected error. Nothing was lost -- your entered "
+"data is still below. Please try again, or contact the administrator if it "
+"keeps happening."
+msgstr ""
+"Записването не мина заради неочаквана грешка. Нищо не е загубено -- "
+"въведеното от вас е все още по-долу. Опитайте отново, или се обърнете към "
+"администратор, ако продължава да се случва."
+
+#: STORA/deliveries/views.py:411
 msgid "No file was uploaded."
 msgstr "Не е качен файл."
+
+#: STORA/deliveries/views.py:545
+msgid ""
+"Saving failed due to an unexpected error. Nothing was lost -- your edits are "
+"still below. Please try again, or contact the administrator if it keeps "
+"happening."
+msgstr ""
+"Записването не мина заради неочаквана грешка. Нищо не е загубено -- "
+"промените ви са все още по-долу. Опитайте отново, или се обърнете към "
+"администратор, ако продължава да се случва."
 
 #: STORA/orders/forms.py:27
 msgid "Supplier position"
@@ -4273,15 +4293,25 @@ msgstr "Няма артикули в тази продажба."
 msgid "Sale Items"
 msgstr "Артикули в продажбата"
 
-#: STORA/sales/views.py:343
+#: STORA/sales/views.py:169
+msgid ""
+"Saving failed due to an unexpected error. Nothing was lost -- your cart is "
+"still below. Please try again, or contact the administrator if it keeps "
+"happening."
+msgstr ""
+"Записването не мина заради неочаквана грешка. Нищо не е загубено -- "
+"количката ви е все още по-долу. Опитайте отново, или се обърнете към "
+"администратор, ако продължава да се случва."
+
+#: STORA/sales/views.py:366
 msgid "Pick both a start and an end date."
 msgstr "Избери начална и крайна дата."
 
-#: STORA/sales/views.py:345
+#: STORA/sales/views.py:368
 msgid "End date must be on or after the start date."
 msgstr "Крайната дата трябва да е същата или след началната."
 
-#: STORA/sales/views.py:370
+#: STORA/sales/views.py:393
 msgid ""
 "Cannot delete this sale -- it has a refund linked to it. The refund is a "
 "record of money handed back and must stay together with its sale."
@@ -4289,44 +4319,44 @@ msgstr ""
 "Тази продажба не може да бъде изтрита -- към нея има сторно. Сторното е "
 "запис за върнати пари и трябва да остане заедно с продажбата си."
 
-#: STORA/sales/views.py:402
+#: STORA/sales/views.py:425
 msgid "Invalid tab."
 msgstr "Невалиден таб."
 
-#: STORA/sales/views.py:438
+#: STORA/sales/views.py:461
 msgid "Invalid type"
 msgstr "Невалиден тип"
 
-#: STORA/sales/views.py:463
+#: STORA/sales/views.py:486
 msgid "Invalid action."
 msgstr "Невалидно действие."
 
-#: STORA/sales/views.py:546
+#: STORA/sales/views.py:569
 msgid "None"
 msgstr "Няма"
 
-#: STORA/sales/views.py:546
+#: STORA/sales/views.py:569
 msgid "Partial"
 msgstr "Частично"
 
-#: STORA/sales/views.py:546
+#: STORA/sales/views.py:569
 msgid "Full"
 msgstr "Изцяло"
 
-#: STORA/sales/views.py:623
+#: STORA/sales/views.py:646
 msgid "Please choose a valid reason."
 msgstr "Избери валидна причина."
 
-#: STORA/sales/views.py:632
+#: STORA/sales/views.py:655
 msgid "Invalid quantity entered."
 msgstr "Въведено е невалидно количество."
 
-#: STORA/sales/views.py:637
+#: STORA/sales/views.py:660
 #, python-format
 msgid "Cannot refund more than %(qty)s of %(name)s."
 msgstr "Не може да се сторнира повече от %(qty)s от „%(name)s“."
 
-#: STORA/sales/views.py:643
+#: STORA/sales/views.py:666
 msgid "Select at least one item to refund."
 msgstr "Избери поне един артикул за сторниране."
 
