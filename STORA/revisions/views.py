@@ -58,7 +58,18 @@ def revision_home(request):
     if preload:
         open_revision = _get_open_revision()
         if open_revision is None:
-            open_revision = RevisionAttributes.objects.create(started_by=request.user)
+            # Same race revision_start already guards against: two
+            # computers both hitting "Load into Revision" (Products grid
+            # bulk action) at the same moment, with no revision open yet,
+            # would otherwise both pass the check above and both try to
+            # create one -- the DB's only_one_open_revision constraint
+            # rejects the second with an IntegrityError that used to be
+            # unhandled here.
+            try:
+                with transaction.atomic():
+                    open_revision = RevisionAttributes.objects.create(started_by=request.user)
+            except IntegrityError:
+                open_revision = _get_open_revision()
         ids = [pid for pid in preload.split(',') if pid]
         for product in Product.objects.filter(pk__in=ids):
             RevisionItems.objects.get_or_create(
@@ -189,7 +200,10 @@ def revision_set_item(request, pk):
     if quantity < 0:
         return JsonResponse({'error': _('Quantity cannot be negative.')}, status=400)
 
-    item = RevisionItems.objects.set_count(revision, product, quantity)
+    try:
+        item = RevisionItems.objects.set_count(revision, product, quantity)
+    except RevisionAttributes.DoesNotExist:
+        return JsonResponse({'error': _('This revision is no longer open.')}, status=409)
     item.product = product  # already have it -- skip the extra select_related query
     return JsonResponse(_serialize_item(item))
 
@@ -198,12 +212,21 @@ def revision_set_item(request, pk):
 @login_required
 @permission_required('revisions.add_revisionattributes', raise_exception=True)
 def revision_remove_item(request, pk, item_id):
-    try:
-        revision = RevisionAttributes.objects.get(pk=pk, status=RevisionAttributes.STATUS_OPEN)
-    except RevisionAttributes.DoesNotExist:
-        return JsonResponse({'error': _('This revision is no longer open.')}, status=409)
+    # Locked and re-checked inside the same transaction as the delete --
+    # same reasoning as RevisionItemsManager._lock_open_revision: Complete
+    # could close the revision between an earlier, separate "is it open?"
+    # check and the actual delete, otherwise silently removing a row from a
+    # revision that's already been applied to stock.
+    with transaction.atomic():
+        try:
+            revision = RevisionAttributes.objects.select_for_update().get(
+                pk=pk, status=RevisionAttributes.STATUS_OPEN,
+            )
+        except RevisionAttributes.DoesNotExist:
+            return JsonResponse({'error': _('This revision is no longer open.')}, status=409)
 
-    deleted, _per_model = RevisionItems.objects.filter(pk=item_id, revision=revision).delete()
+        deleted, _per_model = RevisionItems.objects.filter(pk=item_id, revision=revision).delete()
+
     if not deleted:
         return JsonResponse({'error': _('That row is already gone.')}, status=404)
     return JsonResponse({'ok': True})

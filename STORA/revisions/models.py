@@ -53,6 +53,25 @@ class RevisionAttributes(models.Model):
 
 
 class RevisionItemsManager(models.Manager):
+    def _lock_open_revision(self, revision):
+        """Re-fetches `revision` under select_for_update(), re-checking it's
+        still OPEN -- the view's own "is it open?" check (revision_add_item/
+        revision_set_item) runs in a SEPARATE, earlier transaction, so by
+        the time this method's atomic block actually starts, Complete could
+        have already locked the SAME revision row, applied every count to
+        stock, and closed it. Without re-checking under the SAME lock
+        revision_complete uses, a count made right at that moment would
+        silently write into the now-closed revision's row and never reach
+        Product.quantity at all -- no error, just a lost count (only
+        possible with more than one computer open on the same revision,
+        which is exactly the point of this app). Raises
+        RevisionAttributes.DoesNotExist (caught by every caller already) if
+        that happened, so the clerk gets a clear "no longer open" instead of
+        a silently discarded scan."""
+        return RevisionAttributes.objects.select_for_update().get(
+            pk=revision.pk, status=RevisionAttributes.STATUS_OPEN,
+        )
+
     def add_count(self, revision, product, quantity):
         """Adds `quantity` to this product's running found_quantity within
         the revision -- never overwrites it, so two people (on two
@@ -65,6 +84,7 @@ class RevisionItemsManager(models.Manager):
         product so the increment can never be lost.
         """
         with transaction.atomic():
+            revision = self._lock_open_revision(revision)
             item, created = self.select_for_update().get_or_create(
                 revision=revision, product=product,
                 defaults={
@@ -85,6 +105,7 @@ class RevisionItemsManager(models.Manager):
         it lands editable rather than silently pre-set to 1 with no way to
         fix a typo."""
         with transaction.atomic():
+            revision = self._lock_open_revision(revision)
             item, created = self.select_for_update().get_or_create(
                 revision=revision, product=product,
                 defaults={
