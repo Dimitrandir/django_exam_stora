@@ -666,26 +666,52 @@ def refund_new(request, pk):
                     error = _('Select at least one item to refund.')
 
         if not error:
-            with transaction.atomic():
-                refund = RefundAttributes.objects.create(original_sale=sale, cashier=request.user, reason=reason)
-                for item, qty in to_refund:
-                    RefundItems.objects.create(
-                        refund=refund, original_item=item, refund_quantity=qty, price_at_refund=item.price_at_sale,
+            try:
+                with transaction.atomic():
+                    refund = RefundAttributes.objects.create(
+                        original_sale=sale, cashier=request.user, reason=reason,
                     )
+                    for item, qty in to_refund:
+                        RefundItems.objects.create(
+                            refund=refund, original_item=item, refund_quantity=qty,
+                            price_at_refund=item.price_at_sale,
+                        )
+            except Exception:
+                logger.exception('Unexpected error saving refund for sale #%s', pk)
+                messages.error(request, _(
+                    'Saving failed due to an unexpected error. Nothing was lost -- '
+                    'your entered quantities are still below. Please try again, or '
+                    'contact the administrator if it keeps happening.'
+                ))
+            else:
+                # Same reasoning/placement as the CASH-sale fiscal print in
+                # sales_add above -- synchronous, after the refund is
+                # committed, never blocks it. Only possible at all if the
+                # ORIGINAL sale was itself fiscally printed (see
+                # fiscal.print_fiscal_refund) -- skipped silently otherwise,
+                # same as a CARD original sale.
+                if settings.FISCAL_ENABLED and sale.payment_method == SaleAttributes.CASH:
+                    fiscal.attempt_print_refund(refund)
 
-            # Same reasoning/placement as the CASH-sale fiscal print in
-            # sales_add above -- synchronous, after the refund is committed,
-            # never blocks it. Only possible at all if the ORIGINAL sale was
-            # itself fiscally printed (see fiscal.print_fiscal_refund) --
-            # skipped silently otherwise, same as a CARD original sale.
-            if settings.FISCAL_ENABLED and sale.payment_method == SaleAttributes.CASH:
-                fiscal.attempt_print_refund(refund)
+                return redirect('refund_details', pk=refund.pk)
 
-            return redirect('refund_details', pk=refund.pk)
+    if request.method == 'POST':
+        # Whatever quantities were just typed, not a blanket 0 -- without
+        # this, ANY failure (a typo'd quantity, an over-the-remaining
+        # amount, or an unexpected crash) wiped every row in the grid back
+        # to empty, even the ones that had nothing wrong with them.
+        for row in lines_data:
+            raw = request.POST.get(f"refund_qty_{row['item_id']}", '').strip()
+            if raw:
+                try:
+                    row['refund_qty'] = float(raw)
+                except ValueError:
+                    pass
 
     return render(request, 'sales/refund_new.html', {
         'sale': sale, 'lines': lines, 'lines_data': lines_data,
         'reason_choices': RefundAttributes.REASON_CHOICES, 'error': error,
+        'selected_reason': request.POST.get('reason') if request.method == 'POST' else None,
     })
 
 

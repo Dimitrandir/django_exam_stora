@@ -1,5 +1,6 @@
 from datetime import timedelta
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
@@ -236,6 +237,49 @@ class PriceListViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse(PriceList.objects.filter(name='Bad Row List').exists())
 
+    def test_rejected_rule_echoes_back_the_submitted_rules_json(self):
+        # Regression: existing_rules used to be rebuilt from the database
+        # on a validation failure (nothing yet, for a new list) instead of
+        # from what was just submitted -- any rejected row wiped the whole
+        # grid back to empty, even rows that had nothing wrong with them.
+        start, end = _period()
+        submitted = (
+            f'[{{"scope_type": "PRODUCT", "target_id": {self.product.pk}, '
+            f'"discount_percent": 10, "fixed_price": 1.5}}]'
+        )
+        response = self.client.post(reverse('price_list_create'), {
+            'name': 'Bad Row List', 'priority': '0',
+            'start_date': start.isoformat(), 'end_date': end.isoformat(),
+            'rules_json': submitted,
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['existing_rules'][0]['target_id'], self.product.pk)
+        self.assertEqual(response.context['existing_rules'][0]['discount_percent'], 10)
+
+    @patch('STORA.pricelists.views.PriceListRule.objects.bulk_create', side_effect=RuntimeError('boom'))
+    def test_crash_during_save_rolls_back_and_preserves_the_rules(self, _mock_bulk_create):
+        start, end = _period()
+        submitted = (
+            f'[{{"scope_type": "PRODUCT", "target_id": {self.product.pk}, '
+            f'"discount_percent": 20, "fixed_price": null}}]'
+        )
+        response = self.client.post(reverse('price_list_create'), {
+            'name': 'Crash List', 'priority': '0',
+            'start_date': start.isoformat(), 'end_date': end.isoformat(),
+            'rules_json': submitted,
+        })
+
+        self.assertEqual(response.status_code, 200)
+        # price_list.save() ran before the patched bulk_create() blew up --
+        # atomic() must undo it, or an empty, rule-less price list would be
+        # left behind.
+        self.assertFalse(PriceList.objects.filter(name='Crash List').exists())
+        self.assertEqual(response.context['existing_rules'][0]['target_id'], self.product.pk)
+        self.assertEqual(response.context['existing_rules'][0]['discount_percent'], 20)
+
+        messages = [str(m) for m in response.context['messages']]
+        self.assertTrue(messages, 'expected an error message to be flashed')
+
     def test_cashier_cannot_create_price_list(self):
         self.client.force_login(self.cashier)
         start, end = _period()
@@ -252,6 +296,40 @@ class PriceListViewTests(TestCase):
         self.assertRedirects(response, reverse('price_list_list'))
         price_list.refresh_from_db()
         self.assertTrue(price_list.is_deleted)
+
+    @patch('STORA.pricelists.views.PriceListRule.objects.bulk_create', side_effect=RuntimeError('boom'))
+    def test_edit_crash_during_save_keeps_old_rules_and_preserves_the_submitted_ones(self, _mock_bulk_create):
+        start, end = _period()
+        price_list = PriceList.objects.create(
+            name='Edit Crash List', start_date=start, end_date=end, created_by=self.manager,
+        )
+        PriceListRule.objects.create(price_list=price_list, scope_type='PRODUCT', product=self.product, discount_percent=5)
+
+        other_product = Product.objects.create(
+            internal_code='PL000006', name='PL Edit Target', sell_price=Decimal('4.00'), quantity=0,
+        )
+        submitted = (
+            f'[{{"scope_type": "PRODUCT", "target_id": {other_product.pk}, '
+            f'"discount_percent": 15, "fixed_price": null}}]'
+        )
+        response = self.client.post(reverse('price_list_edit', args=[price_list.pk]), {
+            'name': 'Edit Crash List', 'priority': '0',
+            'start_date': start.isoformat(), 'end_date': end.isoformat(),
+            'rules_json': submitted,
+        })
+
+        self.assertEqual(response.status_code, 200)
+        # price_list.rules.all().delete() ran before the patched
+        # bulk_create() blew up -- atomic() must undo that delete too, or
+        # the list would end up with zero rules.
+        self.assertEqual(price_list.rules.count(), 1)
+        self.assertEqual(price_list.rules.first().product, self.product)
+
+        self.assertEqual(response.context['existing_rules'][0]['target_id'], other_product.pk)
+        self.assertEqual(response.context['existing_rules'][0]['discount_percent'], 15)
+
+        messages = [str(m) for m in response.context['messages']]
+        self.assertTrue(messages, 'expected an error message to be flashed')
 
     def test_deleted_lists_hidden_from_list_by_default(self):
         start, end = _period()

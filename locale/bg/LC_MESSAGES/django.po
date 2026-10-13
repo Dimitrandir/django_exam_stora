@@ -5,7 +5,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: STORA\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-13 16:28+0000\n"
+"POT-Creation-Date: 2026-10-13 16:56+0000\n"
 "PO-Revision-Date: 2026-10-02 00:00+0000\n"
 "Language-Team: Bulgarian\n"
 "Language: bg\n"
@@ -1120,7 +1120,8 @@ msgstr "Добави нова причина за брак"
 msgid "No scrap reasons found."
 msgstr "Няма намерени причини за брак."
 
-#: STORA/deliveries/views.py:303
+#: STORA/deliveries/views.py:303 STORA/products/views.py:694
+#: STORA/products/views.py:781
 msgid ""
 "Saving failed due to an unexpected error. Nothing was lost -- your entered "
 "data is still below. Please try again, or contact the administrator if it "
@@ -1474,20 +1475,30 @@ msgstr "напр. 7"
 msgid "Load"
 msgstr "Зареди"
 
-#: STORA/orders/views.py:235 STORA/orders/views.py:282
+#: STORA/orders/views.py:246 STORA/orders/views.py:307
 msgid "Enter at least one requested quantity."
 msgstr "Въведи поне едно заявено количество."
 
-#: STORA/orders/views.py:321
+#: STORA/orders/views.py:263 STORA/orders/views.py:320 STORA/sales/views.py:682
+msgid ""
+"Saving failed due to an unexpected error. Nothing was lost -- your entered "
+"quantities are still below. Please try again, or contact the administrator "
+"if it keeps happening."
+msgstr ""
+"Записването не мина заради неочаквана грешка. Нищо не е загубено -- "
+"въведените количества са все още по-долу. Опитайте отново, или се обърнете "
+"към администратор, ако продължава да се случва."
+
+#: STORA/orders/views.py:355
 msgid "Pick a supplier, position, and period first."
 msgstr "Първо избери доставчик, позиция и период."
 
-#: STORA/orders/views.py:331 STORA/reports/views.py:528
+#: STORA/orders/views.py:365 STORA/reports/views.py:528
 #: STORA/reports/views.py:575
 msgid "AI mode is not set up yet -- ANTHROPIC_API_KEY is missing from .env."
 msgstr "AI режимът още не е настроен -- липсва ANTHROPIC_API_KEY в .env."
 
-#: STORA/orders/views.py:333
+#: STORA/orders/views.py:367
 #, python-format
 msgid "AI request failed: %(error)s"
 msgstr "AI заявката е неуспешна: %(error)s"
@@ -1711,17 +1722,27 @@ msgstr "Покажи изтритите"
 msgid "No price lists yet."
 msgstr "Все още няма ценови листи."
 
-#: STORA/pricelists/views.py:206
+#: STORA/pricelists/views.py:141 STORA/pricelists/views.py:182
+msgid ""
+"Saving failed due to an unexpected error. Nothing was lost -- your rules are "
+"still below. Please try again, or contact the administrator if it keeps "
+"happening."
+msgstr ""
+"Записването не мина заради неочаквана грешка. Нищо не е загубено -- "
+"правилата ви са все още по-долу. Опитайте отново, или се обърнете към "
+"администратор, ако продължава да се случва."
+
+#: STORA/pricelists/views.py:245
 msgctxt "price list status"
 msgid "Active"
 msgstr "Активна"
 
-#: STORA/pricelists/views.py:207
+#: STORA/pricelists/views.py:246
 msgctxt "price list status"
 msgid "Upcoming"
 msgstr "Предстояща"
 
-#: STORA/pricelists/views.py:208
+#: STORA/pricelists/views.py:247
 msgctxt "price list status"
 msgid "Expired"
 msgstr "Изтекла"
@@ -2900,40 +2921,40 @@ msgstr "Добави нова данъчна група"
 msgid "No tax groups found."
 msgstr "Няма намерени данъчни групи."
 
-#: STORA/products/views.py:162
+#: STORA/products/views.py:168
 msgid "That field cannot be edited here."
 msgstr "Това поле не може да се редактира тук."
 
-#: STORA/products/views.py:169 STORA/products/views.py:214
+#: STORA/products/views.py:175 STORA/products/views.py:220
 msgid "Unknown category."
 msgstr "Непозната категория."
 
-#: STORA/products/views.py:202
+#: STORA/products/views.py:208
 msgid "No products selected."
 msgstr "Няма избрани продукти."
 
-#: STORA/products/views.py:208 STORA/products/views.py:220
-#: STORA/products/views.py:233
+#: STORA/products/views.py:214 STORA/products/views.py:226
+#: STORA/products/views.py:239
 msgid "You do not have permission to do this."
 msgstr "Нямаш права за това действие."
 
-#: STORA/products/views.py:225 STORA/sales/templates/sales/sale_add.html:1230
+#: STORA/products/views.py:231 STORA/sales/templates/sales/sale_add.html:1230
 msgid "Enter a valid price."
 msgstr "Въведи валидна цена."
 
-#: STORA/products/views.py:227
+#: STORA/products/views.py:233
 msgid "Price must be at least 0.01."
 msgstr "Цената трябва да е поне 0.01."
 
-#: STORA/products/views.py:253
+#: STORA/products/views.py:259
 msgid "Archived instead (has sale/delivery history): "
 msgstr "Архивирани вместо това (имат история на продажби/доставки): "
 
-#: STORA/products/views.py:257
+#: STORA/products/views.py:263
 msgid "Unknown action."
 msgstr "Непознато действие."
 
-#: STORA/products/views.py:775
+#: STORA/products/views.py:808
 msgid ""
 "Cannot delete this product -- it has delivery or sale history linked to it. "
 "Archive it instead to hide it from the Products list without losing that "
@@ -2943,15 +2964,15 @@ msgstr ""
 "продажби. Архивирай го вместо това, за да го скриеш от списъка с продукти, "
 "без да губиш тази история."
 
-#: STORA/products/views.py:872
+#: STORA/products/views.py:905
 msgid "No categories selected."
 msgstr "Няма избрани категории."
 
-#: STORA/products/views.py:1012
+#: STORA/products/views.py:1045
 msgid "Free text"
 msgstr "Свободен текст"
 
-#: STORA/products/views.py:1057
+#: STORA/products/views.py:1090
 msgid "No attributes selected."
 msgstr "Няма избрани атрибути."
 

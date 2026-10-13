@@ -1,9 +1,13 @@
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 
+import logging
+
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.postgres.search import TrigramSimilarity
+from django.db import transaction
 from django.db.models import F, ProtectedError, Sum
 from django.db.models.functions import Coalesce
 from django.forms.models import model_to_dict
@@ -30,6 +34,8 @@ from STORA.products.models import Product, Barcode, Category, Suppliers, TaxGrou
 from STORA.pricelists.services import resolve_prices
 from STORA.sales.models import SaleAttributes, SaleItems
 from STORA.sales.tasks import backfill_recipe_ingredient_stock
+
+logger = logging.getLogger(__name__)
 
 
 def flatten_product_attributes(product, attributes):
@@ -668,14 +674,28 @@ class ProductCreateView(LoginRequiredMixin, StaffPermissionRequiredMixin, Create
         # creation log entries it writes know who created the product --
         # same pattern as ProductUpdateView above.
         form.instance._changed_by = self.request.user
-        self.object = form.save()
-        barcode_formset.instance = self.object
-        barcode_formset.save()
-        supplier_formset.instance = self.object
-        supplier_formset.save()
-        recipe_formset.instance = self.object
-        recipe_formset.save()
-        self.object.recalculate_ingredient_cost()
+        try:
+            # 4 separate saves in sequence -- without atomic(), a crash
+            # partway through (say, the recipe formset) would leave a
+            # half-saved product (with barcodes/suppliers but no recipe)
+            # sitting in the database instead of nothing at all.
+            with transaction.atomic():
+                self.object = form.save()
+                barcode_formset.instance = self.object
+                barcode_formset.save()
+                supplier_formset.instance = self.object
+                supplier_formset.save()
+                recipe_formset.instance = self.object
+                recipe_formset.save()
+                self.object.recalculate_ingredient_cost()
+        except Exception:
+            logger.exception('Unexpected error saving new product')
+            messages.error(self.request, _(
+                'Saving failed due to an unexpected error. Nothing was lost -- '
+                'your entered data is still below. Please try again, or contact '
+                'the administrator if it keeps happening.'
+            ))
+            return self.render_to_response(context)
         # A brand new product can't have prior sales, so there's nothing to
         # backfill -- but harmless/idempotent to call regardless (matches
         # ProductUpdateView, keeps the "just defined a recipe" path in one
@@ -742,14 +762,27 @@ class ProductUpdateView(LoginRequiredMixin, StaffPermissionRequiredMixin, Update
         # signal itself has no access to the request/user.
         form.instance._changed_by = self.request.user
 
-        self.object = form.save()
-        barcode_formset.instance = self.object
-        barcode_formset.save()
-        supplier_formset.instance = self.object
-        supplier_formset.save()
-        recipe_formset.instance = self.object
-        recipe_formset.save()
-        self.object.recalculate_ingredient_cost()
+        try:
+            # Same reasoning as ProductCreateView.form_valid -- 4 separate
+            # saves, wrapped together so a crash partway through can't
+            # leave this product half-updated.
+            with transaction.atomic():
+                self.object = form.save()
+                barcode_formset.instance = self.object
+                barcode_formset.save()
+                supplier_formset.instance = self.object
+                supplier_formset.save()
+                recipe_formset.instance = self.object
+                recipe_formset.save()
+                self.object.recalculate_ingredient_cost()
+        except Exception:
+            logger.exception('Unexpected error saving edited product #%s', self.object.pk)
+            messages.error(self.request, _(
+                'Saving failed due to an unexpected error. Nothing was lost -- '
+                'your entered data is still below. Please try again, or contact '
+                'the administrator if it keeps happening.'
+            ))
+            return self.render_to_response(context)
 
         # First time this product becomes a recipe (or was already one but
         # never backfilled): catch up ingredient stock for all its past

@@ -305,6 +305,72 @@ class ProductBarcodeFormsetTests(TestCase):
         self.assertFalse(Product.objects.filter(internal_code='P1000007').exists())
 
 
+class ProductSaveCrashSafetyTests(TestCase):
+    """Regression: ProductCreateView/UpdateView.form_valid() runs 4
+    separate saves (product, barcode/supplier/recipe formsets) in
+    sequence -- without transaction.atomic(), a crash partway through used
+    to leave a half-saved product (e.g. with a barcode but nothing else)
+    sitting in the database instead of nothing at all."""
+
+    def setUp(self):
+        self.manager = Employee.objects.create_user(username='crashmgr', password='pass12345', role=Employee.MANAGER)
+        self.client.force_login(self.manager)
+
+    def _base_data(self, **overrides):
+        data = {
+            'internal_code': 'PCRSH1',
+            'name': 'Crash Widget',
+            'unit_type': 'piece',
+            'sell_price': '3.00',
+            'quantity': '0',
+            'barcode-TOTAL_FORMS': '1',
+            'barcode-INITIAL_FORMS': '0',
+            'barcode-MIN_NUM_FORMS': '0',
+            'barcode-MAX_NUM_FORMS': '1000',
+            'barcode-0-code': '1111111111116',
+            'supplier-TOTAL_FORMS': '0',
+            'supplier-INITIAL_FORMS': '0',
+            'supplier-MIN_NUM_FORMS': '0',
+            'supplier-MAX_NUM_FORMS': '1000',
+            'recipe-TOTAL_FORMS': '0',
+            'recipe-INITIAL_FORMS': '0',
+            'recipe-MIN_NUM_FORMS': '0',
+            'recipe-MAX_NUM_FORMS': '1000',
+        }
+        data.update(overrides)
+        return data
+
+    @patch('STORA.products.forms.RecipeIngredientFormSet.save', side_effect=RuntimeError('boom'))
+    def test_create_crash_after_barcode_save_does_not_leave_a_half_saved_product(self, _mock_save):
+        response = self.client.post(reverse('product_create'), self._base_data())
+
+        self.assertEqual(response.status_code, 200)
+        # form.save() and barcode_formset.save() ran before the patched
+        # recipe_formset.save() blew up -- without atomic(), those would
+        # already be committed by now.
+        self.assertFalse(Product.objects.filter(internal_code='PCRSH1').exists())
+        self.assertFalse(Barcode.objects.filter(code='1111111111116').exists())
+
+        messages = [str(m) for m in response.context['messages']]
+        self.assertTrue(messages, 'expected an error message to be flashed')
+
+    @patch('STORA.products.forms.RecipeIngredientFormSet.save', side_effect=RuntimeError('boom'))
+    def test_edit_crash_rolls_back_the_name_change_and_barcode_together(self, _mock_save):
+        product = Product.objects.create(
+            internal_code='PCRSH2', name='Original Name', sell_price=Decimal('3.00'), quantity=Decimal('0'),
+        )
+        data = self._base_data(internal_code='PCRSH2', name='Changed Name')
+        response = self.client.post(reverse('product_edit', kwargs={'pk': product.pk}), data)
+
+        self.assertEqual(response.status_code, 200)
+        product.refresh_from_db()
+        self.assertEqual(product.name, 'Original Name')
+        self.assertFalse(Barcode.objects.filter(code='1111111111116').exists())
+
+        messages = [str(m) for m in response.context['messages']]
+        self.assertTrue(messages, 'expected an error message to be flashed')
+
+
 class ProductDetailViewTests(TestCase):
     """The read-only detail page -- kept separate from Edit on purpose so
     Cashiers (view_product but not change_product) can still look up a

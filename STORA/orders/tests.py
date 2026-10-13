@@ -168,6 +168,26 @@ class OrderViewTests(TestCase):
         response = self.client.get(reverse('order_new'))
         self.assertEqual(response.status_code, 403)
 
+    @patch('STORA.orders.views.OrderItems.objects.bulk_create', side_effect=RuntimeError('boom'))
+    def test_crash_during_save_preserves_the_typed_quantity(self, _mock_bulk_create):
+        # Same incident class as deliveries/sales: an unexpected exception
+        # (not "enter at least one quantity") must not leave a half-made
+        # order in the DB, and must redisplay the grid with what was
+        # actually typed, not reset every row to 0.
+        response = self.client.post(reverse('order_new'), {
+            'supplier': self.supplier.pk, 'supplier_position': [1],
+            'start_date': timezone.localdate() - timedelta(days=7), 'end_date': timezone.localdate(),
+            f'qty_{self.product.pk}': '6',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(OrderAttributes.objects.exists())
+
+        line = next(l for l in response.context['lines_data'] if l['product_id'] == self.product.pk)
+        self.assertEqual(line['requested_qty'], 6.0)
+        messages = [str(m) for m in response.context['messages']]
+        self.assertTrue(messages, 'expected an error message to be flashed')
+
 
 class OrderMultiPositionTests(TestCase):
     def setUp(self):
@@ -234,6 +254,24 @@ class OrderEditTests(TestCase):
         self.assertRedirects(response, reverse('order_details', kwargs={'pk': self.order.pk}))
         item = OrderItems.objects.get(order=self.order)
         self.assertEqual(item.requested_quantity, Decimal('9'))
+
+    @patch('STORA.orders.views.OrderItems.objects.bulk_create', side_effect=RuntimeError('boom'))
+    def test_crash_during_save_keeps_old_items_and_shows_the_typed_quantity(self, _mock_bulk_create):
+        response = self.client.post(reverse('order_edit', kwargs={'pk': self.order.pk}), {
+            f'qty_{self.product.pk}': '9',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        # order.items.all().delete() ran before the patched bulk_create()
+        # blew up -- atomic() must undo that delete too, not just skip the
+        # recreate, or the order would end up with zero items.
+        item = OrderItems.objects.get(order=self.order)
+        self.assertEqual(item.requested_quantity, Decimal('5'))
+
+        line = next(l for l in response.context['lines_data'] if l['product_id'] == self.product.pk)
+        self.assertEqual(line['requested_qty'], 9.0)
+        messages = [str(m) for m in response.context['messages']]
+        self.assertTrue(messages, 'expected an error message to be flashed')
 
     def test_warehouse_cannot_edit_without_permission_change_denied_for_cashier(self):
         User.objects.create_user(username='cashier3', password='pass12345', role=User.CASHIER)
