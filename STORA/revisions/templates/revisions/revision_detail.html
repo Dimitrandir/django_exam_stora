@@ -137,6 +137,18 @@
     // cancels. min/step come from quantityStep() (0.001 for weight, 1 for
     // piece), not a fixed 0.001 -- see CLAUDE.md's HTML5 number-input min/
     // step trap (min:0.001 + step:1 makes whole numbers invalid).
+    //
+    // Deliberately starts BLANK, not pre-filled with the cell's current
+    // value (cell.getValue(), the running total) -- unlike every other
+    // numberEditor in the app. Whatever gets typed here is sent straight
+    // to revision_add_item as a delta to ADD (negative subtracts), not a
+    // new total to overwrite with (see the cellEdited handler below, and
+    // RevisionItemsManager.add_count's docstring) -- so a counter on one
+    // computer types only what THEY just physically counted, with no
+    // need to see or account for whatever another computer already
+    // entered for the same product. If this started pre-filled with the
+    // running total the way the Deliveries/Sales editors do, the typed
+    // number would look like a replacement, not an addition.
     function numberEditor(cell, onRendered, success, cancel, editorParams) {
         var input = document.createElement('input');
         // type="text" + inputmode="decimal", not type="number" -- a
@@ -155,8 +167,8 @@
         input.style.width = '100%';
         input.style.boxSizing = 'border-box';
         input.style.height = '100%';
-        input.value = cell.getValue();
-        onRendered(function () { input.focus(); input.select(); });
+        input.value = '';
+        onRendered(function () { input.focus(); });
 
         function commit() {
             var value = input.value === '' ? 0 : parseFloat(input.value);
@@ -250,22 +262,24 @@
         });
     }
 
-    // Persists a directly-typed/corrected Found Qty to the server as an
-    // exact value (revision_set_item -- see its own comment for why this
-    // is separate from addCount's +N-per-scan endpoint). Reverts the cell
-    // on any failure, same pattern as every other editable-grid screen in
-    // the app.
+    // Persists a directly-typed Found Qty entry as a DELTA to add (see
+    // numberEditor above for why the editor starts blank) -- same
+    // revision_add_item endpoint a barcode scan uses, just possibly
+    // negative (a correction) instead of always-positive (a scan).
+    // Reverts the cell on any failure, same pattern as every other
+    // editable-grid screen in the app.
     table.on('cellEdited', function (cell) {
         if (cell.getField() !== 'found_quantity') return;
         var data = cell.getRow().getData();
         var previousValue = cell.getOldValue();
-        fetch('{% url "revision_set_item" revision.pk %}', {
+        var delta = data.found_quantity; // what was just typed, not the new total -- see numberEditor
+        fetch('{% url "revision_add_item" revision.pk %}', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
                 'X-CSRFToken': csrfToken,
             },
-            body: new URLSearchParams({product_id: data.product_id, quantity: String(data.found_quantity)}),
+            body: new URLSearchParams({product_id: data.product_id, quantity: String(delta)}),
         }).then(function (r) {
             if (r.status === 409) {
                 document.getElementById('revision-closed-banner').style.display = '';

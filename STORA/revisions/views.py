@@ -151,6 +151,12 @@ def revision_items_data(request, pk):
 @login_required
 @permission_required('revisions.add_revisionattributes', raise_exception=True)
 def revision_add_item(request, pk):
+    """Adds `quantity` to this product's running count -- positive from a
+    barcode scan, or positive/negative from the Found Qty cell's own
+    editor (always typed from blank, see numberEditor in
+    revision_detail.html and add_count's docstring for why: each counter
+    types only what THEY just found, the server does the summing, so
+    nobody needs to see or know what anyone else already entered)."""
     try:
         revision = RevisionAttributes.objects.get(pk=pk, status=RevisionAttributes.STATUS_OPEN)
     except RevisionAttributes.DoesNotExist:
@@ -163,13 +169,13 @@ def revision_add_item(request, pk):
         quantity = Decimal(request.POST.get('quantity', ''))
     except InvalidOperation:
         return JsonResponse({'error': _('Invalid quantity.')}, status=400)
-    if quantity <= 0:
-        return JsonResponse({'error': _('Quantity must be positive.')}, status=400)
 
     try:
         item = RevisionItems.objects.add_count(revision, product, quantity)
     except RevisionAttributes.DoesNotExist:
         return JsonResponse({'error': _('This revision is no longer open.')}, status=409)
+    except ValueError as exc:
+        return JsonResponse({'error': str(exc)}, status=400)
 
     item.product = product  # already have it -- skip the extra select_related query
     return JsonResponse(_serialize_item(item))
@@ -179,11 +185,12 @@ def revision_add_item(request, pk):
 @login_required
 @permission_required('revisions.add_revisionattributes', raise_exception=True)
 def revision_set_item(request, pk):
-    """Sets a product's found_quantity to an exact value -- backs the
-    directly-editable Found Qty cell in revision_detail.html (both for
-    correcting an existing count and for the blank-then-typed value a
-    freshly search-added product starts at). Deliberately separate from
-    revision_add_item's +N-per-scan semantics -- see
+    """Sets a product's found_quantity to an exact value -- an overwrite,
+    not an add. The grid's Found Qty cell no longer calls this for
+    ordinary typed corrections (see revision_add_item's docstring for
+    why); the only remaining caller is revision_detail.html's
+    addForEditing(), which uses it once, with quantity=0, to seed a
+    freshly search-added product at zero. See
     RevisionItemsManager.set_count."""
     try:
         revision = RevisionAttributes.objects.get(pk=pk, status=RevisionAttributes.STATUS_OPEN)

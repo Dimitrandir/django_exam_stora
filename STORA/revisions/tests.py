@@ -98,6 +98,20 @@ class RevisionModelTests(TestCase):
         item = RevisionItems.objects.get(revision=revision, product=self.product)
         self.assertEqual(item.found_quantity, Decimal('5'))  # unchanged, not 99
 
+    def test_add_count_with_negative_quantity_subtracts(self):
+        revision = RevisionAttributes.objects.create(started_by=self.warehouse)
+        RevisionItems.objects.add_count(revision, self.product, Decimal('10'))
+        item = RevisionItems.objects.add_count(revision, self.product, Decimal('-3'))
+        self.assertEqual(item.found_quantity, Decimal('7'))
+
+    def test_add_count_rejects_going_below_zero(self):
+        revision = RevisionAttributes.objects.create(started_by=self.warehouse)
+        RevisionItems.objects.add_count(revision, self.product, Decimal('2'))
+        with self.assertRaises(ValueError):
+            RevisionItems.objects.add_count(revision, self.product, Decimal('-5'))
+        item = RevisionItems.objects.get(revision=revision, product=self.product)
+        self.assertEqual(item.found_quantity, Decimal('2'))  # unchanged
+
 
 class RevisionViewTests(TestCase):
     def setUp(self):
@@ -141,6 +155,25 @@ class RevisionViewTests(TestCase):
         self.assertEqual(data['found_sum'], 7 * 1.8)
         self.assertEqual(data['quantity_diff'], 2)
         self.assertEqual(data['sum_diff'], round(7 * 1.8 - 5 * 1.8, 2))
+
+    def test_add_item_endpoint_accepts_a_negative_correction(self):
+        revision = RevisionAttributes.objects.create(started_by=self.warehouse)
+        self.client.post(reverse('revision_add_item', args=[revision.pk]),
+                          {'product_id': self.product.pk, 'quantity': '10'})
+        response = self.client.post(reverse('revision_add_item', args=[revision.pk]),
+                                     {'product_id': self.product.pk, 'quantity': '-3'})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['found_quantity'], 7)
+
+    def test_add_item_endpoint_rejects_going_below_zero(self):
+        revision = RevisionAttributes.objects.create(started_by=self.warehouse)
+        self.client.post(reverse('revision_add_item', args=[revision.pk]),
+                          {'product_id': self.product.pk, 'quantity': '2'})
+        response = self.client.post(reverse('revision_add_item', args=[revision.pk]),
+                                     {'product_id': self.product.pk, 'quantity': '-5'})
+        self.assertEqual(response.status_code, 400)
+        item = RevisionItems.objects.get(revision=revision, product=self.product)
+        self.assertEqual(item.found_quantity, Decimal('2'))  # unchanged
 
     def test_add_item_rejected_once_revision_is_completed(self):
         revision = RevisionAttributes.objects.create(started_by=self.warehouse)
