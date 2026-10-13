@@ -524,6 +524,15 @@ input[type="text"], input[type="number"], input[type="email"], select, textarea 
     font-size: var(--sale-table-font-size);
 }
 
+/* Revision items grid header text ("Found Qty", "System Qty", "Diff
+   Sum", ...) at the default 16px bold was too cramped against these
+   columns' own narrow fixed widths (110-120px, see revision_detail.html)
+   -- flagged live as hard to read. Scoped to this one table's headers
+   only, same pattern as #sale-items-table above. */
+#revision-items-table .tabulator-col-title {
+    font-size: 0.85rem;
+}
+
 /* Tucked into the Name column's own bottom-calc cell (nothing else uses
    that space -- Name has no sum) instead of a separate row above the
    table, per live feedback ("да не заемат от мястото"). Sized to fit the

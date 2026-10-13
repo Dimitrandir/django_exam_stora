@@ -1499,6 +1499,7 @@ document.addEventListener('DOMContentLoaded', function () {
     {% endif %}
 
     attachTableExportToToolbar(table, '#delivery-items-table-card', 'delivery_items.xlsx', '{% translate "Delivery Items" %}');
+    attachTableFocusToggle(table, '#delivery-items-table-card');
 
     // -- Sync Tabulator's current data into plain formset hidden inputs
     // right before the real form submit, since Tabulator manages its own

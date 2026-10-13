@@ -300,6 +300,7 @@
     });
 
     attachTableExportToToolbar(table, '#revision-items-table-card', 'revision_{{ revision.pk }}_items.xlsx', '{% translate "Revision Items" %}');
+    attachTableFocusToggle(table, '#revision-items-table-card');
 
     // While a cell (only Found Qty is editable) is actively being edited,
     // the 4s poll below must NOT call table.setData() -- that fully
@@ -313,11 +314,15 @@
     table.on('cellEdited', function () { isEditingCell = false; });
     table.on('cellEditCancelled', function () { isEditingCell = false; });
 
+    // Returns Tabulator's own promise (both addRow and updateData give one)
+    // -- callers that need to act only once the row is REALLY there (see
+    // addForEditing's focus-grab below) must await this instead of assuming
+    // the row exists right after calling upsertRow.
     function upsertRow(item) {
         if (table.getRow(item.id)) {
-            table.updateData([item]);
+            return table.updateData([item]);
         } else {
-            table.addRow(item);
+            return table.addRow(item);
         }
     }
 
@@ -420,6 +425,15 @@
     // doesn't reliably grab real keyboard focus (Tabulator may still be
     // mid-redraw), so this waits a tick and re-fetches the cell fresh from
     // the row rather than trusting a reference captured before the redraw.
+    // Only a safety margin on top of actually waiting for addRow's own
+    // promise, though -- see the caller below for the real fix (reported
+    // live: focus silently failed, but only for the very FIRST product
+    // added to a brand new revision -- table.addRow() also tears down the
+    // "search or scan to start counting" placeholder as part of its own
+    // async work, which takes measurably longer than a bare setTimeout(0)
+    // alone ever waited for; adding to an already-populated table (joining
+    // a revision someone else already started) skips that teardown, so it
+    // never showed the bug).
     function focusFoundQtyEditor(rowId) {
         setTimeout(function () {
             var row = table.getRow(rowId);
@@ -459,8 +473,14 @@
             return r.json();
         }).then(function (data) {
             if (data.error) { alert(data.error); return; }
-            upsertRow(data);
-            focusFoundQtyEditor(data.id);
+            // Waits for Tabulator's own promise (addRow, almost always --
+            // this is the brand-new-product branch) before trying to focus
+            // its cell, instead of racing a bare setTimeout(0) against
+            // whatever internal work addRow is still doing (see
+            // focusFoundQtyEditor's comment for the bug this fixes).
+            Promise.resolve(upsertRow(data)).then(function () {
+                focusFoundQtyEditor(data.id);
+            });
         }).catch(function () { /* network hiccup -- the next poll will reconcile */ });
     }
 
