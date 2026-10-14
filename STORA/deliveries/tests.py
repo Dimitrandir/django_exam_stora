@@ -1572,3 +1572,106 @@ class DeliveryAddWithNewProductRowsTests(TestCase):
         response = self.client.post(reverse('delivery_add'), data)
         self.assertEqual(response.status_code, 200)
         self.assertFalse(Product.objects.filter(name='Should Not Be Created').exists())
+
+
+class DeliverySaveCrashSafetyTests(TestCase):
+    """Regression coverage for the 2026-10-13 production incident: a large
+    delivery crashed with an unhandled exception (Django's
+    DATA_UPLOAD_MAX_NUMBER_FIELDS cap) and the typed-in data vanished with
+    no way to recover it. These tests simulate the SAME class of failure --
+    an unexpected exception during save, not a validation error -- via a
+    patched formset.save(), and prove the fix: the DB write rolls back
+    cleanly (transaction.atomic()) and the clerk's entered data is echoed
+    back on the redisplayed page (not reset to empty)."""
+
+    def setUp(self):
+        self.warehouse = User.objects.create_user(username='crashwh', password='pass12345', role=User.WAREHOUSE)
+        self.supplier = Suppliers.objects.create(name='Crash Supplier', bulstat='444444444')
+        self.product = Product.objects.create(
+            internal_code='P0000099', name='Crash Product', delivery_price=Decimal('1.00'),
+            sell_price=Decimal('2.00'), quantity=Decimal('0.000'),
+        )
+        self.invoice_type, _ = DocumentType.objects.get_or_create(name='Invoice')
+        self.client.force_login(self.warehouse)
+
+    def _general_info(self, **overrides):
+        data = {
+            'supplier': self.supplier.pk,
+            'time_of_delivery': '2026-10-13 10:00:00',
+            'document_type': self.invoice_type.pk,
+            'document_number': 'CRASH-1',
+            'document_date': '2026-10-13',
+        }
+        data.update(overrides)
+        return data
+
+    @patch('STORA.deliveries.forms.DeliveryItemFormSet.save', side_effect=RuntimeError('boom'))
+    def test_add_crash_during_save_does_not_lose_data_or_write_to_db(self, _mock_save):
+        data = self._general_info()
+        data.update({
+            'items-TOTAL_FORMS': '1',
+            'items-INITIAL_FORMS': '0',
+            'items-MIN_NUM_FORMS': '0',
+            'items-MAX_NUM_FORMS': '1000',
+            'items-0-id': '',
+            'items-0-delivery_item': self.product.pk,
+            'items-0-delivery_quantity': '10.000',
+            'items-0-price_at_delivery': '1.00',
+            'items-0-total_price_row': '10.00',
+            'items-0-DELETE': '',
+        })
+        response = self.client.post(reverse('delivery_add'), data)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(DeliveryAttributes.objects.filter(document_number='CRASH-1').exists())
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.quantity, Decimal('0.000'))
+
+        messages = [str(m) for m in response.context['messages']]
+        self.assertTrue(messages, 'expected an error message to be flashed')
+
+        # The typed quantity must survive the crash, not reset to empty --
+        # this is the actual regression the incident exposed.
+        self.assertEqual(response.context['delivery_items_initial'][0]['delivery_quantity'], '10.000')
+
+    @patch('STORA.deliveries.forms.DeliveryItemFormSet.save', side_effect=RuntimeError('boom'))
+    def test_edit_crash_during_formset_save_rolls_back_the_attribute_save_too(self, _mock_save):
+        delivery = DeliveryAttributes.objects.create(
+            receiver=self.warehouse, supplier=self.supplier, document_type=self.invoice_type,
+            document_number='CRASH-EDIT-1', document_date='2026-10-13',
+        )
+        item = DeliveryItems.objects.create(
+            delivery=delivery, delivery_item=self.product,
+            delivery_quantity=Decimal('5.000'), price_at_delivery=Decimal('1.00'),
+        )
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.quantity, Decimal('5.000'))
+
+        data = self._general_info(document_number='CHANGED-NUMBER')
+        data.update({
+            'receiver': self.warehouse.pk,
+            'items-TOTAL_FORMS': '1',
+            'items-INITIAL_FORMS': '1',
+            'items-MIN_NUM_FORMS': '0',
+            'items-MAX_NUM_FORMS': '1000',
+            'items-0-id': item.pk,
+            'items-0-delivery_item': self.product.pk,
+            'items-0-delivery_quantity': '9.000',
+            'items-0-price_at_delivery': '1.00',
+            'items-0-total_price_row': '9.00',
+            'items-0-DELETE': '',
+        })
+        response = self.client.post(reverse('delivery_edit', args=[delivery.pk]), data)
+
+        self.assertEqual(response.status_code, 200)
+        delivery.refresh_from_db()
+        # Before delivery_edit had transaction.atomic(), form.save() (the
+        # document_number change) would have already committed by the time
+        # formset.save() blew up -- nothing would undo it. Now both must
+        # roll back together.
+        self.assertEqual(delivery.document_number, 'CRASH-EDIT-1')
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.quantity, Decimal('5.000'))
+
+        messages = [str(m) for m in response.context['messages']]
+        self.assertTrue(messages, 'expected an error message to be flashed')

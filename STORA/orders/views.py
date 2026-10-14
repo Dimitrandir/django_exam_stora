@@ -1,7 +1,10 @@
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 
+import logging
+
 from django.conf import settings
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db import transaction
@@ -18,13 +21,16 @@ from django.views.generic import DetailView, ListView
 
 from STORA.accounts.models import CompanyProfile
 from STORA.core.mixins import StaffPermissionRequiredMixin
-from STORA.products.models import Barcode, Product, Suppliers
+from STORA.products.models import Barcode, Product, ProductAttribute, Suppliers
+from STORA.products.views import flatten_product_attributes
 from STORA.reports.ai_service import AIReportsNotConfigured
 from STORA.sales.models import SaleItems
 
 from STORA.orders.ai_service import suggest_order_quantities
 from STORA.orders.forms import OrderPickerForm
 from STORA.orders.models import OrderAttributes, OrderItems
+
+logger = logging.getLogger(__name__)
 
 
 def _valid_positions(raw_positions):
@@ -122,6 +128,7 @@ def _build_candidate_lines(supplier, positions, start_date, end_date, existing_q
         )
     }
     barcode_by_product = _barcode_by_product(products)
+    product_attributes = list(ProductAttribute.objects.all())
 
     return [
         {
@@ -145,6 +152,7 @@ def _build_candidate_lines(supplier, positions, start_date, end_date, existing_q
             # -- same "line total, computed live off today's catalog price"
             # reasoning as the Orders list's own Total column (_order_totals).
             'delivery_price': float(product.delivery_price) if product.delivery_price is not None else 0,
+            **flatten_product_attributes(product, product_attributes),
         }
         for product in products
     ]
@@ -224,27 +232,43 @@ def order_new(request):
         start_date = form.cleaned_data['start_date']
         end_date = form.cleaned_data['end_date']
         selected_supplier_name = supplier.name
+        submitted_qty_by_product = {}
 
         if request.method == 'POST':
             to_create = _save_items_from_post(request)
+            # Captured regardless of what happens next -- fed into
+            # _build_candidate_lines below so a failed save (validation
+            # error OR an unexpected crash) redisplays the grid with what
+            # was just typed instead of resetting every row back to 0.
+            submitted_qty_by_product = {product.pk: qty for product, qty in to_create}
 
             if not to_create:
                 error = _('Enter at least one requested quantity.')
             else:
-                with transaction.atomic():
-                    order = OrderAttributes.objects.create(
-                        supplier=supplier, period_start=start_date, period_end=end_date, created_by=request.user,
-                    )
-                    order.set_position_list(positions)
-                    order.save(update_fields=['supplier_position'])
-                    OrderItems.objects.bulk_create([
-                        OrderItems(order=order, product=product, requested_quantity=qty)
-                        for product, qty in to_create
-                    ])
-                return redirect('order_details', pk=order.pk)
+                try:
+                    with transaction.atomic():
+                        order = OrderAttributes.objects.create(
+                            supplier=supplier, period_start=start_date, period_end=end_date, created_by=request.user,
+                        )
+                        order.set_position_list(positions)
+                        order.save(update_fields=['supplier_position'])
+                        OrderItems.objects.bulk_create([
+                            OrderItems(order=order, product=product, requested_quantity=qty)
+                            for product, qty in to_create
+                        ])
+                    return redirect('order_details', pk=order.pk)
+                except Exception:
+                    logger.exception('Unexpected error saving new order (supplier=%s)', supplier.pk)
+                    messages.error(request, _(
+                        'Saving failed due to an unexpected error. Nothing was lost -- '
+                        'your entered quantities are still below. Please try again, or '
+                        'contact the administrator if it keeps happening.'
+                    ))
 
         lines_data = _build_candidate_lines(
-            supplier, positions, start_date, end_date, extra_product_ids=_parse_id_list(preload),
+            supplier, positions, start_date, end_date,
+            existing_qty_by_product=submitted_qty_by_product,
+            extra_product_ids=_parse_id_list(preload),
         )
 
     return render(request, 'orders/order_new.html', {
@@ -255,6 +279,7 @@ def order_new(request):
         'preload_count': preload_count,
         'error': error,
         'ai_available': bool(settings.ANTHROPIC_API_KEY),
+        'product_attributes': ProductAttribute.objects.all(),
     })
 
 
@@ -273,19 +298,32 @@ def order_edit(request, pk):
 
     if request.method == 'POST':
         to_save = _save_items_from_post(request)
+        # Same reasoning as order_new: whatever was just typed, not the
+        # order's old saved quantities, is what a failed save (validation
+        # error or an unexpected crash) should redisplay.
+        existing_qty_by_product = {product.pk: qty for product, qty in to_save}
 
         if not to_save:
             error = _('Enter at least one requested quantity.')
         else:
-            with transaction.atomic():
-                order.items.all().delete()
-                OrderItems.objects.bulk_create([
-                    OrderItems(order=order, product=product, requested_quantity=qty)
-                    for product, qty in to_save
-                ])
-            return redirect('order_details', pk=order.pk)
+            try:
+                with transaction.atomic():
+                    order.items.all().delete()
+                    OrderItems.objects.bulk_create([
+                        OrderItems(order=order, product=product, requested_quantity=qty)
+                        for product, qty in to_save
+                    ])
+                return redirect('order_details', pk=order.pk)
+            except Exception:
+                logger.exception('Unexpected error saving edited order #%s', pk)
+                messages.error(request, _(
+                    'Saving failed due to an unexpected error. Nothing was lost -- '
+                    'your entered quantities are still below. Please try again, or '
+                    'contact the administrator if it keeps happening.'
+                ))
+    else:
+        existing_qty_by_product = {item.product_id: item.requested_quantity for item in order.items.all()}
 
-    existing_qty_by_product = {item.product_id: item.requested_quantity for item in order.items.all()}
     lines_data = _build_candidate_lines(
         order.supplier, positions, order.period_start, order.period_end,
         existing_qty_by_product=existing_qty_by_product,
@@ -296,6 +334,7 @@ def order_edit(request, pk):
         'lines_data': lines_data,
         'error': error,
         'ai_available': bool(settings.ANTHROPIC_API_KEY),
+        'product_attributes': ProductAttribute.objects.all(),
     })
 
 
@@ -398,17 +437,27 @@ def order_ai_draft_all(request):
             skipped += 1
             continue
 
-        with transaction.atomic():
-            order = OrderAttributes.objects.create(
-                supplier=supplier, period_start=start_date, period_end=end_date,
-                created_by=request.user, status=OrderAttributes.STATUS_DRAFT,
-            )
-            order.set_position_list(positions)
-            order.save(update_fields=['supplier_position'])
-            OrderItems.objects.bulk_create([
-                OrderItems(order=order, product=product, requested_quantity=qty)
-                for product, qty in to_create
-            ])
+        try:
+            with transaction.atomic():
+                order = OrderAttributes.objects.create(
+                    supplier=supplier, period_start=start_date, period_end=end_date,
+                    created_by=request.user, status=OrderAttributes.STATUS_DRAFT,
+                )
+                order.set_position_list(positions)
+                order.save(update_fields=['supplier_position'])
+                OrderItems.objects.bulk_create([
+                    OrderItems(order=order, product=product, requested_quantity=qty)
+                    for product, qty in to_create
+                ])
+        except Exception:
+            # One supplier's DB hiccup shouldn't abort the whole run --
+            # same "skip and keep going" treatment as a failed AI call
+            # above. No human-typed data is at stake here either way (the
+            # quantities came from the AI, not a person), just a supplier
+            # that doesn't get a draft order this time.
+            logger.exception('Unexpected error creating AI draft order for supplier #%s', supplier.pk)
+            skipped += 1
+            continue
         created += 1
 
     return redirect(f"{reverse('order_list')}?ai_drafted={created}&ai_skipped={skipped}")

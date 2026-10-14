@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+{% load i18n %}
+
+{% block title %}STORA - {% if product_attribute %}{% translate "Edit Product Attribute" %}{% else %}{% translate "New Product Attribute" %}{% endif %}{% endblock %}
+
+{% block content %}
+
+    <header class="page-header mb-4">
+        {% if product_attribute %}
+        <h1 class="h2 mb-1">{% blocktranslate with name=product_attribute.name %}Edit product attribute: {{ name }}{% endblocktranslate %}</h1>
+        {% else %}
+        <h1 class="h2 mb-1">{% translate "Add new product attribute" %}</h1>
+        {% endif %}
+    </header>
+
+    <form method="post" class="product-form">
+        {% csrf_token %}
+        <section class="product-form__section">
+            <div class="product-form__grid">
+                <div class="field">
+                    {{ form.name.label_tag }}
+                    {{ form.name }}
+                    {{ form.name.errors }}
+                </div>
+
+                <div class="field">
+                    {{ form.choices.label_tag }}
+                    {{ form.choices }}
+                    <span class="field__hint">{{ form.choices.help_text }}</span>
+                    {{ form.choices.errors }}
+                </div>
+            </div>
+        </section>
+
+        <div class="product-form__actions">
+            <button type="submit" class="form-submit-btn">{% translate "Save" %}</button>
+            <a href="{% url 'product_attribute_list' %}" class="form-cancel-btn">{% translate "Cancel" %}</a>
+        </div>
+    </form>
+
+{% endblock %}

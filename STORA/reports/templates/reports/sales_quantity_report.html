@@ -93,6 +93,9 @@ document.addEventListener('DOMContentLoaded', function () {
             title: '{% translate "Net Revenue" %}', field: 'total_amount', width: 150, hozAlign: 'right',
             formatter: moneyFormatter, bottomCalc: 'sum', bottomCalcFormatter: moneyFormatter,
         },
+        {% for attribute in product_attributes %}
+        {title: '{{ attribute.name|escapejs }}', field: 'attribute_{{ attribute.pk }}', width: 120, visible: false},
+        {% endfor %}
     ], {placeholder: '{% translate "No sales found for the selected period." %}'});
 
     attachTableExportToToolbar(table, '#sales-quantity-table-card', 'sales_quantity_report.xlsx', '{% translate "Sales Quantity" %}');

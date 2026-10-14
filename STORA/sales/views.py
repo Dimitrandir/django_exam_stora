@@ -2,6 +2,7 @@ from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db import transaction
@@ -17,6 +18,7 @@ from django.views.decorators.http import require_POST
 from STORA.sales.tasks import log_sale_completed
 
 import json
+import logging
 
 from STORA.accounts.models import Employee
 from STORA.core.mixins import StaffPermissionRequiredMixin
@@ -39,6 +41,8 @@ from STORA.sales.tab_state import (
     set_tab_draft,
     tabs_summary,
 )
+
+logger = logging.getLogger(__name__)
 
 # How many days back counts as "recently sold" for the top-3 most-popular
 # products shown first when a category is opened on the POS screen (Фаза 2
@@ -143,43 +147,62 @@ def sales_add(request):
         if form.is_valid() and formset.is_valid():
             if not _can_edit_price(request.user):
                 _enforce_effective_prices(formset)
-            sale = form.save(commit=False)
-            sale.cashier = request.user
-            sale.save()
 
-            formset.instance = sale
-            formset.save()
+            sale = None
+            try:
+                # Wrapped in atomic() so a crash partway through formset.save()
+                # (one SaleItems row at a time) can never leave a half-written
+                # sale in the database -- it didn't have this before.
+                with transaction.atomic():
+                    sale = form.save(commit=False)
+                    sale.cashier = request.user
+                    sale.save()
 
-            dispatch_task(log_sale_completed, sale.id)
+                    formset.instance = sale
+                    formset.save()
+            except Exception:
+                # Falls through to the exact same "invalid form" redisplay/
+                # draft-save code below (no `return` happened) instead of a
+                # raw 500 that would throw away the cashier's whole cart.
+                logger.exception('Unexpected error saving sale (tab=%s)', active_tab)
+                messages.error(request, _(
+                    'Saving failed due to an unexpected error. Nothing was lost -- '
+                    'your cart is still below. Please try again, or contact the '
+                    'administrator if it keeps happening.'
+                ))
+                sale = None
 
-            # Synchronous, not dispatch_task/Celery -- the cashier is
-            # physically waiting for the paper receipt to hand to the
-            # customer, so this can't be a fire-and-forget background job
-            # the way log_sale_completed is. Never blocks/fails the sale
-            # itself though: the sale is already committed above, and
-            # attempt_print() catches everything, just recording the
-            # outcome on the sale (see STORA.sales.fiscal). CARD/MIXED are
-            # skipped entirely for now -- no fiscal Payment type mapped for
-            # them yet (see the memory notes from the hardware session).
-            # In the cloud install (bridge mode) the printer isn't reachable
-            # from here: the receipt is handed to the cashier's browser
-            # instead, which prints it on the next page (the fresh New Sale
-            # screen below) -- see fiscal.prepare_sale_for_bridge.
-            if settings.FISCAL_ENABLED and sale.payment_method == SaleAttributes.CASH:
-                if fiscal.bridge_mode():
-                    fiscal.queue_bridge_job(request, fiscal.prepare_sale_for_bridge(sale))
-                else:
-                    fiscal.attempt_print(sale)
+            if sale is not None:
+                dispatch_task(log_sale_completed, sale.id)
 
-            if sale.change_due is not None:
-                set_last_change(request, active_tab, sale.change_due)
-            clear_tab_draft(request, active_tab)
-            # Back to a fresh New Sale screen, not the list -- a cashier
-            # completing one sale is almost always about to ring up the
-            # next customer, not review history. Stays on the SAME tab,
-            # now empty -- matches "done with this customer" rather than
-            # forcing a tab switch too.
-            return redirect('sale_add')
+                # Synchronous, not dispatch_task/Celery -- the cashier is
+                # physically waiting for the paper receipt to hand to the
+                # customer, so this can't be a fire-and-forget background job
+                # the way log_sale_completed is. Never blocks/fails the sale
+                # itself though: the sale is already committed above, and
+                # attempt_print() catches everything, just recording the
+                # outcome on the sale (see STORA.sales.fiscal). CARD/MIXED are
+                # skipped entirely for now -- no fiscal Payment type mapped for
+                # them yet (see the memory notes from the hardware session).
+                # In the cloud install (bridge mode) the printer isn't reachable
+                # from here: the receipt is handed to the cashier's browser
+                # instead, which prints it on the next page (the fresh New Sale
+                # screen below) -- see fiscal.prepare_sale_for_bridge.
+                if settings.FISCAL_ENABLED and sale.payment_method == SaleAttributes.CASH:
+                    if fiscal.bridge_mode():
+                        fiscal.queue_bridge_job(request, fiscal.prepare_sale_for_bridge(sale))
+                    else:
+                        fiscal.attempt_print(sale)
+
+                if sale.change_due is not None:
+                    set_last_change(request, active_tab, sale.change_due)
+                clear_tab_draft(request, active_tab)
+                # Back to a fresh New Sale screen, not the list -- a cashier
+                # completing one sale is almost always about to ring up the
+                # next customer, not review history. Stays on the SAME tab,
+                # now empty -- matches "done with this customer" rather than
+                # forcing a tab switch too.
+                return redirect('sale_add')
 
         extracted_state = extract_formset_state(request.POST, formset_prefix)
         sale_draft = {'formset_data': extracted_state, 'active': True}
@@ -705,29 +728,55 @@ def refund_new(request, pk):
                     error = _('Select at least one item to refund.')
 
         if not error:
-            with transaction.atomic():
-                refund = RefundAttributes.objects.create(original_sale=sale, cashier=request.user, reason=reason)
-                for item, qty in to_refund:
-                    RefundItems.objects.create(
-                        refund=refund, original_item=item, refund_quantity=qty, price_at_refund=item.price_at_sale,
+            try:
+                with transaction.atomic():
+                    refund = RefundAttributes.objects.create(
+                        original_sale=sale, cashier=request.user, reason=reason,
                     )
+                    for item, qty in to_refund:
+                        RefundItems.objects.create(
+                            refund=refund, original_item=item, refund_quantity=qty,
+                            price_at_refund=item.price_at_sale,
+                        )
+            except Exception:
+                logger.exception('Unexpected error saving refund for sale #%s', pk)
+                messages.error(request, _(
+                    'Saving failed due to an unexpected error. Nothing was lost -- '
+                    'your entered quantities are still below. Please try again, or '
+                    'contact the administrator if it keeps happening.'
+                ))
+            else:
+                # Same reasoning/placement as the CASH-sale fiscal print in
+                # sales_add above -- synchronous, after the refund is
+                # committed, never blocks it. Only possible at all if the
+                # ORIGINAL sale was itself fiscally printed (see
+                # fiscal.print_fiscal_refund) -- skipped silently otherwise,
+                # same as a CARD original sale.
+                if settings.FISCAL_ENABLED and sale.payment_method == SaleAttributes.CASH:
+                    if fiscal.bridge_mode():
+                        _queue_bridge_job_for_details(request, fiscal.prepare_refund_for_bridge(refund))
+                    else:
+                        fiscal.attempt_print_refund(refund)
 
-            # Same reasoning/placement as the CASH-sale fiscal print in
-            # sales_add above -- synchronous, after the refund is committed,
-            # never blocks it. Only possible at all if the ORIGINAL sale was
-            # itself fiscally printed (see fiscal.print_fiscal_refund) --
-            # skipped silently otherwise, same as a CARD original sale.
-            if settings.FISCAL_ENABLED and sale.payment_method == SaleAttributes.CASH:
-                if fiscal.bridge_mode():
-                    _queue_bridge_job_for_details(request, fiscal.prepare_refund_for_bridge(refund))
-                else:
-                    fiscal.attempt_print_refund(refund)
+                return redirect('refund_details', pk=refund.pk)
 
-            return redirect('refund_details', pk=refund.pk)
+    if request.method == 'POST':
+        # Whatever quantities were just typed, not a blanket 0 -- without
+        # this, ANY failure (a typo'd quantity, an over-the-remaining
+        # amount, or an unexpected crash) wiped every row in the grid back
+        # to empty, even the ones that had nothing wrong with them.
+        for row in lines_data:
+            raw = request.POST.get(f"refund_qty_{row['item_id']}", '').strip()
+            if raw:
+                try:
+                    row['refund_qty'] = float(raw)
+                except ValueError:
+                    pass
 
     return render(request, 'sales/refund_new.html', {
         'sale': sale, 'lines': lines, 'lines_data': lines_data,
         'reason_choices': RefundAttributes.REASON_CHOICES, 'error': error,
+        'selected_reason': request.POST.get('reason') if request.method == 'POST' else None,
     })
 
 

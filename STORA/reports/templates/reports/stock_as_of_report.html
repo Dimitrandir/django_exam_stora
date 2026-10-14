@@ -72,6 +72,9 @@ document.addEventListener('DOMContentLoaded', function () {
             title: '{% translate "Current quantity" %}', field: 'current_quantity', width: 150, hozAlign: 'right',
             formatter: qtyFormatter, visible: false,
         },
+        {% for attribute in product_attributes %}
+        {title: '{{ attribute.name|escapejs }}', field: 'attribute_{{ attribute.pk }}', width: 120, visible: false},
+        {% endfor %}
     ], {placeholder: '{% translate "No products found." %}'});
 
     attachTableExportToToolbar(table, '#stock-as-of-table-card', 'stock_as_of_report.xlsx', 'Stock');

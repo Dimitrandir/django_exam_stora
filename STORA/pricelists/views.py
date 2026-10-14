@@ -1,6 +1,8 @@
 import json
+import logging
 from decimal import Decimal, InvalidOperation
 
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import ValidationError
@@ -18,6 +20,8 @@ from STORA.products.models import Category, Product, Suppliers
 from STORA.pricelists.forms import PriceListForm
 from STORA.pricelists.models import PriceList, PriceListRule
 from STORA.pricelists.services import price_without_vat, rules_for_price_list
+
+logger = logging.getLogger(__name__)
 
 
 def _rules_data(price_list):
@@ -89,6 +93,20 @@ def _parse_rules(raw_json):
     return rules
 
 
+def _resubmitted_rules_data(raw_json):
+    """Echoes back whatever was just posted in rules_json -- already in the
+    exact shape _rules_data() produces (see that function's own docstring:
+    both are "the same shape the create/edit page's JS builds client-side"),
+    so a failed save (bad rule, or an unexpected crash) can redisplay the
+    grid with what the user actually had instead of resetting it to
+    whatever's still saved in the database (nothing, for a new list; the
+    stale old rules, for an edit)."""
+    try:
+        return json.loads(raw_json or '[]')
+    except (TypeError, ValueError):
+        return []
+
+
 def _picker_context():
     return {
         'categories_data': list(Category.objects.values('id', 'name')),
@@ -108,15 +126,27 @@ def price_list_create(request):
             except ValidationError as exc:
                 rules_error = exc.messages
             else:
-                with transaction.atomic():
-                    price_list = form.save(commit=False)
-                    price_list.created_by = request.user
-                    price_list.save()
-                    for rule in rules:
-                        rule.price_list = price_list
-                    PriceListRule.objects.bulk_create(rules)
-                return redirect('price_list_detail', pk=price_list.pk)
-        context = {'form': form, 'rules_error': rules_error, 'existing_rules': [], **_picker_context()}
+                try:
+                    with transaction.atomic():
+                        price_list = form.save(commit=False)
+                        price_list.created_by = request.user
+                        price_list.save()
+                        for rule in rules:
+                            rule.price_list = price_list
+                        PriceListRule.objects.bulk_create(rules)
+                    return redirect('price_list_detail', pk=price_list.pk)
+                except Exception:
+                    logger.exception('Unexpected error saving new price list')
+                    messages.error(request, _(
+                        'Saving failed due to an unexpected error. Nothing was lost -- '
+                        'your rules are still below. Please try again, or contact the '
+                        'administrator if it keeps happening.'
+                    ))
+        context = {
+            'form': form, 'rules_error': rules_error,
+            'existing_rules': _resubmitted_rules_data(request.POST.get('rules_json')),
+            **_picker_context(),
+        }
         return render(request, 'pricelists/price_list_form.html', context)
 
     form = PriceListForm()
@@ -138,16 +168,25 @@ def price_list_edit(request, pk):
             except ValidationError as exc:
                 rules_error = exc.messages
             else:
-                with transaction.atomic():
-                    form.save()
-                    price_list.rules.all().delete()
-                    for rule in rules:
-                        rule.price_list = price_list
-                    PriceListRule.objects.bulk_create(rules)
-                return redirect('price_list_detail', pk=price_list.pk)
+                try:
+                    with transaction.atomic():
+                        form.save()
+                        price_list.rules.all().delete()
+                        for rule in rules:
+                            rule.price_list = price_list
+                        PriceListRule.objects.bulk_create(rules)
+                    return redirect('price_list_detail', pk=price_list.pk)
+                except Exception:
+                    logger.exception('Unexpected error saving edited price list #%s', pk)
+                    messages.error(request, _(
+                        'Saving failed due to an unexpected error. Nothing was lost -- '
+                        'your rules are still below. Please try again, or contact the '
+                        'administrator if it keeps happening.'
+                    ))
         context = {
             'form': form, 'rules_error': rules_error, 'price_list': price_list,
-            'existing_rules': _rules_data(price_list), **_picker_context(),
+            'existing_rules': _resubmitted_rules_data(request.POST.get('rules_json')),
+            **_picker_context(),
         }
         return render(request, 'pricelists/price_list_form.html', context)
 

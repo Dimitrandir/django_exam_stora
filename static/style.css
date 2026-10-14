@@ -524,6 +524,15 @@ input[type="text"], input[type="number"], input[type="email"], select, textarea 
     font-size: var(--sale-table-font-size);
 }
 
+/* Revision items grid header text ("Found Qty", "System Qty", "Diff
+   Sum", ...) at the default 16px bold was too cramped against these
+   columns' own narrow fixed widths (110-120px, see revision_detail.html)
+   -- flagged live as hard to read. Scoped to this one table's headers
+   only, same pattern as #sale-items-table above. */
+#revision-items-table .tabulator-col-title {
+    font-size: 0.85rem;
+}
+
 /* Tucked into the Name column's own bottom-calc cell (nothing else uses
    that space -- Name has no sum) instead of a separate row above the
    table, per live feedback ("да не заемат от мястото"). Sized to fit the
@@ -586,6 +595,21 @@ input[type="text"], input[type="number"], input[type="email"], select, textarea 
     border: 1px solid var(--danger-color);
     border-radius: 0.5rem;
     color: #7a1f14;
+}
+
+/* Background draft-autosave (Deliveries/Sales saveDraft()) failing is a
+   "connection trouble" warning, not a validation error -- same shape as
+   .form-errors above but the amber palette already used for
+   .button-delete-line, so it reads as "careful" rather than "broken".
+   Shown/hidden by JS as the autosave keeps retrying in the background;
+   never a dead end on its own. */
+.connectivity-warning-banner {
+    margin-bottom: 1rem;
+    padding: 0.9rem 1.1rem;
+    background-color: #fff3cd;
+    border: 1px solid #d39e00;
+    border-radius: 0.5rem;
+    color: #664d03;
 }
 
 .form-errors::before {
@@ -2948,6 +2972,26 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
     color: var(--accent-color);
     text-decoration: none;
     align-self: flex-start;
+    /* Explicit reset -- this class used to only ever sit on an <a> (plain
+       text link, nothing to reset). The "+ Add attributes" toggle button
+       put it on a <button> for the first time, which inherited the
+       global `button { background-color: var(--accent-color); color:
+       white }` rule (see CLAUDE.md's own notes on this exact trap) --
+       this class selector already beats that element selector on
+       specificity for `color` (confirmed: the text WAS rendering, just
+       in the same accent-color blue as the background it also inherited,
+       so it looked blank), but background/padding/border/display still
+       came through unchallenged, producing an oversized solid block
+       instead of plain link text. Resetting all of it here means any
+       FUTURE <button class="field__aux-link"> is safe by default too,
+       not just this one. */
+    background: none;
+    border: none;
+    padding: 0;
+    border-radius: 0;
+    display: inline;
+    font-weight: 400;
+    cursor: pointer;
 }
 
 .field--checkbox {

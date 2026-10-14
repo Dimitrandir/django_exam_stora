@@ -14,7 +14,8 @@ from django.views.generic import DeleteView, DetailView, ListView
 
 from STORA.core.mixins import StaffPermissionRequiredMixin
 from STORA.deliveries.models import DeliveryAttributes, DeliveryItems
-from STORA.products.models import Product
+from STORA.products.models import Product, ProductAttribute
+from STORA.products.views import flatten_product_attributes
 from STORA.reports.ai_service import AIReportsNotConfigured, rerun_stored_query, rows_to_dicts, run_ai_report
 from STORA.reports.forms import ExpiringPeriodForm, ReportPeriodForm, StockAsOfDateForm
 from STORA.reports.models import AIReport
@@ -274,6 +275,7 @@ class StockAsOfDateReportView(LoginRequiredMixin, StaffPermissionRequiredMixin, 
             as_of_date = default_date
 
         rows = stock_as_of(as_of_date)
+        product_attributes = list(ProductAttribute.objects.all())
         stock_data = [
             {
                 'code': row['product'].internal_code,
@@ -282,6 +284,7 @@ class StockAsOfDateReportView(LoginRequiredMixin, StaffPermissionRequiredMixin, 
                 'unit_type': row['product'].get_unit_type_display(),
                 'quantity_as_of': float(row['quantity_as_of']),
                 'current_quantity': float(row['current_quantity']),
+                **flatten_product_attributes(row['product'], product_attributes),
             }
             for row in rows
         ]
@@ -290,6 +293,7 @@ class StockAsOfDateReportView(LoginRequiredMixin, StaffPermissionRequiredMixin, 
             'form': form,
             'as_of_date': as_of_date,
             'stock_data': stock_data,
+            'product_attributes': product_attributes,
         }
         return render(request, self.template_name, context)
 
@@ -317,6 +321,7 @@ class StockBalanceReportView(StaffPermissionRequiredMixin, ReportsBaseView):
         form, start_date, end_date = self.get_period(request)
 
         rows = stock_movement_totals(start_date, end_date)
+        product_attributes = list(ProductAttribute.objects.all())
         stock_data = [
             {
                 'code': row['product'].internal_code,
@@ -350,6 +355,7 @@ class StockBalanceReportView(StaffPermissionRequiredMixin, ReportsBaseView):
                     float(row['closing_purchase_value_no_vat'])
                     if row['closing_purchase_value_no_vat'] is not None else None
                 ),
+                **flatten_product_attributes(row['product'], product_attributes),
             }
             for row in rows
         ]
@@ -359,6 +365,7 @@ class StockBalanceReportView(StaffPermissionRequiredMixin, ReportsBaseView):
             'start_date': start_date,
             'end_date': end_date,
             'stock_data': stock_data,
+            'product_attributes': product_attributes,
         }
         return render(request, self.template_name, context)
 
@@ -393,6 +400,7 @@ class ExpiringProductsReportView(LoginRequiredMixin, StaffPermissionRequiredMixi
             expiry_date__lte=cutoff,
         ).select_related('delivery_item', 'delivery_item__category').order_by('expiry_date')
 
+        product_attributes = list(ProductAttribute.objects.all())
         batches_data = [
             {
                 'code': batch.delivery_item.internal_code,
@@ -402,6 +410,7 @@ class ExpiringProductsReportView(LoginRequiredMixin, StaffPermissionRequiredMixi
                 'expiry_date': batch.expiry_date.isoformat(),
                 'days_left': (batch.expiry_date - today).days,
                 'view_url': reverse('delivery_details', args=[batch.delivery_id]),
+                **flatten_product_attributes(batch.delivery_item, product_attributes),
             }
             for batch in batches
         ]
@@ -410,6 +419,7 @@ class ExpiringProductsReportView(LoginRequiredMixin, StaffPermissionRequiredMixi
             'form': form,
             'days_ahead': days_ahead,
             'batches_data': batches_data,
+            'product_attributes': product_attributes,
         }
         return render(request, self.template_name, context)
 
@@ -451,6 +461,7 @@ class SalesQuantityReportView(StaffPermissionRequiredMixin, ReportsBaseView):
         }
 
         products = Product.objects.filter(pk__in=totals_by_product.keys()).select_related('category')
+        product_attributes = list(ProductAttribute.objects.all())
 
         sales_quantity_data = []
         for product in products:
@@ -472,6 +483,7 @@ class SalesQuantityReportView(StaffPermissionRequiredMixin, ReportsBaseView):
                 'refunded_amount': float(refunded_amount),
                 # Net revenue -- what was sold minus what was handed back.
                 'total_amount': float(sold_amount - refunded_amount),
+                **flatten_product_attributes(product, product_attributes),
             })
 
         context = {
@@ -479,6 +491,7 @@ class SalesQuantityReportView(StaffPermissionRequiredMixin, ReportsBaseView):
             'start_date': start_date,
             'end_date': end_date,
             'sales_quantity_data': sales_quantity_data,
+            'product_attributes': product_attributes,
         }
         return render(request, self.template_name, context)
 

@@ -16,6 +16,10 @@
         <h1>{% if is_write_off %}{% translate "New Write-off" %}{% elif is_scrap %}{% translate "New Scrap" %}{% else %}{% translate "New Delivery" %}{% endif %}</h1>
     </header>
 
+    <div id="draft-connectivity-banner" class="connectivity-warning-banner" style="display:none;">
+        {% translate "Connection trouble -- your latest changes aren't saving automatically right now. Keep working; don't press Save/Complete until this message disappears." %}
+    </div>
+
     {% if form.errors %}
         <div class="form-errors">
             {{ form.errors }}
@@ -214,9 +218,36 @@
         })();
         {% endif %}
 
+        // Tracks whether the background draft autosave is actually reaching
+        // the server -- flagged live after a real incident where a big
+        // delivery crashed and seemed to vanish (it hadn't, see
+        // delivery_draft_save, but nothing on screen told the clerk the
+        // autosave was even happening, let alone failing). true/unknown
+        // until the first save settles one way or the other.
+        var draftSaveHealthy = true;
+        var connectivityBanner = document.getElementById('draft-connectivity-banner');
+        // While unhealthy, keeps retrying on its own -- without this, a
+        // clerk who stops touching the grid (e.g. just finished typing and
+        // is about to hit Complete) would never trigger another saveDraft()
+        // call at all, since that only fires on click/change inside the
+        // table. The banner would then sit there forever even after the
+        // connection came back, with nothing left to click to clear it.
+        var draftRetryTimer = null;
+
+        function setDraftSaveHealthy(healthy) {
+            draftSaveHealthy = healthy;
+            connectivityBanner.style.display = healthy ? 'none' : '';
+            if (healthy && draftRetryTimer) {
+                clearInterval(draftRetryTimer);
+                draftRetryTimer = null;
+            } else if (!healthy && !draftRetryTimer) {
+                draftRetryTimer = setInterval(saveDraft, 5000);
+            }
+        }
+
         async function saveDraft() {
             try {
-                await fetch("{% url 'delivery_draft_save' %}", {
+                const response = await fetch("{% url 'delivery_draft_save' %}", {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json",
@@ -236,8 +267,13 @@
                         formset_data: window.getDeliveryItemsDraftState ? window.getDeliveryItemsDraftState() : {TOTAL_FORMS: 0, forms: []}
                     })
                 });
+                // fetch() only rejects on a true network failure -- a 500 from
+                // the server comes back as a normal (non-ok) response, not an
+                // exception, and was previously treated as if it had saved fine.
+                setDraftSaveHealthy(response.ok);
             } catch (error) {
                 console.error('Draft save failed:', error);
+                setDraftSaveHealthy(false);
             }
         }
 
@@ -246,6 +282,19 @@
         });
         document.querySelector('.delivery-form__form').addEventListener('change', function (e) {
             if (e.target.closest('#delivery-items-table')) setTimeout(saveDraft, 0);
+        });
+
+        // Blocks Save/Complete while the autosave is known to be failing --
+        // submitting now risks the exact same "looks saved, isn't" trap the
+        // banner above exists to warn about, since the final submit goes
+        // over the same connection. Doesn't touch validation at all; Django's
+        // own form/formset errors still render normally once a submit is
+        // actually allowed through.
+        document.querySelector('.delivery-form__form').addEventListener('submit', function (e) {
+            if (!draftSaveHealthy) {
+                e.preventDefault();
+                alert('{% translate "Connection trouble -- wait for the warning banner to disappear before saving, so nothing gets lost." %}');
+            }
         });
     </script>
 </section>

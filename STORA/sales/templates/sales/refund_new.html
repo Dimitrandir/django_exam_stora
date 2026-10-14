@@ -28,7 +28,7 @@
         <label for="id_reason">{% translate "Reason:" %}</label>
         <select name="reason" id="id_reason">
             {% for value, label in reason_choices %}
-            <option value="{{ value }}">{{ label }}</option>
+            <option value="{{ value }}"{% if value == selected_reason %} selected{% endif %}>{{ label }}</option>
             {% endfor %}
         </select>
     </p>

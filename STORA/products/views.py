@@ -1,9 +1,13 @@
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 
+import logging
+
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.postgres.search import TrigramSimilarity
+from django.db import transaction
 from django.db.models import F, ProtectedError, Sum
 from django.db.models.functions import Coalesce
 from django.forms.models import model_to_dict
@@ -24,12 +28,25 @@ from STORA.deliveries.models import DeliveryAttributes, DeliveryItems, DeliveryI
 from STORA.revisions.models import RevisionAttributes, RevisionItems
 from STORA.products.forms import (
     ProductForms, ProductInlineEditForm, CategoryForm, SuppliersForm, BarcodeFormSet, ProductSupplierFormSet,
-    RecipeIngredientFormSet, ProductHistoryPeriodForm, TaxGroupForm,
+    RecipeIngredientFormSet, ProductHistoryPeriodForm, TaxGroupForm, ProductAttributeForm,
 )
-from STORA.products.models import Product, Barcode, Category, Suppliers, TaxGroup
+from STORA.products.models import Product, Barcode, Category, Suppliers, TaxGroup, ProductAttribute
 from STORA.pricelists.services import resolve_prices
 from STORA.sales.models import SaleAttributes, SaleItems
 from STORA.sales.tasks import backfill_recipe_ingredient_stock
+
+logger = logging.getLogger(__name__)
+
+
+def flatten_product_attributes(product, attributes):
+    """A product's own ProductAttribute values, flattened to
+    `attribute_<id>` keys -- the one convention every Tabulator grid that
+    shows a per-product attribute column uses (Products List here, and the
+    Reports/Orders screens that import this). `attributes` is the full
+    ProductAttribute list -- fetch it ONCE per page (ProductAttribute.
+    objects.all(), outside whatever per-row loop builds the grid data) and
+    pass the same list to every call, not a fresh query per row."""
+    return {f'attribute_{a.pk}': product.attributes.get(str(a.pk), '') for a in attributes}
 
 
 def get_used_internal_codes():
@@ -83,6 +100,10 @@ class ProductListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListView
         products_data = []
         products_list = list(context['products'])
         price_list_matches = resolve_prices(products_list)
+        # Fetched once, not per product -- one column per shop-defined
+        # attribute (see ProductAttribute's own docstring), read-only here
+        # for now (not wired into the "Enable Edit" inline-update flow).
+        product_attributes = list(ProductAttribute.objects.all())
         for product in products_list:
             barcodes = list(product.barcode.all())
             suppliers = list(product.product_suppliers.all())
@@ -123,9 +144,11 @@ class ProductListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListView
             for i in range(self.GRID_SLOT_COUNT):
                 row[f'barcode_{i + 1}'] = barcodes[i].code if i < len(barcodes) else ''
                 row[f'supplier_{i + 1}'] = suppliers[i].supplier.name if i < len(suppliers) else ''
+            row.update(flatten_product_attributes(product, product_attributes))
             products_data.append(row)
 
         context['products_data'] = products_data
+        context['product_attributes'] = product_attributes
         return context
 
 
@@ -651,14 +674,28 @@ class ProductCreateView(LoginRequiredMixin, StaffPermissionRequiredMixin, Create
         # creation log entries it writes know who created the product --
         # same pattern as ProductUpdateView above.
         form.instance._changed_by = self.request.user
-        self.object = form.save()
-        barcode_formset.instance = self.object
-        barcode_formset.save()
-        supplier_formset.instance = self.object
-        supplier_formset.save()
-        recipe_formset.instance = self.object
-        recipe_formset.save()
-        self.object.recalculate_ingredient_cost()
+        try:
+            # 4 separate saves in sequence -- without atomic(), a crash
+            # partway through (say, the recipe formset) would leave a
+            # half-saved product (with barcodes/suppliers but no recipe)
+            # sitting in the database instead of nothing at all.
+            with transaction.atomic():
+                self.object = form.save()
+                barcode_formset.instance = self.object
+                barcode_formset.save()
+                supplier_formset.instance = self.object
+                supplier_formset.save()
+                recipe_formset.instance = self.object
+                recipe_formset.save()
+                self.object.recalculate_ingredient_cost()
+        except Exception:
+            logger.exception('Unexpected error saving new product')
+            messages.error(self.request, _(
+                'Saving failed due to an unexpected error. Nothing was lost -- '
+                'your entered data is still below. Please try again, or contact '
+                'the administrator if it keeps happening.'
+            ))
+            return self.render_to_response(context)
         # A brand new product can't have prior sales, so there's nothing to
         # backfill -- but harmless/idempotent to call regardless (matches
         # ProductUpdateView, keeps the "just defined a recipe" path in one
@@ -725,14 +762,27 @@ class ProductUpdateView(LoginRequiredMixin, StaffPermissionRequiredMixin, Update
         # signal itself has no access to the request/user.
         form.instance._changed_by = self.request.user
 
-        self.object = form.save()
-        barcode_formset.instance = self.object
-        barcode_formset.save()
-        supplier_formset.instance = self.object
-        supplier_formset.save()
-        recipe_formset.instance = self.object
-        recipe_formset.save()
-        self.object.recalculate_ingredient_cost()
+        try:
+            # Same reasoning as ProductCreateView.form_valid -- 4 separate
+            # saves, wrapped together so a crash partway through can't
+            # leave this product half-updated.
+            with transaction.atomic():
+                self.object = form.save()
+                barcode_formset.instance = self.object
+                barcode_formset.save()
+                supplier_formset.instance = self.object
+                supplier_formset.save()
+                recipe_formset.instance = self.object
+                recipe_formset.save()
+                self.object.recalculate_ingredient_cost()
+        except Exception:
+            logger.exception('Unexpected error saving edited product #%s', self.object.pk)
+            messages.error(self.request, _(
+                'Saving failed due to an unexpected error. Nothing was lost -- '
+                'your entered data is still below. Please try again, or contact '
+                'the administrator if it keeps happening.'
+            ))
+            return self.render_to_response(context)
 
         # First time this product becomes a recipe (or was already one but
         # never backfilled): catch up ingredient stock for all its past
@@ -972,6 +1022,78 @@ class TaxGroupDeleteView(LoginRequiredMixin, StaffPermissionRequiredMixin, Delet
     model = TaxGroup
     template_name = 'products/tax_group_confirm_delete.html'
     success_url = reverse_lazy('tax_group_list')
+
+
+class ProductAttributeListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListView):
+    permission_required = 'products.view_productattribute'
+    model = ProductAttribute
+    template_name = 'products/product_attribute_list.html'
+    context_object_name = 'product_attributes'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        can_edit = self.request.user.has_perm('products.change_productattribute')
+        context['product_attributes_data'] = [
+            {
+                'id': attribute.pk,
+                'name': attribute.name,
+                # "Free text" is already translated via Django's own
+                # NON_FIELD choices-empty convention elsewhere -- simplest
+                # here to just use the same literal the old plain-table
+                # version showed, now serialized server-side instead of in
+                # the template, since this row feeds Tabulator as JSON.
+                'choices_display': ', '.join(attribute.choices) if attribute.choices else _('Free text'),
+                'edit_url': reverse('product_attribute_edit', kwargs={'pk': attribute.pk}) if can_edit else '',
+            }
+            for attribute in context['product_attributes']
+        ]
+        return context
+
+
+class ProductAttributeCreateView(LoginRequiredMixin, StaffPermissionRequiredMixin, CreateView):
+    permission_required = 'products.add_productattribute'
+    model = ProductAttribute
+    form_class = ProductAttributeForm
+    template_name = 'products/product_attribute_form.html'
+    success_url = reverse_lazy('product_attribute_list')
+
+
+class ProductAttributeUpdateView(LoginRequiredMixin, StaffPermissionRequiredMixin, UpdateView):
+    permission_required = 'products.change_productattribute'
+    model = ProductAttribute
+    form_class = ProductAttributeForm
+    template_name = 'products/product_attribute_form.html'
+    context_object_name = 'product_attribute'
+    success_url = reverse_lazy('product_attribute_list')
+
+
+class ProductAttributeDeleteView(LoginRequiredMixin, StaffPermissionRequiredMixin, DeleteView):
+    permission_required = 'products.delete_productattribute'
+    model = ProductAttribute
+    template_name = 'products/product_attribute_confirm_delete.html'
+    success_url = reverse_lazy('product_attribute_list')
+
+
+class ProductAttributeBulkDeleteView(LoginRequiredMixin, StaffPermissionRequiredMixin, View):
+    """Mirrors CategoryBulkDeleteView -- what the list's own checkbox + bulk
+    bar posts to, one object at a time (not queryset.delete()). No
+    ProtectedError risk here at all (nothing FKs to ProductAttribute --
+    values live in Product.attributes, a plain JSON blob, not a real
+    relation), but looping anyway keeps this consistent with the other
+    bulk-delete endpoints in case that ever changes."""
+
+    permission_required = 'products.delete_productattribute'
+
+    def post(self, request):
+        ids = request.POST.getlist('ids')
+        if not ids:
+            return JsonResponse({'error': _('No attributes selected.')}, status=400)
+
+        deleted = 0
+        for attribute in ProductAttribute.objects.filter(pk__in=ids):
+            attribute.delete()
+            deleted += 1
+        return JsonResponse({'deleted': deleted})
 
 
 class SuppliersListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListView):

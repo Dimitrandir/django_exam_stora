@@ -204,6 +204,35 @@ class SalesFormSubmissionTests(TestCase):
         self.assertEqual(sale.card_amount, Decimal('6.00'))
         self.assertEqual(sale.card_amount + sale.amount_paid, sale.total_amount)
 
+    @patch('STORA.sales.forms.SaleItemFormSet.save', side_effect=RuntimeError('boom'))
+    def test_crash_during_save_rolls_back_and_preserves_the_cart(self, _mock_save):
+        # Regression for the same incident class as deliveries: an
+        # unexpected exception (not a validation failure) during
+        # formset.save() must not leave a half-written sale in the DB, and
+        # must redisplay the cashier's cart instead of a raw 500.
+        data = {
+            'cashier': self.cashier.pk,
+            'items-TOTAL_FORMS': '1',
+            'items-INITIAL_FORMS': '0',
+            'items-MIN_NUM_FORMS': '0',
+            'items-MAX_NUM_FORMS': '1000',
+            'items-0-sale_item': self.product.pk,
+            'items-0-sale_quantity': '4',
+            'items-0-price_at_sale': '2.50',
+            'items-0-total_price_row': '10.00',
+            'items-0-DELETE': '',
+        }
+        response = self.client.post(reverse('sale_add'), data)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(SaleAttributes.objects.filter(cashier=self.cashier).exists())
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.quantity, Decimal('20.000'))  # unchanged
+
+        self.assertEqual(response.context['sale_items_initial'][0]['sale_quantity'], 4.0)
+        messages = [str(m) for m in response.context['messages']]
+        self.assertTrue(messages, 'expected an error message to be flashed')
+
 
 class SalePaymentFieldsTests(TestCase):
     """SaleAttributes.payment_method/amount_paid/change_due (Фаза 2 step 1,
@@ -950,6 +979,42 @@ class RefundViewTests(TestCase):
         self.assertFalse(RefundAttributes.objects.filter(original_sale=self.sale).exists())
         self.product.refresh_from_db()
         self.assertEqual(self.product.quantity, 7)  # unchanged
+
+    def test_rejected_refund_echoes_back_the_typed_quantity_and_reason(self):
+        # Regression: lines_data used to hardcode refund_qty=0 on every
+        # redisplay, and the reason <select> never carried the submitted
+        # value back either -- any rejected refund (even a simple "too
+        # much" typo) wiped the whole grid back to empty.
+        response = self.client.post(reverse('refund_new', kwargs={'pk': self.sale.pk}), {
+            'reason': RefundAttributes.RETURN_COMPLAINT,
+            f'refund_qty_{self.item.pk}': '5',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        line = next(row for row in response.context['lines_data'] if row['item_id'] == self.item.pk)
+        self.assertEqual(line['refund_qty'], 5.0)
+        self.assertEqual(response.context['selected_reason'], RefundAttributes.RETURN_COMPLAINT)
+
+    @patch('STORA.sales.models.RefundItems.objects.create', side_effect=RuntimeError('boom'))
+    def test_crash_during_save_rolls_back_and_preserves_typed_quantity(self, _mock_create):
+        response = self.client.post(reverse('refund_new', kwargs={'pk': self.sale.pk}), {
+            'reason': RefundAttributes.RETURN_COMPLAINT,
+            f'refund_qty_{self.item.pk}': '2',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        # transaction.atomic() must roll back the RefundAttributes row
+        # created just before the patched RefundItems.create() blew up --
+        # a "refund" with zero items would otherwise be left behind.
+        self.assertFalse(RefundAttributes.objects.filter(original_sale=self.sale).exists())
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.quantity, 7)  # unchanged
+
+        line = next(row for row in response.context['lines_data'] if row['item_id'] == self.item.pk)
+        self.assertEqual(line['refund_qty'], 2.0)
+
+        messages = [str(m) for m in response.context['messages']]
+        self.assertTrue(messages, 'expected an error message to be flashed')
 
     def test_second_refund_is_capped_by_what_the_first_already_took(self):
         RefundItems.objects.create(

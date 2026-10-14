@@ -7,7 +7,9 @@ from django.urls import reverse
 from django.utils import timezone
 
 from STORA.deliveries.models import DeliveryAttributes, DeliveryItems, DocumentType
-from STORA.products.models import Category, Product, ProductChangeLog, RecipeIngredient, Suppliers, TaxGroup
+from STORA.products.models import (
+    Category, Product, ProductAttribute, ProductChangeLog, RecipeIngredient, Suppliers, TaxGroup,
+)
 from STORA.reports.ai_service import AIReportsNotConfigured
 from STORA.reports.models import AIReport
 from STORA.revisions.models import RevisionAttributes, RevisionItems
@@ -524,6 +526,11 @@ class StockAsOfDateReportViewTests(TestCase):
         response = self._get(as_of_date=(self.today - timezone.timedelta(days=1)).isoformat())
         self.assertEqual(self._row(response, milk)['quantity_as_of'], 10.0)
 
+    def test_context_exposes_product_attributes_for_the_column_loop(self):
+        color = ProductAttribute.objects.create(name='Color', choices=['Red', 'Blue'])
+        response = self._get()
+        self.assertIn(color, response.context['product_attributes'])
+
 
 class StockMovementTotalsTests(TestCase):
     """stock_movement_totals() (reports/services.py) -- the "Stock Balance
@@ -706,6 +713,18 @@ class StockBalanceReportViewTests(TestCase):
         self.client.force_login(self.cashier)
         response = self.client.get(reverse('stock_balance_report'))
         self.assertEqual(response.status_code, 403)
+
+    def test_context_exposes_product_attributes_for_the_column_loop(self):
+        # One hidden-by-default column per ProductAttribute (see
+        # STORA.products.views.flatten_product_attributes) -- doesn't need
+        # any actual stock movement rows to confirm the wiring itself.
+        color = ProductAttribute.objects.create(name='Color', choices=['Red', 'Blue'])
+        self.client.force_login(self.manager)
+        response = self.client.get(reverse('stock_balance_report'), {
+            'start_date': (self.today - timezone.timedelta(days=7)).isoformat(),
+            'end_date': self.today.isoformat(),
+        })
+        self.assertIn(color, response.context['product_attributes'])
 
 
 class StockMovementValuationTests(TestCase):
@@ -995,6 +1014,18 @@ class ExpiringProductsReportViewTests(TestCase):
         codes = [r['code'] for r in response.context['batches_data']]
         self.assertNotIn(self.product.internal_code, codes)
 
+    def test_row_carries_the_product_attribute_value(self):
+        color = ProductAttribute.objects.create(name='Color', choices=['Red', 'Blue'])
+        self.product.attributes = {str(color.pk): 'Blue'}
+        self.product.save(update_fields=['attributes'])
+        DeliveryItems.objects.create(
+            delivery=self.delivery, delivery_item=self.product, delivery_quantity=Decimal('5.000'),
+            expiry_date=self.today + timezone.timedelta(days=10),
+        )
+        response = self._get(days_ahead=30)
+        row = next(r for r in response.context['batches_data'] if r['code'] == self.product.internal_code)
+        self.assertEqual(row[f'attribute_{color.pk}'], 'Blue')
+
 
 class SalesQuantityReportViewTests(TestCase):
     """Shows delivery_price (cost) per product -- Manager/Warehouse only,
@@ -1056,6 +1087,15 @@ class SalesQuantityReportViewTests(TestCase):
         response = self._get()
         codes = [r['code'] for r in response.context['sales_quantity_data']]
         self.assertNotIn(other.internal_code, codes)
+
+    def test_row_carries_the_product_attribute_value(self):
+        color = ProductAttribute.objects.create(name='Color', choices=['Red', 'Blue'])
+        self.product.attributes = {str(color.pk): 'Blue'}
+        self.product.save(update_fields=['attributes'])
+        response = self._get()
+        self.assertIn(color, response.context['product_attributes'])
+        row = next(r for r in response.context['sales_quantity_data'] if r['code'] == self.product.internal_code)
+        self.assertEqual(row[f'attribute_{color.pk}'], 'Blue')
 
 
 class AIReportPermissionTests(TestCase):

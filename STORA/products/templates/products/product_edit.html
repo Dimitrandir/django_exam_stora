@@ -71,6 +71,9 @@
                     </div>
                     {{ form.category }}
                     <a href="{% url 'category_create' %}?popup=1" target="_blank" class="field__aux-link">{% translate "+ New category" %}</a>
+                    {% if form.attribute_bound_fields %}
+                    <button type="button" id="toggle-attributes-btn" class="field__aux-link">{% translate "+ Add attributes" %}</button>
+                    {% endif %}
                 </div>
                 {{ form.category.errors }}
             </div>
@@ -123,6 +126,24 @@
             </div>
         </div>
     </section>
+
+    {% if form.attribute_bound_fields %}
+    <section class="product-form__section" id="attributes-section" style="display: none;">
+        <header class="product-form__section-header">
+            <h2>{% translate "Attributes" %}</h2>
+            <a href="{% url 'product_attribute_list' %}" target="_blank" class="field__aux-link">{% translate "Manage attributes" %}</a>
+        </header>
+        <div class="product-form__grid is-grouped">
+            {% for bound_field in form.attribute_bound_fields %}
+            <div class="field">
+                {{ bound_field.label_tag }}
+                {{ bound_field }}
+                {{ bound_field.errors }}
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
 
     <section class="product-form__section">
         <header class="product-form__section-header"><h2>{% translate "Barcode" %}</h2></header>
@@ -248,6 +269,23 @@
     function sync() { section.style.display = checkbox.checked ? '' : 'none'; }
     checkbox.addEventListener('change', sync);
     sync();
+})();
+
+(function () {
+    var toggleBtn = document.getElementById('toggle-attributes-btn');
+    var section = document.getElementById('attributes-section');
+    if (!toggleBtn || !section) return;
+    // Starts expanded if any attribute already carries a value (this
+    // product already has some set) -- otherwise collapsed, one tap away
+    // via the button next to Category, so a section most products never
+    // touch doesn't clutter the form by default.
+    var hasValue = Array.from(section.querySelectorAll('select, input')).some(function (el) {
+        return el.value;
+    });
+    if (hasValue) section.style.display = '';
+    toggleBtn.addEventListener('click', function () {
+        section.style.display = section.style.display === 'none' ? '' : 'none';
+    });
 })();
 
 // Shared by both the Product section's Code/Name/Sold By row and the Price

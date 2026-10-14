@@ -4,7 +4,7 @@ from django.forms import inlineformset_factory
 from django.utils.translation import gettext_lazy as _
 
 from STORA.products.models import (
-    Product, Category, Suppliers, Barcode, ProductSupplier, RecipeIngredient, TaxGroup,
+    Product, Category, Suppliers, Barcode, ProductSupplier, RecipeIngredient, TaxGroup, ProductAttribute,
 )
 
 
@@ -118,6 +118,52 @@ class ProductForms(forms.ModelForm):
             if default_tax_group:
                 self.fields['tax_group'].initial = default_tax_group.pk
 
+        # One extra field per shop-defined ProductAttribute (Color, Size,
+        # whatever this shop decided to track -- see that model's own
+        # docstring for why this is a flat global list, not scoped to
+        # category). These are NOT real Product model fields -- Meta.fields
+        # above only lists real columns -- so they're added here by hand
+        # and collected back into Product.attributes in save() below,
+        # same general idea as how `supplier` is kept out of Meta.fields
+        # and handled by its own separate formset instead. A dropdown for
+        # a predefined choices list, plain text otherwise -- empty/unset
+        # is always allowed (required=False) regardless, since most
+        # products won't have every attribute this shop happens to track.
+        self.attribute_fields = []
+        for attribute in ProductAttribute.objects.all():
+            field_name = f'attribute_{attribute.pk}'
+            self.attribute_fields.append((attribute.pk, field_name))
+            initial = self.instance.attributes.get(str(attribute.pk), '')
+            if attribute.choices:
+                self.fields[field_name] = forms.ChoiceField(
+                    choices=[('', '---------')] + [(c, c) for c in attribute.choices],
+                    required=False, label=attribute.name, initial=initial,
+                )
+            else:
+                self.fields[field_name] = forms.CharField(
+                    required=False, label=attribute.name, initial=initial,
+                )
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        instance.attributes = {
+            str(attribute_id): self.cleaned_data[field_name]
+            for attribute_id, field_name in self.attribute_fields
+            if self.cleaned_data.get(field_name)
+        }
+        if commit:
+            instance.save()
+            self._save_m2m()
+        return instance
+
+    @property
+    def attribute_bound_fields(self):
+        # product_create/edit.html can't reference attribute_<id> fields by
+        # name directly (the id isn't known until render time) -- this
+        # hands the template ready-to-render BoundFields in the same order
+        # attribute_fields was built, so it can just loop over them.
+        return [self[field_name] for _, field_name in self.attribute_fields]
+
 
 class ProductInlineEditForm(forms.ModelForm):
     """Backs the Products grid's inline "Enable Edit" mode -- deliberately
@@ -163,6 +209,39 @@ class CategoryForm(forms.ModelForm):
             # no separate clean_parent needed.
             excluded_ids = [self.instance.pk] + self.instance.get_descendant_ids()
             self.fields['parent'].queryset = Category.objects.exclude(pk__in=excluded_ids)
+
+
+class ProductAttributeForm(forms.ModelForm):
+    # Overrides the model's own JSONField(choices) -- its default form
+    # widget would render/accept raw JSON (`["S", "M", "L"]`), not
+    # something a Manager should have to type correctly by hand. One value
+    # per line instead, converted to/from the stored list below.
+    choices = forms.CharField(
+        required=False, widget=forms.Textarea(attrs={'rows': 4}),
+        label=_('Choices'),
+        help_text=_('One value per line. Leave empty for a free-text field on the product form.'),
+    )
+
+    class Meta:
+        model = ProductAttribute
+        fields = ['name', 'choices']
+        labels = {'name': _('Attribute Name')}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance.pk:
+            # self.initial (form-level), not self.fields['choices'].initial
+            # (field-level) -- ModelForm.__init__ already populated
+            # self.initial['choices'] from the raw model value (a list,
+            # via model_to_dict), and BoundField.value() checks form.initial
+            # BEFORE field.initial, so only overwriting the field-level one
+            # silently did nothing (confirmed live: the edit form rendered
+            # the raw Python list repr instead of one choice per line).
+            self.initial['choices'] = '\n'.join(self.instance.choices)
+
+    def clean_choices(self):
+        raw = self.cleaned_data['choices']
+        return [line.strip() for line in raw.splitlines() if line.strip()]
 
 
 class TaxGroupForm(forms.ModelForm):

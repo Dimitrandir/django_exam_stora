@@ -1,5 +1,6 @@
 from decimal import Decimal, InvalidOperation
 
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.postgres.search import TrigramSimilarity
@@ -13,6 +14,7 @@ from django.views.decorators.http import require_POST
 from django.utils.translation import gettext as _
 
 import json
+import logging
 
 from STORA.core.mixins import StaffPermissionRequiredMixin
 from STORA.core.session_service import (
@@ -34,6 +36,8 @@ from STORA.deliveries.forms import (
 from STORA.deliveries.models import DeliveryAttributes, DeliveryItems, DocumentType, ScrapReason
 from STORA.products.models import Barcode, Product, ProductSupplier, Suppliers
 from STORA.products.views import get_free_internal_codes
+
+logger = logging.getLogger(__name__)
 
 
 def _items_initial_from_rows(rows):
@@ -265,21 +269,42 @@ def deliveries_add(request, movement_type=DeliveryAttributes.MOVEMENT_DELIVERY):
         # product data through the session draft too).
         post_data = request.POST.copy()
         delivery = None
-        with transaction.atomic():
-            _materialize_pending_products(post_data)
-            form = form_class(post_data, current_user=request.user)
-            formset = DeliveryItemFormSet(post_data, prefix=formset_prefix)
+        try:
+            with transaction.atomic():
+                _materialize_pending_products(post_data)
+                form = form_class(post_data, current_user=request.user)
+                formset = DeliveryItemFormSet(post_data, prefix=formset_prefix)
 
-            if form.is_valid() and formset.is_valid():
-                delivery = form.save(commit=False)
-                delivery.receiver = request.user
-                delivery.movement_type = movement_type
-                delivery.save()
+                if form.is_valid() and formset.is_valid():
+                    delivery = form.save(commit=False)
+                    delivery.receiver = request.user
+                    delivery.movement_type = movement_type
+                    delivery.save()
 
-                formset.instance = delivery
-                formset.save()
-            else:
-                transaction.set_rollback(True)
+                    formset.instance = delivery
+                    formset.save()
+                else:
+                    transaction.set_rollback(True)
+        except Exception:
+            # Anything unexpected here (a DB error, a bug) must not behave
+            # any differently from "the form was invalid" as far as the
+            # warehouse clerk is concerned -- transaction.atomic() has
+            # already rolled back whatever partial write was in progress
+            # (nothing bad is left in the database), and `delivery` stays
+            # None, so execution falls through to the exact same
+            # redisplay-with-draft-saved code below that a validation
+            # failure already uses. Logged here (not swallowed) so a real
+            # bug still surfaces in logs/stora.log for someone to fix.
+            logger.exception(
+                'Unexpected error saving %s (movement_type=%s)',
+                operation_type, movement_type,
+            )
+            messages.error(request, _(
+                'Saving failed due to an unexpected error. Nothing was lost -- '
+                'your entered data is still below. Please try again, or contact '
+                'the administrator if it keeps happening.'
+            ))
+            delivery = None
 
         if delivery is not None:
             clear_cashier_operation_state(request)
@@ -489,17 +514,40 @@ def delivery_edit(request, pk):
     if request.method == "POST":
         form = form_class(request.POST, instance=delivery)
         formset = DeliveryItemFormSet(request.POST, instance=delivery, prefix=formset_prefix)
+        saved = False
 
         if form.is_valid() and formset.is_valid():
-            # Read by DeliveryItemRemoval's post_delete signal (models.py)
-            # so a removed line's audit record knows who removed it -- the
-            # signal itself has no access to request.user. Set on each
-            # about-to-be-deleted form's instance, not the whole formset,
-            # since only some rows (if any) are actually being removed.
-            for item_form in formset.deleted_forms:
-                item_form.instance._removed_by = request.user
-            form.save()
-            formset.save()
+            try:
+                # Wrapped in atomic() so a crash partway through formset.save()
+                # (which writes one DeliveryItems row at a time) can never
+                # leave this delivery half-updated in the database -- it
+                # didn't have this before, meaning such a crash used to be
+                # able to apply some item changes but not others.
+                with transaction.atomic():
+                    # Read by DeliveryItemRemoval's post_delete signal
+                    # (models.py) so a removed line's audit record knows who
+                    # removed it -- the signal itself has no access to
+                    # request.user. Set on each about-to-be-deleted form's
+                    # instance, not the whole formset, since only some rows
+                    # (if any) are actually being removed.
+                    for item_form in formset.deleted_forms:
+                        item_form.instance._removed_by = request.user
+                    form.save()
+                    formset.save()
+                saved = True
+            except Exception:
+                # Same reasoning as deliveries_add: an unexpected failure
+                # here must fall through to the normal "show the form again
+                # with what was submitted" path below, not a raw 500 that
+                # throws away the edit the clerk just typed.
+                logger.exception('Unexpected error saving edited delivery #%s', pk)
+                messages.error(request, _(
+                    'Saving failed due to an unexpected error. Nothing was lost -- '
+                    'your edits are still below. Please try again, or contact the '
+                    'administrator if it keeps happening.'
+                ))
+
+        if saved:
             return redirect('delivery_details', pk=delivery.pk)
 
         extracted_state = extract_formset_state(request.POST, formset_prefix)

@@ -45,9 +45,9 @@
 
     {% if can_complete %}
     <div class="d-flex align-items-center gap-2 mt-2">
-        <button type="button" id="revision-remove-line-btn" class="button-delete-line pill-btn">{% translate "Remove Line" %}</button>
+        <button type="button" id="revision-remove-line-btn" class="button-delete-line pill-btn">{% translate "Remove Line(s)" %}</button>
     </div>
-    <p class="text-muted small mt-1 mb-0">{% translate "Tap a row to select it, then Remove Line to take it out of this revision." %}</p>
+    <p class="text-muted small mt-1 mb-0">{% translate "Tap rows to select them (tap again to deselect), then Remove Line(s) to take them out of this revision." %}</p>
     {% endif %}
 
     {% if can_complete %}
@@ -137,6 +137,18 @@
     // cancels. min/step come from quantityStep() (0.001 for weight, 1 for
     // piece), not a fixed 0.001 -- see CLAUDE.md's HTML5 number-input min/
     // step trap (min:0.001 + step:1 makes whole numbers invalid).
+    //
+    // Deliberately starts BLANK, not pre-filled with the cell's current
+    // value (cell.getValue(), the running total) -- unlike every other
+    // numberEditor in the app. Whatever gets typed here is sent straight
+    // to revision_add_item as a delta to ADD (negative subtracts), not a
+    // new total to overwrite with (see the cellEdited handler below, and
+    // RevisionItemsManager.add_count's docstring) -- so a counter on one
+    // computer types only what THEY just physically counted, with no
+    // need to see or account for whatever another computer already
+    // entered for the same product. If this started pre-filled with the
+    // running total the way the Deliveries/Sales editors do, the typed
+    // number would look like a replacement, not an addition.
     function numberEditor(cell, onRendered, success, cancel, editorParams) {
         var input = document.createElement('input');
         // type="text" + inputmode="decimal", not type="number" -- a
@@ -155,8 +167,8 @@
         input.style.width = '100%';
         input.style.boxSizing = 'border-box';
         input.style.height = '100%';
-        input.value = cell.getValue();
-        onRendered(function () { input.focus(); input.select(); });
+        input.value = '';
+        onRendered(function () { input.focus(); });
 
         function commit() {
             var value = input.value === '' ? 0 : parseFloat(input.value);
@@ -218,54 +230,61 @@
     // Deliveries/Sales grids, see CLAUDE.md "Триене на ред вече не е бутон
     // в самия грид"), instead of a per-row Remove button baked into the
     // table itself. --
-    var selectedRow = null;
+    // Multi-select (a Set, not a single row) -- same reasoning as the
+    // Deliveries/Sales grids' identical change (asked for live after
+    // needing to remove many lines one tap-and-confirm at a time).
+    var selectedRows = new Set();
 
     function clearRowSelection() {
-        if (selectedRow) {
-            selectedRow.getElement().classList.remove('is-selected-for-delete');
-            selectedRow = null;
-        }
+        selectedRows.forEach(function (row) { row.getElement().classList.remove('is-selected-for-delete'); });
+        selectedRows.clear();
     }
 
     table.on('rowClick', function (e, row) {
-        if (selectedRow === row) {
-            clearRowSelection();
+        if (selectedRows.has(row)) {
+            selectedRows.delete(row);
+            row.getElement().classList.remove('is-selected-for-delete');
             return;
         }
-        clearRowSelection();
-        selectedRow = row;
+        selectedRows.add(row);
         row.getElement().classList.add('is-selected-for-delete');
     });
 
     var removeLineBtn = document.getElementById('revision-remove-line-btn');
     if (removeLineBtn) {
         removeLineBtn.addEventListener('click', function () {
-            if (!selectedRow) {
+            if (!selectedRows.size) {
                 alert('{% translate "Select a line first (tap its row)." %}');
                 return;
             }
-            var data = selectedRow.getData();
-            removeItem(data.id, data.name);
-            selectedRow = null;
+            var rows = Array.from(selectedRows);
+            var question = rows.length === 1
+                ? '{% translate "Remove" %} „' + rows[0].getData().name + '“ {% translate "from this revision? This cannot be undone." %}'
+                : rows.length + ' {% translate "lines selected -- remove them all from this revision? This cannot be undone." %}';
+            if (!confirm(question)) return;
+            removeItems(rows);
+            selectedRows.clear();
         });
     }
 
-    // Persists a directly-typed/corrected Found Qty to the server as an
-    // exact value (revision_set_item -- see its own comment for why this
-    // is separate from addCount's +N-per-scan endpoint). Reverts the cell
-    // on any failure, same pattern as every other editable-grid screen in
-    // the app.
+    // Persists a directly-typed Found Qty entry as a DELTA to add (see
+    // numberEditor above for why the editor starts blank) -- same
+    // revision_add_item endpoint a barcode scan uses, just possibly
+    // negative (a correction) instead of always-positive (a scan).
+    // Reverts the cell on any failure, same pattern as every other
+    // editable-grid screen in the app.
     table.on('cellEdited', function (cell) {
         if (cell.getField() !== 'found_quantity') return;
         var data = cell.getRow().getData();
         var previousValue = cell.getOldValue();
-        fetch('{% url "revision_set_item" revision.pk %}', {
+        var delta = data.found_quantity; // what was just typed, not the new total -- see numberEditor
+        fetch('{% url "revision_add_item" revision.pk %}', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
                 'X-CSRFToken': csrfToken,
             },
-            body: new URLSearchParams({product_id: data.product_id, quantity: String(data.found_quantity)}),
+            body: new URLSearchParams({product_id: data.product_id, quantity: String(delta)}),
         }).then(function (r) {
             if (r.status === 409) {
                 document.getElementById('revision-closed-banner').style.display = '';
@@ -286,6 +305,7 @@
     });
 
     attachTableExportToToolbar(table, '#revision-items-table-card', 'revision_{{ revision.pk }}_items.xlsx', '{% translate "Revision Items" %}');
+    attachTableFocusToggle(table, '#revision-items-table-card');
 
     // While a cell (only Found Qty is editable) is actively being edited,
     // the 4s poll below must NOT call table.setData() -- that fully
@@ -299,11 +319,15 @@
     table.on('cellEdited', function () { isEditingCell = false; });
     table.on('cellEditCancelled', function () { isEditingCell = false; });
 
+    // Returns Tabulator's own promise (both addRow and updateData give one)
+    // -- callers that need to act only once the row is REALLY there (see
+    // addForEditing's focus-grab below) must await this instead of assuming
+    // the row exists right after calling upsertRow.
     function upsertRow(item) {
         if (table.getRow(item.id)) {
-            table.updateData([item]);
+            return table.updateData([item]);
         } else {
-            table.addRow(item);
+            return table.addRow(item);
         }
     }
 
@@ -311,22 +335,35 @@
     // its quantity back to 0) -- asks for confirmation first since this
     // deletes a real, already-persisted count (shared with every other
     // computer looking at this revision), not just a local draft row.
-    function removeItem(id, name) {
-        if (!confirm('{% translate "Remove" %} „' + name + '“ {% translate "from this revision? This cannot be undone." %}')) return;
-        fetch('{% url "revision_view" revision.pk %}remove-item/' + id + '/', {
-            method: 'POST',
-            headers: {'X-CSRFToken': csrfToken},
-        }).then(function (r) {
-            if (r.status === 409) {
-                document.getElementById('revision-closed-banner').style.display = '';
-                return;
+    // Removes several rows at once -- confirmation already happened once in
+    // the button handler above (not per row), so this is a batch of
+    // individual DELETE requests (no bulk endpoint on the server, see
+    // revision_remove_item) fired together, each independently succeeding
+    // or failing -- one connection hiccup on one row shouldn't silently
+    // swallow the rest.
+    function removeItems(rows) {
+        var failedNames = [];
+        Promise.all(rows.map(function (row) {
+            var data = row.getData();
+            return fetch('{% url "revision_view" revision.pk %}remove-item/' + data.id + '/', {
+                method: 'POST',
+                headers: {'X-CSRFToken': csrfToken},
+            }).then(function (r) {
+                if (r.status === 409) {
+                    document.getElementById('revision-closed-banner').style.display = '';
+                    failedNames.push(data.name);
+                    return;
+                }
+                return r.json().then(function (result) {
+                    if (result.error) { failedNames.push(data.name); return; }
+                    row.delete();
+                });
+            }).catch(function () { failedNames.push(data.name); });
+        })).then(function () {
+            if (failedNames.length) {
+                alert('{% translate "Could not remove:" %} ' + failedNames.join(', '));
             }
-            return r.json().then(function (data) {
-                if (data.error) { alert(data.error); return; }
-                var row = table.getRow(id);
-                if (row) row.delete();
-            });
-        }).catch(function () { alert('{% translate "Could not remove this row -- check your connection and try again." %}'); });
+        });
     }
 
     // -- Search-to-add, same client-side pattern as the cashier screen
@@ -406,6 +443,15 @@
     // doesn't reliably grab real keyboard focus (Tabulator may still be
     // mid-redraw), so this waits a tick and re-fetches the cell fresh from
     // the row rather than trusting a reference captured before the redraw.
+    // Only a safety margin on top of actually waiting for addRow's own
+    // promise, though -- see the caller below for the real fix (reported
+    // live: focus silently failed, but only for the very FIRST product
+    // added to a brand new revision -- table.addRow() also tears down the
+    // "search or scan to start counting" placeholder as part of its own
+    // async work, which takes measurably longer than a bare setTimeout(0)
+    // alone ever waited for; adding to an already-populated table (joining
+    // a revision someone else already started) skips that teardown, so it
+    // never showed the bug).
     function focusFoundQtyEditor(rowId) {
         setTimeout(function () {
             var row = table.getRow(rowId);
@@ -445,8 +491,14 @@
             return r.json();
         }).then(function (data) {
             if (data.error) { alert(data.error); return; }
-            upsertRow(data);
-            focusFoundQtyEditor(data.id);
+            // Waits for Tabulator's own promise (addRow, almost always --
+            // this is the brand-new-product branch) before trying to focus
+            // its cell, instead of racing a bare setTimeout(0) against
+            // whatever internal work addRow is still doing (see
+            // focusFoundQtyEditor's comment for the bug this fixes).
+            Promise.resolve(upsertRow(data)).then(function () {
+                focusFoundQtyEditor(data.id);
+            });
         }).catch(function () { /* network hiccup -- the next poll will reconcile */ });
     }
 

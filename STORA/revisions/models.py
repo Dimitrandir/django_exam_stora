@@ -53,18 +53,48 @@ class RevisionAttributes(models.Model):
 
 
 class RevisionItemsManager(models.Manager):
+    def _lock_open_revision(self, revision):
+        """Re-fetches `revision` under select_for_update(), re-checking it's
+        still OPEN -- the view's own "is it open?" check (revision_add_item/
+        revision_set_item) runs in a SEPARATE, earlier transaction, so by
+        the time this method's atomic block actually starts, Complete could
+        have already locked the SAME revision row, applied every count to
+        stock, and closed it. Without re-checking under the SAME lock
+        revision_complete uses, a count made right at that moment would
+        silently write into the now-closed revision's row and never reach
+        Product.quantity at all -- no error, just a lost count (only
+        possible with more than one computer open on the same revision,
+        which is exactly the point of this app). Raises
+        RevisionAttributes.DoesNotExist (caught by every caller already) if
+        that happened, so the clerk gets a clear "no longer open" instead of
+        a silently discarded scan."""
+        return RevisionAttributes.objects.select_for_update().get(
+            pk=revision.pk, status=RevisionAttributes.STATUS_OPEN,
+        )
+
     def add_count(self, revision, product, quantity):
-        """Adds `quantity` to this product's running found_quantity within
-        the revision -- never overwrites it, so two people (on two
-        computers) counting the same product both contribute to the same
-        total instead of one silently clobbering the other's count (same
-        idea as scanning a barcode twice in the cashier cart). Creates the
-        row, snapshotting the product's current stock and price, the first
+        """Adds `quantity` (positive OR negative -- a negative entry is a
+        correction, "take N off what's counted so far") to this product's
+        running found_quantity within the revision -- never overwrites it,
+        so two people (on two computers) counting the same product both
+        contribute to the same total instead of one silently clobbering
+        the other's count (same idea as scanning a barcode twice in the
+        cashier cart). This is also what backs the directly-typed Found
+        Qty cell in revision_detail.html -- that editor always starts
+        blank, never pre-filled with the running total, specifically so
+        each counter can type exactly what THEY just counted (e.g. "10kg
+        in the back room") without needing to know or see what anyone
+        else already entered (e.g. "5kg on the shelf") -- the server adds
+        the two independently-typed numbers together. Creates the row,
+        snapshotting the product's current stock and price, the first
         time it's counted in this revision. select_for_update() on the
         get-or-create serializes two simultaneous counts of the same
-        product so the increment can never be lost.
+        product so the increment can never be lost. Raises ValueError if
+        the result would go below zero -- a correction can't remove more
+        than is actually there.
         """
         with transaction.atomic():
+            revision = self._lock_open_revision(revision)
             item, created = self.select_for_update().get_or_create(
                 revision=revision, product=product,
                 defaults={
@@ -72,19 +102,28 @@ class RevisionItemsManager(models.Manager):
                     'price_at_revision': product.delivery_price,
                 },
             )
-            item.found_quantity += quantity
+            new_quantity = item.found_quantity + quantity
+            if new_quantity < 0:
+                raise ValueError(_(
+                    'That would take the found quantity below zero '
+                    '(%(current)s currently counted).'
+                ) % {'current': item.found_quantity})
+            item.found_quantity = new_quantity
             item.save(update_fields=['found_quantity'])
             return item
 
     def set_count(self, revision, product, quantity):
         """Sets this product's found_quantity to an exact value, instead of
-        adding to it -- used when a counter directly types/corrects the
-        number in the grid (a deliberate "this is the real count" entry),
-        as opposed to add_count's "+1 per scan" semantics. Also how a
-        freshly-added product starts (at 0, see revision_detail.html) so
-        it lands editable rather than silently pre-set to 1 with no way to
-        fix a typo."""
+        adding to it -- unlike add_count, this is a "this IS the real
+        count, discard whatever was there" overwrite. The grid's Found Qty
+        cell does NOT use this for ordinary typed corrections any more
+        (see add_count's docstring for why) -- the only remaining caller
+        is revision_detail.html's addForEditing(), which uses it once, with
+        quantity=0, to seed a freshly search-added product at zero so it
+        lands editable rather than silently pre-set to some other value
+        with no clean "undo"."""
         with transaction.atomic():
+            revision = self._lock_open_revision(revision)
             item, created = self.select_for_update().get_or_create(
                 revision=revision, product=product,
                 defaults={

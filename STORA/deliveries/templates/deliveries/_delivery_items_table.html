@@ -112,8 +112,8 @@ uses, independent of whether this delivery gets submitted at all.
 <!-- Discount tool -- pure price-adjustment convenience (rewrites Unit
      Price/Line Total on the affected rows, same as typing new values by
      hand), not a stored/persisted discount record -- see the JS below for
-     why. Reuses the row-tap selection above (selectedRow) for "Selected
-     line" scope, same as Delete Line. -->
+     why. Reuses the row-tap multi-selection above (selectedRows) for
+     "Selected line(s)" scope, same as Delete Line(s). -->
 <div class="modal fade" id="deliveryDiscountModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -130,7 +130,7 @@ uses, independent of whether this delivery gets submitted at all.
                     </div>
                     <div class="form-check form-check-inline">
                         <input class="form-check-input" type="radio" name="discount-target" id="discount-target-line" value="line">
-                        <label class="form-check-label" for="discount-target-line">{% translate "Selected line" %}</label>
+                        <label class="form-check-label" for="discount-target-line">{% translate "Selected line(s)" %}</label>
                     </div>
                 </div>
                 <div class="mb-3">
@@ -183,10 +183,10 @@ uses, independent of whether this delivery gets submitted at all.
 </div>
 
 <div class="d-flex align-items-center gap-2 mt-2 flex-wrap">
-    <button type="button" id="delivery-delete-line-btn" class="pill-btn button-delete-line">{% translate "Delete Line" %}</button>
+    <button type="button" id="delivery-delete-line-btn" class="pill-btn button-delete-line">{% translate "Delete Line(s)" %}</button>
     <button type="button" id="delivery-discount-btn" class="pill-btn pill-btn--outline">{% translate "Discount" %}</button>
 </div>
-<p class="text-muted small mt-1 mb-0">{% translate "Tap a row to select it, then Delete Line to remove it, or Discount to discount just that line." %}</p>
+<p class="text-muted small mt-1 mb-0">{% translate "Tap rows to select them (tap again to deselect), then Delete Line(s) to remove them, or Discount to discount just those lines." %}</p>
 
 <script src="{% static 'vendor/sheetjs/xlsx.full.min.js' %}"></script>
 <script src="{% static 'vendor/tabulator/tabulator.min.js' %}"></script>
@@ -758,40 +758,52 @@ document.addEventListener('DOMContentLoaded', function () {
         {% endif %}
     ], {placeholder: '{% translate "No products added to this delivery yet." %}'});
 
-    // -- Selecting a line to delete -- tap its row (same pattern as the
-    // Sales cart, see CLAUDE.md "Триене на ред вече не е бутон в самия
-    // грид"), instead of a per-row Remove button. A cell with its own
-    // editor swallows the click (Tabulator's usual behavior), so in
-    // practice this fires from tapping Code/Name/Expiry Date/etc. --
-    var selectedRow = null;
+    // -- Selecting lines to delete -- tap a row to toggle it in/out of the
+    // selection (same pattern as the Sales cart, see CLAUDE.md "Триене на
+    // ред вече не е бутон в самия грид"), instead of a per-row Remove
+    // button. A cell with its own editor swallows the click (Tabulator's
+    // usual behavior), so in practice this fires from tapping Code/Name/
+    // Expiry Date/etc. Accumulates across taps (a Set, not a single row) --
+    // asked for live after a delivery with many items to remove had to be
+    // done one tap-and-confirm at a time. Deliberately NOT a Ctrl/Shift-
+    // click modifier (the usual desktop multi-select convention) since this
+    // screen is mostly used on touch screens with no modifier keys
+    // available -- every tap just toggles that one row's membership.
+    var selectedRows = new Set();
 
     function clearRowSelection() {
-        if (selectedRow) {
-            selectedRow.getElement().classList.remove('is-selected-for-delete');
-            selectedRow = null;
-        }
+        selectedRows.forEach(function (row) {
+            row.getElement().classList.remove('is-selected-for-delete');
+        });
+        selectedRows.clear();
     }
 
     table.on('rowClick', function (e, row) {
-        if (selectedRow === row) {
-            clearRowSelection();
+        if (selectedRows.has(row)) {
+            selectedRows.delete(row);
+            row.getElement().classList.remove('is-selected-for-delete');
             return;
         }
-        clearRowSelection();
-        selectedRow = row;
+        selectedRows.add(row);
         row.getElement().classList.add('is-selected-for-delete');
     });
 
     document.getElementById('delivery-delete-line-btn').addEventListener('click', function () {
-        if (!selectedRow) {
+        if (!selectedRows.size) {
             alert('{% translate "Select a line first (tap its row)." %}');
             return;
         }
-        if (!confirm('{% translate "Are you sure you want to delete this line?" %}')) return;
-        var data = selectedRow.getData();
-        if (data.id) pendingDeletions.push(data);
-        selectedRow.delete();
-        selectedRow = null;
+        var count = selectedRows.size;
+        var question = count === 1
+            ? '{% translate "Are you sure you want to delete this line?" %}'
+            : count + ' {% translate "lines selected -- delete them all?" %}';
+        if (!confirm(question)) return;
+        selectedRows.forEach(function (row) {
+            var data = row.getData();
+            if (data.id) pendingDeletions.push(data);
+            row.delete();
+        });
+        selectedRows.clear();
     });
 
     // -- Discount: a data-entry convenience, not a stored/persisted
@@ -807,7 +819,7 @@ document.addEventListener('DOMContentLoaded', function () {
     document.getElementById('delivery-discount-btn').addEventListener('click', function () {
         var lineRadio = document.getElementById('discount-target-line');
         var docRadio = document.getElementById('discount-target-document');
-        if (selectedRow) {
+        if (selectedRows.size) {
             lineRadio.disabled = false;
             lineRadio.checked = true;
         } else {
@@ -833,7 +845,7 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
-        var rows = (target === 'line' && selectedRow) ? [selectedRow] : table.getRows();
+        var rows = (target === 'line' && selectedRows.size) ? Array.from(selectedRows) : table.getRows();
         if (!rows.length) {
             alert('{% translate "No rows to apply a discount to." %}');
             return;
@@ -1499,6 +1511,7 @@ document.addEventListener('DOMContentLoaded', function () {
     {% endif %}
 
     attachTableExportToToolbar(table, '#delivery-items-table-card', 'delivery_items.xlsx', '{% translate "Delivery Items" %}');
+    attachTableFocusToggle(table, '#delivery-items-table-card');
 
     // -- Sync Tabulator's current data into plain formset hidden inputs
     // right before the real form submit, since Tabulator manages its own

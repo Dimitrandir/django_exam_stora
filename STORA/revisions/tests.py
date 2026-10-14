@@ -1,4 +1,5 @@
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
@@ -58,6 +59,59 @@ class RevisionModelTests(TestCase):
         item = RevisionItems.objects.add_count(revision, self.product, Decimal('1'))
         self.assertEqual(item.system_quantity_at_start, Decimal('10.000'))
 
+    def test_add_count_raises_if_revision_closed_between_the_views_check_and_this_call(self):
+        # Regression for a real multi-machine race: revision_add_item's own
+        # "is it open?" check runs in a separate, earlier transaction than
+        # add_count's. If Complete (which locks+closes the revision and
+        # applies every count to stock) runs in that gap, a count written
+        # afterwards would otherwise land in the now-closed revision's row
+        # and never reach Product.quantity -- silently lost, no error.
+        # add_count must re-check status under its OWN lock and refuse.
+        revision = RevisionAttributes.objects.create(started_by=self.warehouse)
+        RevisionItems.objects.add_count(revision, self.product, Decimal('5'))
+        # Simulates Complete having already run (closed the revision,
+        # applied found_quantity=5 to stock) in the gap between the view's
+        # check and this call -- same stale `revision` object, pointing at
+        # a now-COMPLETED row.
+        revision.status = RevisionAttributes.STATUS_COMPLETED
+        revision.save(update_fields=['status'])
+        self.product.quantity = Decimal('5.000')
+        self.product.save(update_fields=['quantity'])
+
+        with self.assertRaises(RevisionAttributes.DoesNotExist):
+            RevisionItems.objects.add_count(revision, self.product, Decimal('2'))
+
+        item = RevisionItems.objects.get(revision=revision, product=self.product)
+        self.assertEqual(item.found_quantity, Decimal('5'))  # unchanged, not 7
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.quantity, Decimal('5.000'))  # unchanged
+
+    def test_set_count_raises_if_revision_closed_between_the_views_check_and_this_call(self):
+        revision = RevisionAttributes.objects.create(started_by=self.warehouse)
+        RevisionItems.objects.add_count(revision, self.product, Decimal('5'))
+        revision.status = RevisionAttributes.STATUS_COMPLETED
+        revision.save(update_fields=['status'])
+
+        with self.assertRaises(RevisionAttributes.DoesNotExist):
+            RevisionItems.objects.set_count(revision, self.product, Decimal('99'))
+
+        item = RevisionItems.objects.get(revision=revision, product=self.product)
+        self.assertEqual(item.found_quantity, Decimal('5'))  # unchanged, not 99
+
+    def test_add_count_with_negative_quantity_subtracts(self):
+        revision = RevisionAttributes.objects.create(started_by=self.warehouse)
+        RevisionItems.objects.add_count(revision, self.product, Decimal('10'))
+        item = RevisionItems.objects.add_count(revision, self.product, Decimal('-3'))
+        self.assertEqual(item.found_quantity, Decimal('7'))
+
+    def test_add_count_rejects_going_below_zero(self):
+        revision = RevisionAttributes.objects.create(started_by=self.warehouse)
+        RevisionItems.objects.add_count(revision, self.product, Decimal('2'))
+        with self.assertRaises(ValueError):
+            RevisionItems.objects.add_count(revision, self.product, Decimal('-5'))
+        item = RevisionItems.objects.get(revision=revision, product=self.product)
+        self.assertEqual(item.found_quantity, Decimal('2'))  # unchanged
+
 
 class RevisionViewTests(TestCase):
     def setUp(self):
@@ -101,6 +155,25 @@ class RevisionViewTests(TestCase):
         self.assertEqual(data['found_sum'], 7 * 1.8)
         self.assertEqual(data['quantity_diff'], 2)
         self.assertEqual(data['sum_diff'], round(7 * 1.8 - 5 * 1.8, 2))
+
+    def test_add_item_endpoint_accepts_a_negative_correction(self):
+        revision = RevisionAttributes.objects.create(started_by=self.warehouse)
+        self.client.post(reverse('revision_add_item', args=[revision.pk]),
+                          {'product_id': self.product.pk, 'quantity': '10'})
+        response = self.client.post(reverse('revision_add_item', args=[revision.pk]),
+                                     {'product_id': self.product.pk, 'quantity': '-3'})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['found_quantity'], 7)
+
+    def test_add_item_endpoint_rejects_going_below_zero(self):
+        revision = RevisionAttributes.objects.create(started_by=self.warehouse)
+        self.client.post(reverse('revision_add_item', args=[revision.pk]),
+                          {'product_id': self.product.pk, 'quantity': '2'})
+        response = self.client.post(reverse('revision_add_item', args=[revision.pk]),
+                                     {'product_id': self.product.pk, 'quantity': '-5'})
+        self.assertEqual(response.status_code, 400)
+        item = RevisionItems.objects.get(revision=revision, product=self.product)
+        self.assertEqual(item.found_quantity, Decimal('2'))  # unchanged
 
     def test_add_item_rejected_once_revision_is_completed(self):
         revision = RevisionAttributes.objects.create(started_by=self.warehouse)
@@ -381,3 +454,31 @@ class RevisionPreloadTests(TestCase):
     def test_preload_without_the_param_renders_the_normal_home_page(self):
         response = self.client.get(reverse('revision_home'))
         self.assertTemplateUsed(response, 'revisions/revision_home.html')
+
+    def test_preload_race_joins_the_revision_another_machine_just_started(self):
+        # Regression: revision_start already guarded against two computers
+        # racing to create the first open revision (catches IntegrityError,
+        # falls back to joining whichever one actually won) -- the preload
+        # branch here didn't, and would crash with an unhandled
+        # IntegrityError if a second machine's "Load into Revision" landed
+        # in that same split second. Simulated by making the initial
+        # "is one open?" check lie (return None) while a revision already
+        # exists by the time .create() actually runs -- exactly what a
+        # concurrent request landing microseconds earlier looks like.
+        product = Product.objects.create(
+            internal_code='REV0007', name='Preload Race Product', sell_price=Decimal('4.00'),
+            quantity=Decimal('2.000'),
+        )
+        winner = RevisionAttributes.objects.create(started_by=self.warehouse)
+
+        # First call (the initial "is one open?" check) lies and says no;
+        # second call is the except-IntegrityError fallback, which must
+        # find the real winner -- not patched to lie twice, or the view
+        # would have nothing to redirect to either.
+        with patch('STORA.revisions.views._get_open_revision', side_effect=[None, winner]):
+            response = self.client.get(reverse('revision_home'), {'preload': str(product.pk)})
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(RevisionAttributes.objects.count(), 1)  # no duplicate created
+        self.assertRedirects(response, reverse('revision_view', args=[winner.pk]))
+        self.assertTrue(RevisionItems.objects.filter(revision=winner, product=product).exists())
