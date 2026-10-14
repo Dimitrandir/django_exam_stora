@@ -597,6 +597,21 @@ input[type="text"], input[type="number"], input[type="email"], select, textarea 
     color: #7a1f14;
 }
 
+/* Background draft-autosave (Deliveries/Sales saveDraft()) failing is a
+   "connection trouble" warning, not a validation error -- same shape as
+   .form-errors above but the amber palette already used for
+   .button-delete-line, so it reads as "careful" rather than "broken".
+   Shown/hidden by JS as the autosave keeps retrying in the background;
+   never a dead end on its own. */
+.connectivity-warning-banner {
+    margin-bottom: 1rem;
+    padding: 0.9rem 1.1rem;
+    background-color: #fff3cd;
+    border: 1px solid #d39e00;
+    border-radius: 0.5rem;
+    color: #664d03;
+}
+
 .form-errors::before {
     content: "⚠ Please fix the following:";
     display: block;

@@ -79,6 +79,10 @@
         </div>
     </header>
 
+    <div id="draft-connectivity-banner" class="connectivity-warning-banner" style="display:none;">
+        {% translate "Connection trouble -- your latest changes aren't saving automatically right now. Keep working; don't press Complete Sale until this message disappears." %}
+    </div>
+
     {% if form.errors %}
         <div class="form-errors">
             {{ form.errors }}
@@ -770,9 +774,22 @@
             };
         }
 
+        // Same reasoning as delivery_add.html's identical block -- flagged
+        // live after an incident where a crashed save seemed to have wiped
+        // out everything (it hadn't, see sale_draft_save, but nothing on
+        // screen said so, let alone warned when the autosave itself was
+        // failing to reach the server).
+        var draftSaveHealthy = true;
+        var connectivityBanner = document.getElementById('draft-connectivity-banner');
+
+        function setDraftSaveHealthy(healthy) {
+            draftSaveHealthy = healthy;
+            connectivityBanner.style.display = healthy ? 'none' : '';
+        }
+
         async function saveDraft() {
             try {
-                await fetch("{% url 'sale_draft_save' %}", {
+                const response = await fetch("{% url 'sale_draft_save' %}", {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json",
@@ -786,10 +803,25 @@
                         formset_data: collectDraftState().formset_data
                     })
                 });
+                // fetch() only rejects on a true network failure -- a 500 from
+                // the server comes back as a normal (non-ok) response, not an
+                // exception, and was previously treated as if it had saved fine.
+                setDraftSaveHealthy(response.ok);
             } catch (error) {
                 console.error('Draft save failed:', error);
+                setDraftSaveHealthy(false);
             }
         }
+
+        // Blocks Complete Sale while the autosave is known to be failing --
+        // the checkout modal's requestSubmit() (see its own comment further
+        // down) still fires this same 'submit' event, so it's caught too.
+        document.querySelector('.sale-form__form').addEventListener('submit', function (e) {
+            if (!draftSaveHealthy) {
+                e.preventDefault();
+                alert('{% translate "Connection trouble -- wait for the warning banner to disappear before saving, so nothing gets lost." %}');
+            }
+        });
 
         // The visible cart -- plain Tabulator (not the Excel-style sort/
         // filter/column-chooser convention the rest of the app's *listing*
