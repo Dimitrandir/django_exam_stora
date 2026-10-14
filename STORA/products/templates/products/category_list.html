@@ -93,7 +93,11 @@ document.addEventListener('DOMContentLoaded', function () {
     // however many ids are checked, same as Products' own bulk delete.
     if (canDelete) {
         columns.push({
-            formatter: 'rowSelection', titleFormatter: 'rowSelection', hozAlign: 'center',
+            // rowRange: 'active' -- see products_list.html's identical
+            // comment: the built-in header "select all" checkbox otherwise
+            // selects every row in the table regardless of active filters.
+            formatter: 'rowSelection', titleFormatter: 'rowSelection',
+            titleFormatterParams: {rowRange: 'active'}, hozAlign: 'center',
             width: 40, headerSort: false, headerFilter: false, hideable: false,
             cellClick: function (e, cell) { cell.getRow().toggleSelect(); },
         });

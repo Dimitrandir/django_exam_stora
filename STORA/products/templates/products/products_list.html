@@ -266,7 +266,15 @@ document.addEventListener('DOMContentLoaded', function () {
 
     var table = initExcelStyleTable('#products-table', 'products-table-data', [
         {
-            formatter: 'rowSelection', titleFormatter: 'rowSelection', hozAlign: 'center',
+            // rowRange: 'active' -- Tabulator's built-in header "select
+            // all" checkbox defaults to ALL rows in the table's data
+            // (table.rowManager.rows), completely ignoring the Excel-style
+            // header filters -- flagged live: filter to one category,
+            // click select-all, "Load into Delivery" sent the WHOLE
+            // catalog, not just the filtered rows on screen. 'active'
+            // scopes it to rows currently passing the filters instead.
+            formatter: 'rowSelection', titleFormatter: 'rowSelection',
+            titleFormatterParams: {rowRange: 'active'}, hozAlign: 'center',
             width: 40, headerSort: false, headerFilter: false, hideable: false,
             cellClick: function (e, cell) { cell.getRow().toggleSelect(); },
         },
