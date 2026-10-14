@@ -781,10 +781,23 @@
         // failing to reach the server).
         var draftSaveHealthy = true;
         var connectivityBanner = document.getElementById('draft-connectivity-banner');
+        // Same reasoning as delivery_add.html's identical block -- without
+        // an automatic retry, a cashier who stops touching the cart (just
+        // finished ringing items up, about to hit Complete Sale) would
+        // never trigger another saveDraft() call, since that only fires on
+        // cart changes, leaving the banner stuck even after the connection
+        // recovers.
+        var draftRetryTimer = null;
 
         function setDraftSaveHealthy(healthy) {
             draftSaveHealthy = healthy;
             connectivityBanner.style.display = healthy ? 'none' : '';
+            if (healthy && draftRetryTimer) {
+                clearInterval(draftRetryTimer);
+                draftRetryTimer = null;
+            } else if (!healthy && !draftRetryTimer) {
+                draftRetryTimer = setInterval(saveDraft, 5000);
+            }
         }
 
         async function saveDraft() {

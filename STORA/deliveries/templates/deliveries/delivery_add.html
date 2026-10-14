@@ -226,10 +226,23 @@
         // until the first save settles one way or the other.
         var draftSaveHealthy = true;
         var connectivityBanner = document.getElementById('draft-connectivity-banner');
+        // While unhealthy, keeps retrying on its own -- without this, a
+        // clerk who stops touching the grid (e.g. just finished typing and
+        // is about to hit Complete) would never trigger another saveDraft()
+        // call at all, since that only fires on click/change inside the
+        // table. The banner would then sit there forever even after the
+        // connection came back, with nothing left to click to clear it.
+        var draftRetryTimer = null;
 
         function setDraftSaveHealthy(healthy) {
             draftSaveHealthy = healthy;
             connectivityBanner.style.display = healthy ? 'none' : '';
+            if (healthy && draftRetryTimer) {
+                clearInterval(draftRetryTimer);
+                draftRetryTimer = null;
+            } else if (!healthy && !draftRetryTimer) {
+                draftRetryTimer = setInterval(saveDraft, 5000);
+            }
         }
 
         async function saveDraft() {
