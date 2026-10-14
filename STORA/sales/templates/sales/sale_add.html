@@ -250,12 +250,15 @@
 
         <footer class="page-actions">
             {% comment %}
-            No per-row remove button in the grid -- tap a line to select it
-            (see .is-selected-for-delete), then use Delete Line here. Every
-            removal (one line or the whole cart) is logged for later review
-            -- see SaleItemVoidLog / log_removed_sale_item.
+            No per-row remove button in the grid -- tap lines to select
+            them (see .is-selected-for-delete), then use Delete Line(s)
+            here. Several lines can be tapped/deleted at once; +1/Edit
+            still need exactly one line selected (see getSingleSelectedRow
+            in the script below). Every removal (one line, several, or the
+            whole cart) is logged for later review -- see SaleItemVoidLog /
+            log_removed_sale_item.
             {% endcomment %}
-            <button type="button" id="delete-line-btn" class="button-delete-line">{% translate "Delete Line" %}</button>
+            <button type="button" id="delete-line-btn" class="button-delete-line">{% translate "Delete Line(s)" %}</button>
             <button type="button" id="increment-qty-btn" class="button-increment-qty" title="{% translate "Add 1 to the selected line" %}">+1</button>
             <button type="button" id="edit-line-btn" class="button-edit-line" title="{% if can_edit_price %}{% translate "Edit the quantity/price of the selected line" %}{% else %}{% translate "Edit the quantity of the selected line" %}{% endif %}">&#9998; {% translate "Edit" %}</button>
             <button type="button" id="void-sale-btn" class="button-void-sale">{% translate "Void Sale" %}</button>
@@ -1062,25 +1065,39 @@
             }, 150);
         });
 
-        // -- Selecting a line to delete/edit -- tap anywhere on its row
-        // (no cell has an inline editor, so no cell swallows the click). "Delete Line"/"Void Sale" live in
-        // the page footer, not as a per-row button -- see below. --
-        let selectedRowForDelete = null;
+        // -- Selecting lines to delete/edit -- tap anywhere on a row to
+        // toggle it in/out of the selection (no cell has an inline editor,
+        // so no cell swallows the click). "Delete Line"/"Void Sale" live in
+        // the page footer, not as a per-row button -- see below. Multiple
+        // rows can be selected at once now (a Set, not a single row) --
+        // same reasoning as Deliveries' identical change (asked for live
+        // after a delivery with many lines to remove had to be done one
+        // tap-and-confirm at a time), but +1/Edit Line below still only
+        // make sense for exactly ONE row (see getSingleSelectedRow), so
+        // this is shared selection state, not shared "how many rows can
+        // this button act on" logic.
+        let selectedRows = new Set();
 
         function clearRowSelection() {
-            if (selectedRowForDelete) {
-                selectedRowForDelete.getElement().classList.remove('is-selected-for-delete');
-                selectedRowForDelete = null;
-            }
+            selectedRows.forEach(row => row.getElement().classList.remove('is-selected-for-delete'));
+            selectedRows.clear();
+        }
+
+        function getSingleSelectedRow() {
+            if (selectedRows.size === 1) return selectedRows.values().next().value;
+            alert(selectedRows.size === 0
+                ? '{% translate "Select a line first (tap its row)." %}'
+                : '{% translate "Select exactly one line for this (several are selected)." %}');
+            return null;
         }
 
         saleItemsTable.on('rowClick', (e, row) => {
-            if (selectedRowForDelete === row) {
-                clearRowSelection();
+            if (selectedRows.has(row)) {
+                selectedRows.delete(row);
+                row.getElement().classList.remove('is-selected-for-delete');
                 return;
             }
-            clearRowSelection();
-            selectedRowForDelete = row;
+            selectedRows.add(row);
             row.getElement().classList.add('is-selected-for-delete');
             row.getElement().scrollIntoView({block: 'nearest'});
         });
@@ -1108,13 +1125,14 @@
         }
 
         document.getElementById('delete-line-btn').addEventListener('click', () => {
-            if (!selectedRowForDelete) {
+            if (!selectedRows.size) {
                 alert('{% translate "Select a line first (tap its row)." %}');
                 return;
             }
-            logRemovedItems([selectedRowForDelete.getData()], 'REMOVE_LINE');
-            selectedRowForDelete.delete();
-            selectedRowForDelete = null;
+            const rows = Array.from(selectedRows);
+            logRemovedItems(rows.map(row => row.getData()), 'REMOVE_LINE');
+            rows.forEach(row => row.delete());
+            selectedRows.clear();
             updateTransactionTotal();
             saveDraft();
         });
@@ -1126,14 +1144,12 @@
         // not a smaller step for a weight item, so the two ways of
         // incrementing a line agree with each other.
         document.getElementById('increment-qty-btn').addEventListener('click', () => {
-            if (!selectedRowForDelete) {
-                alert('{% translate "Select a line first (tap its row)." %}');
-                return;
-            }
-            const data = selectedRowForDelete.getData();
+            const row = getSingleSelectedRow();
+            if (!row) return;
+            const data = row.getData();
             const newQty = (parseFloat(data.sale_quantity) || 0) + 1;
-            selectedRowForDelete.update({sale_quantity: newQty});
-            recalcRow(selectedRowForDelete);
+            row.update({sale_quantity: newQty});
+            recalcRow(row);
             saveDraft();
         });
 
@@ -1152,6 +1168,12 @@
         const editLineDiscountDisplay = document.getElementById('edit-line-discount-display');
         let editLineTarget = 'qty';
         let editLineNeedsReset = true;
+        // Captured once when the modal opens (not re-read from
+        // selectedRows at Save time) -- the modal's own backdrop already
+        // blocks tapping other rows while it's up, but this avoids Save
+        // ever needing to re-validate "exactly one row" and surprise the
+        // cashier with an alert for what should be a silent no-op.
+        let editLineRow = null;
         // The product's own catalog/effective sell_price (promo/price-list
         // already resolved, see productsData's own comment) -- Discount %
         // is always computed FROM this fixed point, not from whatever the
@@ -1218,11 +1240,10 @@
         });
 
         document.getElementById('edit-line-btn').addEventListener('click', () => {
-            if (!selectedRowForDelete) {
-                alert('{% translate "Select a line first (tap its row)." %}');
-                return;
-            }
-            const data = selectedRowForDelete.getData();
+            const row = getSingleSelectedRow();
+            if (!row) return;
+            editLineRow = row;
+            const data = row.getData();
             const product = productsData.find(p => String(p.id) === String(data.sale_item));
             // Falls back to the row's own current price if the product
             // somehow isn't in productsData (shouldn't happen -- every
@@ -1242,7 +1263,7 @@
         });
 
         document.getElementById('edit-line-save-btn').addEventListener('click', () => {
-            if (!selectedRowForDelete) return;
+            if (!editLineRow) return;
             const newQty = parseFloat(editLineQtyDisplay.textContent);
             if (isNaN(newQty) || newQty <= 0) {
                 alert('{% translate "Enter a quantity greater than 0." %}');
@@ -1257,8 +1278,8 @@
                 }
                 updates.price_at_sale = newPrice;
             }
-            selectedRowForDelete.update(updates);
-            recalcRow(selectedRowForDelete);
+            editLineRow.update(updates);
+            recalcRow(editLineRow);
             saveDraft();
             bootstrap.Modal.getInstance(editLineModalEl).hide();
         });

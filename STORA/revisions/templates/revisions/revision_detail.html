@@ -45,9 +45,9 @@
 
     {% if can_complete %}
     <div class="d-flex align-items-center gap-2 mt-2">
-        <button type="button" id="revision-remove-line-btn" class="button-delete-line pill-btn">{% translate "Remove Line" %}</button>
+        <button type="button" id="revision-remove-line-btn" class="button-delete-line pill-btn">{% translate "Remove Line(s)" %}</button>
     </div>
-    <p class="text-muted small mt-1 mb-0">{% translate "Tap a row to select it, then Remove Line to take it out of this revision." %}</p>
+    <p class="text-muted small mt-1 mb-0">{% translate "Tap rows to select them (tap again to deselect), then Remove Line(s) to take them out of this revision." %}</p>
     {% endif %}
 
     {% if can_complete %}
@@ -230,35 +230,40 @@
     // Deliveries/Sales grids, see CLAUDE.md "Триене на ред вече не е бутон
     // в самия грид"), instead of a per-row Remove button baked into the
     // table itself. --
-    var selectedRow = null;
+    // Multi-select (a Set, not a single row) -- same reasoning as the
+    // Deliveries/Sales grids' identical change (asked for live after
+    // needing to remove many lines one tap-and-confirm at a time).
+    var selectedRows = new Set();
 
     function clearRowSelection() {
-        if (selectedRow) {
-            selectedRow.getElement().classList.remove('is-selected-for-delete');
-            selectedRow = null;
-        }
+        selectedRows.forEach(function (row) { row.getElement().classList.remove('is-selected-for-delete'); });
+        selectedRows.clear();
     }
 
     table.on('rowClick', function (e, row) {
-        if (selectedRow === row) {
-            clearRowSelection();
+        if (selectedRows.has(row)) {
+            selectedRows.delete(row);
+            row.getElement().classList.remove('is-selected-for-delete');
             return;
         }
-        clearRowSelection();
-        selectedRow = row;
+        selectedRows.add(row);
         row.getElement().classList.add('is-selected-for-delete');
     });
 
     var removeLineBtn = document.getElementById('revision-remove-line-btn');
     if (removeLineBtn) {
         removeLineBtn.addEventListener('click', function () {
-            if (!selectedRow) {
+            if (!selectedRows.size) {
                 alert('{% translate "Select a line first (tap its row)." %}');
                 return;
             }
-            var data = selectedRow.getData();
-            removeItem(data.id, data.name);
-            selectedRow = null;
+            var rows = Array.from(selectedRows);
+            var question = rows.length === 1
+                ? '{% translate "Remove" %} „' + rows[0].getData().name + '“ {% translate "from this revision? This cannot be undone." %}'
+                : rows.length + ' {% translate "lines selected -- remove them all from this revision? This cannot be undone." %}';
+            if (!confirm(question)) return;
+            removeItems(rows);
+            selectedRows.clear();
         });
     }
 
@@ -330,22 +335,35 @@
     // its quantity back to 0) -- asks for confirmation first since this
     // deletes a real, already-persisted count (shared with every other
     // computer looking at this revision), not just a local draft row.
-    function removeItem(id, name) {
-        if (!confirm('{% translate "Remove" %} „' + name + '“ {% translate "from this revision? This cannot be undone." %}')) return;
-        fetch('{% url "revision_view" revision.pk %}remove-item/' + id + '/', {
-            method: 'POST',
-            headers: {'X-CSRFToken': csrfToken},
-        }).then(function (r) {
-            if (r.status === 409) {
-                document.getElementById('revision-closed-banner').style.display = '';
-                return;
+    // Removes several rows at once -- confirmation already happened once in
+    // the button handler above (not per row), so this is a batch of
+    // individual DELETE requests (no bulk endpoint on the server, see
+    // revision_remove_item) fired together, each independently succeeding
+    // or failing -- one connection hiccup on one row shouldn't silently
+    // swallow the rest.
+    function removeItems(rows) {
+        var failedNames = [];
+        Promise.all(rows.map(function (row) {
+            var data = row.getData();
+            return fetch('{% url "revision_view" revision.pk %}remove-item/' + data.id + '/', {
+                method: 'POST',
+                headers: {'X-CSRFToken': csrfToken},
+            }).then(function (r) {
+                if (r.status === 409) {
+                    document.getElementById('revision-closed-banner').style.display = '';
+                    failedNames.push(data.name);
+                    return;
+                }
+                return r.json().then(function (result) {
+                    if (result.error) { failedNames.push(data.name); return; }
+                    row.delete();
+                });
+            }).catch(function () { failedNames.push(data.name); });
+        })).then(function () {
+            if (failedNames.length) {
+                alert('{% translate "Could not remove:" %} ' + failedNames.join(', '));
             }
-            return r.json().then(function (data) {
-                if (data.error) { alert(data.error); return; }
-                var row = table.getRow(id);
-                if (row) row.delete();
-            });
-        }).catch(function () { alert('{% translate "Could not remove this row -- check your connection and try again." %}'); });
+        });
     }
 
     // -- Search-to-add, same client-side pattern as the cashier screen
