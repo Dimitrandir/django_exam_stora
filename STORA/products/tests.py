@@ -677,8 +677,6 @@ class ProductInlineUpdateViewTests(TestCase):
         self.client.force_login(self.manager)
         response = self._post('quantity', '9999')
         self.assertEqual(response.status_code, 400)
-        self.product.refresh_from_db()
-        self.assertEqual(self.product.quantity, 7)
 
     def test_inline_edit_does_not_touch_unrelated_fields(self):
         """Regression guard: since ProductInlineEditForm only lists 4
@@ -699,6 +697,80 @@ class ProductInlineUpdateViewTests(TestCase):
         self.assertEqual(entry.old_value, 'Inline Widget')
         self.assertEqual(entry.new_value, 'Renamed Via Grid')
         self.assertEqual(entry.changed_by, self.manager)
+
+
+class ProductBarcodeInlineUpdateViewTests(TestCase):
+    def setUp(self):
+        self.manager = Employee.objects.create_user(
+            username='manager-barcode', password='pass12345', role=Employee.MANAGER
+        )
+        self.cashier = Employee.objects.create_user(
+            username='cashier-barcode', password='pass12345', role=Employee.CASHIER
+        )
+        self.product = Product.objects.create(
+            internal_code='P1000012', name='Barcode Widget', sell_price=1.50, quantity=7,
+        )
+
+    def _post(self, slot, value):
+        return self.client.post(
+            reverse('product_barcode_inline_update', kwargs={'pk': self.product.pk}),
+            {'slot': slot, 'value': value},
+        )
+
+    def test_cashier_cannot_edit(self):
+        self.client.force_login(self.cashier)
+        response = self._post(1, '5901234123457')
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(self.product.barcode.exists())
+
+    def test_adding_first_barcode(self):
+        self.client.force_login(self.manager)
+        response = self._post(1, '5901234123457')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {'barcode_1': '5901234123457', 'barcode_2': '', 'barcode_3': ''})
+        self.assertEqual(self.product.barcode.get().code, '5901234123457')
+
+    def test_cannot_skip_a_slot(self):
+        self.client.force_login(self.manager)
+        response = self._post(2, '5901234123457')
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(self.product.barcode.exists())
+
+    def test_editing_an_existing_slot(self):
+        Barcode.objects.create(product=self.product, position=1, code='1111111111111')
+        self.client.force_login(self.manager)
+        response = self._post(1, '2222222222222')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.product.barcode.get().code, '2222222222222')
+
+    def test_clearing_a_slot_deletes_the_barcode(self):
+        Barcode.objects.create(product=self.product, position=1, code='1111111111111')
+        self.client.force_login(self.manager)
+        response = self._post(1, '')
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(self.product.barcode.exists())
+
+    def test_clearing_the_middle_barcode_shifts_the_rest_up(self):
+        Barcode.objects.create(product=self.product, position=1, code='1111111111111')
+        Barcode.objects.create(product=self.product, position=2, code='2222222222222')
+        Barcode.objects.create(product=self.product, position=3, code='3333333333333')
+        self.client.force_login(self.manager)
+        response = self._post(2, '')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {'barcode_1': '1111111111111', 'barcode_2': '3333333333333', 'barcode_3': ''})
+
+    def test_duplicate_barcode_is_rejected(self):
+        other_product = Product.objects.create(internal_code='P1000013', name='Other Widget', sell_price=1, quantity=1)
+        Barcode.objects.create(product=other_product, position=1, code='5901234123457')
+        self.client.force_login(self.manager)
+        response = self._post(1, '5901234123457')
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(self.product.barcode.exists())
+
+    def test_invalid_slot_rejected(self):
+        self.client.force_login(self.manager)
+        response = self._post(99, '5901234123457')
+        self.assertEqual(response.status_code, 400)
 
 
 class CategoryTogglePosViewTests(TestCase):

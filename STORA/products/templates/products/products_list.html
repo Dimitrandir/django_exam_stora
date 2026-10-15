@@ -191,6 +191,14 @@ document.addEventListener('DOMContentLoaded', function () {
         // not invalid, same as the product create/edit forms' own markup
         // field.
         markup_percent: {editor: 'number', editorParams: {step: 0.1}},
+        // Plain text editors -- the actual add/edit/delete logic (and the
+        // "can't skip a slot" guard) lives server-side in
+        // ProductBarcodeInlineUpdateView, posted from the cellEdited
+        // branch below instead of the generic postInlineUpdate() path
+        // (these aren't Product fields, Barcode is a separate model).
+        barcode_1: {editor: 'input'},
+        barcode_2: {editor: 'input'},
+        barcode_3: {editor: 'input'},
     };
 
     // show_on_pos isn't part of editorConfig/"Enable Edit" -- it's a quick,
@@ -345,9 +353,12 @@ document.addEventListener('DOMContentLoaded', function () {
                 return isNaN(v) ? '' : v.toFixed(2);
             },
         },
-        // Read-only: a product can have several barcodes/suppliers, but a
-        // grid needs a fixed number of columns. Editing them still happens
-        // on the product's own page, where the full list is managed.
+        // Barcode 1/2/3 are editable in Edit mode (add/change/clear one
+        // slot -- see the cellEdited branch below); Supplier columns stay
+        // read-only, managed only on the product's own page. A product can
+        // have more than GRID_SLOT_COUNT of either, but a grid needs a
+        // fixed number of columns -- anything past these three barcodes
+        // still only shows/edits on the full product page.
         {title: '{% translate "Barcode 1" %}', field: 'barcode_1', width: 140},
         {title: '{% translate "Barcode 2" %}', field: 'barcode_2', width: 140, visible: false},
         {title: '{% translate "Barcode 3" %}', field: 'barcode_3', width: 140, visible: false},
@@ -679,6 +690,40 @@ document.addEventListener('DOMContentLoaded', function () {
                         alert('{% translate "Network error -- change was not saved." %}');
                         row.update({sell_price: oldSellPrice});
                         cell.setValue(revertTo);
+                    });
+                return;
+            }
+
+            if (field.indexOf('barcode_') === 0) {
+                var barcodeRevertTo = cell.getOldValue();
+                var slot = field.slice('barcode_'.length);
+                var body = new URLSearchParams();
+                body.set('slot', slot);
+                body.set('value', cell.getValue());
+                fetch('/products/' + row.getData().id + '/inline-barcode-update/', {
+                    method: 'POST',
+                    headers: {'X-CSRFToken': getCookie('csrftoken')},
+                    body: body,
+                })
+                    .then(function (response) {
+                        return response.json().then(function (resData) { return {ok: response.ok, data: resData}; });
+                    })
+                    .then(function (result) {
+                        if (!result.ok) {
+                            alert(result.data.error || '{% translate "Could not save the change." %}');
+                            cell.setValue(barcodeRevertTo);
+                            return;
+                        }
+                        // All three slots, not just this one -- clearing a
+                        // middle barcode shifts the rest up by one, same as
+                        // ProductListView's own list-index-based columns
+                        // would show after a reload (see the view's own
+                        // docstring).
+                        row.update(result.data);
+                    })
+                    .catch(function () {
+                        alert('{% translate "Network error -- change was not saved." %}');
+                        cell.setValue(barcodeRevertTo);
                     });
                 return;
             }

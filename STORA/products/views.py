@@ -7,6 +7,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.postgres.search import TrigramSimilarity
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import F, ProtectedError, Sum
 from django.db.models.functions import Coalesce
@@ -192,6 +193,68 @@ class ProductInlineUpdateView(LoginRequiredMixin, StaffPermissionRequiredMixin, 
             'sell_price': float(product.sell_price) if product.sell_price is not None else None,
             'delivery_price': float(product.delivery_price) if product.delivery_price is not None else None,
         })
+
+
+class ProductBarcodeInlineUpdateView(LoginRequiredMixin, StaffPermissionRequiredMixin, View):
+    """Adds, edits, or clears one of a product's first GRID_SLOT_COUNT
+    barcodes directly from the "Enable Edit" grid -- `slot` is the 1-based
+    grid column position (Barcode 1/2/3), matched against the list of
+    Barcode rows ordered the same way ProductListView already builds
+    barcode_1/2/3 (by position, id), not against Barcode.position's raw
+    value. A brand-new barcode can only be added in the next free slot
+    (can't skip "Barcode 1" and type straight into "Barcode 2") -- otherwise
+    it would land at a lower position than the empty slot before it, and
+    the NEXT page load would show it under the wrong column entirely (the
+    grid's columns are just list-index based, same as ProductListView).
+    Clearing a slot's value deletes that Barcode outright, same as removing
+    a row in the full product-edit page's own formset. Returns the
+    product's full current barcode_1/2/3 set (not just the one slot
+    touched) so the grid can re-sync every slot in one go -- deleting the
+    middle one of three shifts the rest up by one, same as a reload would
+    show, and trying to track that shift purely client-side would just be
+    re-deriving what the server already knows."""
+
+    permission_required = 'products.change_product'
+
+    def post(self, request, pk):
+        product = get_object_or_404(Product, pk=pk)
+        try:
+            slot = int(request.POST.get('slot', ''))
+        except (TypeError, ValueError):
+            return JsonResponse({'error': _('Invalid barcode slot.')}, status=400)
+        if slot < 1 or slot > ProductListView.GRID_SLOT_COUNT:
+            return JsonResponse({'error': _('Invalid barcode slot.')}, status=400)
+
+        value = request.POST.get('value', '').strip()
+        barcodes = list(product.barcode.all())
+
+        if slot <= len(barcodes):
+            barcode = barcodes[slot - 1]
+            if not value:
+                barcode.delete()
+            else:
+                barcode.code = value
+                try:
+                    barcode.full_clean()
+                except ValidationError as exc:
+                    return JsonResponse({'error': ' '.join(exc.messages)}, status=400)
+                barcode.save()
+        elif value:
+            if slot != len(barcodes) + 1:
+                return JsonResponse({'error': _('Fill in the earlier barcode slot first.')}, status=400)
+            barcode = Barcode(product=product, position=slot, code=value)
+            try:
+                barcode.full_clean()
+            except ValidationError as exc:
+                return JsonResponse({'error': ' '.join(exc.messages)}, status=400)
+            barcode.save()
+        # else: slot was already empty and the submitted value is blank too -- nothing to do.
+
+        barcodes = list(product.barcode.all())
+        result = {}
+        for i in range(ProductListView.GRID_SLOT_COUNT):
+            result[f'barcode_{i + 1}'] = barcodes[i].code if i < len(barcodes) else ''
+        return JsonResponse(result)
 
 
 class ProductBulkActionView(LoginRequiredMixin, View):
