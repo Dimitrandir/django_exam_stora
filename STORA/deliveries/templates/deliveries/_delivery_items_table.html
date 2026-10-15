@@ -1291,6 +1291,19 @@ document.addEventListener('DOMContentLoaded', function () {
         searchInput.value = '';
         currentResults = [];
         highlightedIndex = -1;
+        // Kills whatever debounced search is still pending from the
+        // keystroke(s) that led to this pick (the exact-match/scanner path
+        // especially -- its last character's own 200ms timer is almost
+        // always still armed when Enter arrives right after it). Without
+        // this, confirmed live: it fires ~200ms later anyway, reads the
+        // now-EMPTY searchInput.value this function just set above, and
+        // reopens the dropdown with the generic unfiltered product list --
+        // right after a successful scan, for no reason visible to the
+        // clerk. clearTimeout alone isn't enough if the fetch itself
+        // already left the debounce and is in flight; abort() covers that
+        // too (its .catch ignores AbortError, see runSearch).
+        clearTimeout(debounceTimer);
+        if (currentController) currentController.abort();
         // Not re-focusing searchInput here on purpose -- addProductRow is
         // about to hand real keyboard focus to the new row's Qty cell
         // (focusCellEditor), so the clerk can type the quantity right
