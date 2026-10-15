@@ -204,6 +204,19 @@ body.report-table-focus .form-errors {
     display: none;
 }
 
+/* Deliveries/Write-off/Scrap's own "General Information" section (receiver,
+   supplier, document type/number/date) sits above the items grid, same
+   layering problem as the period/filter bar above -- asked for live
+   specifically for this screen's Full Screen mode ("без метаданните за
+   документа отгоре"). .delivery-form__general only exists on this one
+   template family, so scoping it under the shared .report-table-focus
+   class here doesn't touch any other report page already using that same
+   toggle. The grid's own small "Products" section-header stays, same
+   "one still-useful line of context" reasoning as the rule above. */
+body.report-table-focus .delivery-form__general {
+    display: none;
+}
+
 /* The standalone heading block above the grid was tried two ways (soft
    restyle, then just a smaller plain h1) and both left "too much empty
    space" above the table (flagged live) -- removed entirely. The title
