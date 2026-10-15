@@ -1256,6 +1256,23 @@ document.addEventListener('DOMContentLoaded', function () {
     var currentResults = [];
     var highlightedIndex = -1;
 
+    // -- Telling a barcode-scanner "keystroke burst" apart from a human
+    // typing, so Enter always resolves a scan to an exact code/barcode
+    // match -- even if the digits happen to also fuzzy-match some
+    // product's name/code in a dropdown that's still open from before the
+    // scan started (rare, but possible for a numeric internal_code), which
+    // would otherwise make Enter pick that WRONG highlighted suggestion
+    // instead of the scanned product. Same 30ms/char threshold and
+    // burstStartTime-on-first-character reasoning as sale_add.html's own
+    // looksLikeScannerInput -- ported here now that it's confirmed working
+    // there (see CLAUDE.md).
+    var burstStartTime = null;
+
+    function looksLikeScannerInput(value) {
+        if (!burstStartTime || value.length < 4) return false;
+        return (performance.now() - burstStartTime) / value.length < 30;
+    }
+
     function highlightResult(index) {
         var items = resultsBox.querySelectorAll('.global-search-result');
         items.forEach(function (el) { el.classList.remove('is-highlighted'); });
@@ -1373,8 +1390,22 @@ document.addEventListener('DOMContentLoaded', function () {
         }, 200);
     }
 
-    searchInput.addEventListener('input', runSearch);
-    searchInput.addEventListener('focus', runSearch);
+    searchInput.addEventListener('input', function () {
+        // Marks the start of a fresh keystroke burst (scan or manual re-
+        // entry) on the FIRST character typed into an empty box, so
+        // looksLikeScannerInput can later measure ms/char from here --
+        // same reasoning as sale_add.html's own input handler.
+        if (searchInput.value.length === 1) burstStartTime = performance.now();
+        runSearch();
+    });
+    // Deliberately NOT also wired to 'focus' (unlike an earlier version of
+    // this file) -- that opened a dropdown of 30 generic, unfiltered
+    // products the instant the box was clicked, before any typing/
+    // scanning happened (flagged live: visually popped up mid-scan,
+    // confusing a receiving clerk who was about to scan, not search by
+    // name). Sales' own search box never had this trigger either. Typing
+    // or scanning still opens it via the 'input' listener below, same as
+    // before.
     document.addEventListener('click', function (e) {
         if (!e.target.closest('#delivery-item-search-input') && !e.target.closest('#delivery-item-search-results')) {
             resultsBox.classList.remove('is-open');
@@ -1404,8 +1435,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // Type, arrow down to the right match, Enter picks it -- lands the
         // cursor in Qty next (see addProductRow), ready to type the
-        // quantity and Enter again to move on to Unit Price.
-        if (hasOpenResults) {
+        // quantity and Enter again to move on to Unit Price. Skipped for
+        // scanner-burst input even if a dropdown happens to be open (e.g.
+        // a debounced search from earlier still resolving) -- falls
+        // through to the exact code/barcode match below instead, see
+        // looksLikeScannerInput above.
+        if (hasOpenResults && !looksLikeScannerInput(searchInput.value.trim())) {
             e.preventDefault();
             selectProduct(currentResults[highlightedIndex >= 0 ? highlightedIndex : 0]);
             return;
