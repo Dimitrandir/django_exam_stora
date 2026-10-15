@@ -442,6 +442,7 @@ document.addEventListener('DOMContentLoaded', function () {
             existing.update({delivery_quantity: Number(existing.getData().delivery_quantity) + Number(qty)});
             recalcRow(existing, 'price_at_delivery');
             row.delete();
+            renumberRows();
         } else {
             var updated = buildRow(product, {delivery_quantity: qty});
             updated.seq = data.seq;
@@ -789,6 +790,27 @@ document.addEventListener('DOMContentLoaded', function () {
     // available -- every tap just toggles that one row's membership.
     var selectedRows = new Set();
 
+    // Closes the gap deleting a row leaves in "#" (flagged live, with a
+    // screenshot -- row 9 removed left 10..18 still showing those numbers
+    // instead of 9..17, looking like data had gone missing). Doesn't
+    // conflict with buildRow's own "seq never changes on SORT" guarantee
+    // above -- this only runs right after a delete, renumbering 1..N in
+    // whatever order table.getRows() currently reports (add order, unless
+    // the clerk had actively sorted by another column -- an accepted edge
+    // case, still produces a consistent gap-free sequence either way).
+    // nextSeq is reset to continue right after the new last number, so the
+    // next row ADDED after a delete doesn't jump back up to some old
+    // higher value.
+    function renumberRows() {
+        var rows = table.getRows();
+        rows.forEach(function (row, index) {
+            if (row.getData().seq !== index + 1) {
+                row.update({seq: index + 1});
+            }
+        });
+        nextSeq = rows.length + 1;
+    }
+
     function clearRowSelection() {
         selectedRows.forEach(function (row) {
             row.getElement().classList.remove('is-selected-for-delete');
@@ -822,6 +844,7 @@ document.addEventListener('DOMContentLoaded', function () {
             row.delete();
         });
         selectedRows.clear();
+        renumberRows();
     });
 
     // -- Discount: a data-entry convenience, not a stored/persisted
