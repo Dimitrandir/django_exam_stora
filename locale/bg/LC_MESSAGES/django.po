@@ -5,7 +5,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: STORA\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-14 19:25+0000\n"
+"POT-Creation-Date: 2026-10-15 08:09+0000\n"
 "PO-Revision-Date: 2026-10-02 00:00+0000\n"
 "Language-Team: Bulgarian\n"
 "Language: bg\n"
@@ -317,6 +317,7 @@ msgstr "Доставчик"
 #: STORA/deliveries/forms.py:22 STORA/deliveries/forms.py:56
 #: STORA/deliveries/forms.py:88 STORA/deliveries/models.py:87
 #: STORA/reports/templates/reports/deliveries_report.html:96
+#: STORA/sales/models.py:376
 msgid "Comment"
 msgstr "Коментар"
 
@@ -1415,7 +1416,7 @@ msgstr "AI не намери нищо за поръчване в момента 
 #: STORA/products/templates/products/product_history.html:80
 #: STORA/reports/templates/reports/deliveries_report.html:91
 #: STORA/reports/templates/reports/sales_report.html:85
-#: STORA/sales/templates/sales/refund_find.html:62
+#: STORA/sales/models.py:381 STORA/sales/templates/sales/refund_find.html:62
 msgid "Date"
 msgstr "Дата"
 
@@ -1500,7 +1501,7 @@ msgstr "Зареди"
 msgid "Enter at least one requested quantity."
 msgstr "Въведи поне едно заявено количество."
 
-#: STORA/orders/views.py:263 STORA/orders/views.py:320 STORA/sales/views.py:682
+#: STORA/orders/views.py:263 STORA/orders/views.py:320 STORA/sales/views.py:710
 msgid ""
 "Saving failed due to an unexpected error. Nothing was lost -- your entered "
 "quantities are still below. Please try again, or contact the administrator "
@@ -3682,8 +3683,8 @@ msgstr "от тази ревизия? Това не може да бъде от�
 msgid ""
 "lines selected -- remove them all from this revision? This cannot be undone."
 msgstr ""
-"реда са избрани -- да ги премахна ли всичките от тази ревизия? Това не "
-"може да бъде отменено."
+"реда са избрани -- да ги премахна ли всичките от тази ревизия? Това не може "
+"да бъде отменено."
 
 #: STORA/revisions/templates/revisions/revision_detail.html:302
 msgid "Could not save this count -- check your connection and try again."
@@ -3950,6 +3951,36 @@ msgstr "Артикул от сторно"
 msgid "Refund Items"
 msgstr "Артикули от сторно"
 
+#: STORA/sales/models.py:375 STORA/sales/templates/sales/fiscal_reports.html:29
+#: STORA/sales/templates/sales/refund_find.html:22
+#: STORA/sales/templates/sales/refund_find.html:65
+msgid "Amount"
+msgstr "Сума"
+
+#: STORA/sales/models.py:379
+msgid "Performed By"
+msgstr "Изпълнено от"
+
+#: STORA/sales/models.py:383
+msgid "Cash In Till After"
+msgstr "Пари в касата след операцията"
+
+#: STORA/sales/models.py:387
+msgid "Fiscal Status"
+msgstr "Фискален статус"
+
+#: STORA/sales/models.py:389
+msgid "Fiscal Error"
+msgstr "Фискална грешка"
+
+#: STORA/sales/models.py:392
+msgid "Service Cash Movement"
+msgstr "Служебно движение на пари"
+
+#: STORA/sales/models.py:393
+msgid "Service Cash Movements"
+msgstr "Служебни движения на пари"
+
 #: STORA/sales/templates/sales/fiscal_reports.html:4
 #: STORA/sales/templates/sales/fiscal_reports.html:8
 #: STORA/sales/templates/sales/sale_add.html:282
@@ -3978,57 +4009,104 @@ msgstr "Дневни"
 
 #: STORA/sales/templates/sales/fiscal_reports.html:17
 msgid ""
-"X Report is just a reading -- run it as many times as you like. Z Report "
-"closes out the day and resets today's totals on the device -- run it once, "
-"at the end of the day."
+"X Report is meant to be just a reading. Z Report closes out the day and "
+"resets today's totals on the device -- run it once, at the end of the day."
 msgstr ""
-"X отчетът е само справка -- пускай го колкото пъти искаш. Z отчетът "
-"приключва деня и нулира дневните суми на устройството -- пусни го веднъж, в "
-"края на деня."
+"X отчетът е предвиден само да е справка. Z отчетът приключва деня и нулира "
+"дневните суми на устройството -- пусни го веднъж, в края на деня."
 
 #: STORA/sales/templates/sales/fiscal_reports.html:18
+msgid ""
+"X Report is not fully verified on this device yet -- it may reset today's "
+"totals like Z Report does. Confirm with a manager before using it."
+msgstr ""
+"X отчетът още не е напълно потвърден на това устройство -- може да нулира "
+"дневните суми, както прави Z отчет. Потвърди с мениджър, преди да го "
+"ползваш."
+
+#: STORA/sales/templates/sales/fiscal_reports.html:19
 msgid "X Report"
 msgstr "X отчет"
 
-#: STORA/sales/templates/sales/fiscal_reports.html:19
+#: STORA/sales/templates/sales/fiscal_reports.html:20
 msgid "Z Report (resets today's totals)"
 msgstr "Z отчет (нулира дневните суми)"
 
-#: STORA/sales/templates/sales/fiscal_reports.html:23
+#: STORA/sales/templates/sales/fiscal_reports.html:24
+msgid "Service Cash In / Out"
+msgstr "Служебно въвеждане/извеждане"
+
+#: STORA/sales/templates/sales/fiscal_reports.html:25
+msgid ""
+"For money moved into or out of the till outside of a sale -- e.g. topping up "
+"change, or pulling cash for a bank deposit."
+msgstr ""
+"За пари, вкарани или изкарани от касата извън продажба -- напр. зареждане "
+"на дребни пари или изваждане на пари за банков депозит."
+
+#: STORA/sales/templates/sales/fiscal_reports.html:33
+msgid "Comment (optional)"
+msgstr "Коментар (по избор)"
+
+#: STORA/sales/templates/sales/fiscal_reports.html:36
+msgid "Cash In"
+msgstr "Внеси пари"
+
+#: STORA/sales/templates/sales/fiscal_reports.html:37
+msgid "Cash Out"
+msgstr "Изведи пари"
+
+#: STORA/sales/templates/sales/fiscal_reports.html:42
 msgid "Period (monthly / yearly)"
 msgstr "За период (месечен / годишен)"
 
-#: STORA/sales/templates/sales/fiscal_reports.html:27
+#: STORA/sales/templates/sales/fiscal_reports.html:46
 msgid "From"
 msgstr "От"
 
-#: STORA/sales/templates/sales/fiscal_reports.html:31
+#: STORA/sales/templates/sales/fiscal_reports.html:50
 msgid "To"
 msgstr "До"
 
-#: STORA/sales/templates/sales/fiscal_reports.html:34
+#: STORA/sales/templates/sales/fiscal_reports.html:53
 msgid "Print Period Report"
 msgstr "Отпечатай отчет за период"
 
-#: STORA/sales/templates/sales/fiscal_reports.html:54
+#: STORA/sales/templates/sales/fiscal_reports.html:73
 msgid "Report failed."
 msgstr "Отчетът е неуспешен."
 
-#: STORA/sales/templates/sales/fiscal_reports.html:55
+#: STORA/sales/templates/sales/fiscal_reports.html:74
 msgid "Done -- check the printer."
 msgstr "Готово -- провери принтера."
 
-#: STORA/sales/templates/sales/fiscal_reports.html:57
+#: STORA/sales/templates/sales/fiscal_reports.html:76
 msgid "Network error -- check your connection and try again."
 msgstr "Мрежова грешка -- провери връзката и опитай отново."
 
-#: STORA/sales/templates/sales/fiscal_reports.html:66
+#: STORA/sales/templates/sales/fiscal_reports.html:81
+msgid ""
+"This has not been fully verified yet and may reset today’s totals like Z "
+"Report does. Continue?"
+msgstr ""
+"Това все още не е напълно потвърдено и може да нулира дневните суми, "
+"както прави Z отчетът. Продължаваш ли?"
+
+#: STORA/sales/templates/sales/fiscal_reports.html:86
 msgid ""
 "Print the Z report? This resets the accumulated daily totals on the fiscal "
 "device -- only do this once, at the end of the day."
 msgstr ""
 "Да се отпечата ли Z отчет? Това нулира натрупаните дневни суми на фискалното "
 "устройство -- прави го само веднъж, в края на деня."
+
+#: STORA/sales/templates/sales/fiscal_reports.html:92
+msgid "Enter an amount."
+msgstr "Въведи сума."
+
+#: STORA/sales/templates/sales/fiscal_reports.html:103
+msgid "Take this amount out of the till?"
+msgstr "Да се изведе ли тази сума от касата?"
 
 #: STORA/sales/templates/sales/refund_details.html:12
 #, python-format
@@ -4082,11 +4160,6 @@ msgstr "Номер на продажба или касиер"
 #: STORA/sales/templates/sales/sale_add.html:154
 msgid "Show keyboard"
 msgstr "Покажи клавиатурата"
-
-#: STORA/sales/templates/sales/refund_find.html:22
-#: STORA/sales/templates/sales/refund_find.html:65
-msgid "Amount"
-msgstr "Сума"
 
 #: STORA/sales/templates/sales/refund_find.html:26
 msgid "Search"
@@ -4380,7 +4453,19 @@ msgstr "Избери начална и крайна дата."
 msgid "End date must be on or after the start date."
 msgstr "Крайната дата трябва да е същата или след началната."
 
-#: STORA/sales/views.py:393
+#: STORA/sales/views.py:387
+msgid "Enter a valid amount."
+msgstr "Въведи валидна сума."
+
+#: STORA/sales/views.py:389
+msgid "Enter an amount greater than zero."
+msgstr "Въведи сума, по-голяма от 0."
+
+#: STORA/sales/views.py:394
+msgid "Unknown direction."
+msgstr "Непозната посока."
+
+#: STORA/sales/views.py:421
 msgid ""
 "Cannot delete this sale -- it has a refund linked to it. The refund is a "
 "record of money handed back and must stay together with its sale."
@@ -4388,44 +4473,44 @@ msgstr ""
 "Тази продажба не може да бъде изтрита -- към нея има сторно. Сторното е "
 "запис за върнати пари и трябва да остане заедно с продажбата си."
 
-#: STORA/sales/views.py:425
+#: STORA/sales/views.py:453
 msgid "Invalid tab."
 msgstr "Невалиден таб."
 
-#: STORA/sales/views.py:461
+#: STORA/sales/views.py:489
 msgid "Invalid type"
 msgstr "Невалиден тип"
 
-#: STORA/sales/views.py:486
+#: STORA/sales/views.py:514
 msgid "Invalid action."
 msgstr "Невалидно действие."
 
-#: STORA/sales/views.py:569
+#: STORA/sales/views.py:597
 msgid "None"
 msgstr "Няма"
 
-#: STORA/sales/views.py:569
+#: STORA/sales/views.py:597
 msgid "Partial"
 msgstr "Частично"
 
-#: STORA/sales/views.py:569
+#: STORA/sales/views.py:597
 msgid "Full"
 msgstr "Изцяло"
 
-#: STORA/sales/views.py:646
+#: STORA/sales/views.py:674
 msgid "Please choose a valid reason."
 msgstr "Избери валидна причина."
 
-#: STORA/sales/views.py:655
+#: STORA/sales/views.py:683
 msgid "Invalid quantity entered."
 msgstr "Въведено е невалидно количество."
 
-#: STORA/sales/views.py:660
+#: STORA/sales/views.py:688
 #, python-format
 msgid "Cannot refund more than %(qty)s of %(name)s."
 msgstr "Не може да се сторнира повече от %(qty)s от „%(name)s“."
 
-#: STORA/sales/views.py:666
+#: STORA/sales/views.py:694
 msgid "Select at least one item to refund."
 msgstr "Избери поне един артикул за сторниране."
 

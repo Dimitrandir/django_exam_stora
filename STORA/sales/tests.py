@@ -1,6 +1,7 @@
 import json
 from datetime import timedelta, timezone as dt_timezone
 from decimal import Decimal
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from django.contrib.auth import get_user_model
@@ -12,7 +13,10 @@ from django.utils import timezone
 from STORA.products.models import Category, Product, RecipeIngredient, TaxGroup
 from STORA.pricelists.models import PriceList, PriceListRule
 from STORA.sales import fiscal
-from STORA.sales.models import SaleAttributes, SaleItems, PosPin, SaleItemVoidLog, RefundAttributes, RefundItems, FiscalCounter
+from STORA.sales.models import (
+    SaleAttributes, SaleItems, PosPin, SaleItemVoidLog, RefundAttributes, RefundItems, FiscalCounter,
+    ServiceCashMovement,
+)
 from STORA.sales.forms import SaleItemForm
 from STORA.sales.tasks import backfill_recipe_ingredient_stock
 
@@ -1374,6 +1378,76 @@ class FiscalDailyReportTests(TestCase):
         mock_stop.assert_called_once()
 
 
+class FiscalServiceCashMoveTests(TestCase):
+    """service_cash_move/record_service_cash_move -- same mocked boundary as
+    FiscalDailyReportTests."""
+
+    def setUp(self):
+        self.cashier = User.objects.create_user(username='fiscal-svc-cashier', password='pass12345', role=User.CASHIER)
+
+    def test_disabled_raises(self):
+        with self.assertRaises(fiscal.FiscalPrintError):
+            fiscal.service_cash_move(Decimal('10'))
+
+    @override_settings(**FISCAL_SETTINGS)
+    @patch('STORA.sales.fiscal._post_command')
+    @patch('STORA.sales.fiscal._start_ecrcommapp')
+    @patch('STORA.sales.fiscal._stop_ecrcommapp')
+    def test_positive_amount_sent_as_is(self, mock_stop, mock_start, mock_post):
+        mock_start.return_value = MagicMock()
+        mock_post.return_value = {'Code': 'P', 'CashSum': 42, 'ServInput': 10, 'ServOutput': 0}
+        result = fiscal.service_cash_move(Decimal('10.00'), 'float top-up')
+        mock_post.assert_called_once_with('FDServiceSum', {'Amount': 10.0, 'Text1': 'float top-up', 'Text2': ''})
+        self.assertEqual(result['CashSum'], 42)
+        mock_stop.assert_called_once()
+
+    @override_settings(**FISCAL_SETTINGS)
+    @patch('STORA.sales.fiscal._post_command')
+    @patch('STORA.sales.fiscal._start_ecrcommapp')
+    @patch('STORA.sales.fiscal._stop_ecrcommapp')
+    def test_negative_amount_for_cash_out(self, mock_stop, mock_start, mock_post):
+        mock_start.return_value = MagicMock()
+        mock_post.return_value = {'Code': 'P', 'CashSum': 0, 'ServInput': 0, 'ServOutput': 10}
+        fiscal.service_cash_move(Decimal('-10.00'))
+        mock_post.assert_called_once_with('FDServiceSum', {'Amount': -10.0, 'Text1': '', 'Text2': ''})
+
+    @override_settings(**FISCAL_SETTINGS)
+    @patch('STORA.sales.fiscal._post_command')
+    @patch('STORA.sales.fiscal._start_ecrcommapp')
+    @patch('STORA.sales.fiscal._stop_ecrcommapp')
+    def test_device_code_f_raises(self, mock_stop, mock_start, mock_post):
+        mock_start.return_value = MagicMock()
+        mock_post.return_value = {'Code': 'F'}
+        with self.assertRaises(fiscal.FiscalPrintError):
+            fiscal.service_cash_move(Decimal('999999.00'))
+
+    @override_settings(**FISCAL_SETTINGS)
+    @patch('STORA.sales.fiscal._post_command')
+    @patch('STORA.sales.fiscal._start_ecrcommapp')
+    @patch('STORA.sales.fiscal._stop_ecrcommapp')
+    def test_record_logs_success(self, mock_stop, mock_start, mock_post):
+        mock_start.return_value = MagicMock()
+        mock_post.return_value = {'Code': 'P', 'CashSum': 42, 'ServInput': 10, 'ServOutput': 0}
+        movement = fiscal.record_service_cash_move(Decimal('10.00'), 'top-up', self.cashier)
+        self.assertEqual(movement.fiscal_status, SaleAttributes.FISCAL_PRINTED)
+        self.assertEqual(movement.cash_sum_after, 42)
+        self.assertEqual(movement.performed_by, self.cashier)
+        self.assertTrue(ServiceCashMovement.objects.filter(pk=movement.pk).exists())
+
+    @override_settings(**FISCAL_SETTINGS)
+    @patch('STORA.sales.fiscal._post_command')
+    @patch('STORA.sales.fiscal._start_ecrcommapp')
+    @patch('STORA.sales.fiscal._stop_ecrcommapp')
+    def test_record_logs_failure_and_still_raises(self, mock_stop, mock_start, mock_post):
+        mock_start.return_value = MagicMock()
+        mock_post.side_effect = fiscal.FiscalPrintError('receipt still open')
+        with self.assertRaises(fiscal.FiscalPrintError):
+            fiscal.record_service_cash_move(Decimal('10.00'), '', self.cashier)
+        movement = ServiceCashMovement.objects.get()
+        self.assertEqual(movement.fiscal_status, SaleAttributes.FISCAL_FAILED)
+        self.assertIn('receipt still open', movement.fiscal_error)
+
+
 class FiscalPeriodReportTests(TestCase):
     def test_disabled_raises(self):
         with self.assertRaises(fiscal.FiscalPrintError):
@@ -1449,6 +1523,52 @@ class FiscalReportsViewTests(TestCase):
             'start_date': '2026-03-14', 'end_date': '2026-02-01',
         })
         self.assertEqual(response.status_code, 400)
+
+    def test_warehouse_has_no_access_to_service_cash(self):
+        self.client.force_login(self.warehouse)
+        response = self.client.post(reverse('fiscal_service_cash'), {'amount': '10', 'direction': 'in'})
+        self.assertEqual(response.status_code, 403)
+
+    @patch('STORA.sales.views.fiscal.record_service_cash_move')
+    def test_service_cash_in_sends_positive_amount(self, mock_record):
+        mock_record.return_value = SimpleNamespace(cash_sum_after=Decimal('52.00'))
+        self.client.force_login(self.cashier)
+        response = self.client.post(reverse('fiscal_service_cash'), {
+            'amount': '10.00', 'direction': 'in', 'comment': 'float top-up',
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()['ok'])
+        args, _kwargs = mock_record.call_args
+        self.assertEqual(args[0], Decimal('10.00'))
+
+    @patch('STORA.sales.views.fiscal.record_service_cash_move')
+    def test_service_cash_out_sends_negative_amount(self, mock_record):
+        mock_record.return_value = SimpleNamespace(cash_sum_after=Decimal('32.00'))
+        self.client.force_login(self.cashier)
+        response = self.client.post(reverse('fiscal_service_cash'), {
+            'amount': '10.00', 'direction': 'out',
+        })
+        self.assertEqual(response.status_code, 200)
+        args, _kwargs = mock_record.call_args
+        self.assertEqual(args[0], Decimal('-10.00'))
+
+    def test_service_cash_rejects_zero_or_negative_typed_amount(self):
+        self.client.force_login(self.cashier)
+        response = self.client.post(reverse('fiscal_service_cash'), {'amount': '0', 'direction': 'in'})
+        self.assertEqual(response.status_code, 400)
+
+    def test_service_cash_rejects_garbage_amount(self):
+        self.client.force_login(self.cashier)
+        response = self.client.post(reverse('fiscal_service_cash'), {'amount': 'abc', 'direction': 'in'})
+        self.assertEqual(response.status_code, 400)
+
+    @patch('STORA.sales.views.fiscal.record_service_cash_move')
+    def test_service_cash_device_failure_returns_502(self, mock_record):
+        mock_record.side_effect = fiscal.FiscalPrintError('till not enough cash')
+        self.client.force_login(self.cashier)
+        response = self.client.post(reverse('fiscal_service_cash'), {'amount': '10', 'direction': 'out'})
+        self.assertEqual(response.status_code, 502)
+        self.assertIn('till not enough cash', response.json()['error'])
 
 
 class FiscalRefundTests(TestCase):

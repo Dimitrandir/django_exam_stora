@@ -373,6 +373,34 @@ def fiscal_report_period(request):
     return JsonResponse({'ok': True})
 
 
+@login_required
+@permission_required('sales.add_saleattributes', raise_exception=True)
+@require_POST
+def fiscal_service_cash(request):
+    """Служебно въвеждане/извеждане (FDServiceSum) -- same permission as
+    ringing up a sale or running X/Z, since putting change into the till or
+    pulling cash out of it is a normal till operation, not Manager-only.
+    `direction` picks the sign; the amount typed in is always positive."""
+    try:
+        amount = Decimal(request.POST.get('amount', ''))
+    except InvalidOperation:
+        return JsonResponse({'error': _('Enter a valid amount.')}, status=400)
+    if amount <= 0:
+        return JsonResponse({'error': _('Enter an amount greater than zero.')}, status=400)
+    direction = request.POST.get('direction')
+    if direction == 'out':
+        amount = -amount
+    elif direction != 'in':
+        return JsonResponse({'error': _('Unknown direction.')}, status=400)
+    comment = request.POST.get('comment', '').strip()
+
+    try:
+        movement = fiscal.record_service_cash_move(amount, comment, request.user)
+    except fiscal.FiscalPrintError as exc:
+        return JsonResponse({'error': str(exc)}, status=502)
+    return JsonResponse({'ok': True, 'cash_sum_after': str(movement.cash_sum_after)})
+
+
 class SalesDeleteView(LoginRequiredMixin, StaffPermissionRequiredMixin, DeleteView):
     permission_required = 'sales.delete_saleattributes'
     model = SaleAttributes

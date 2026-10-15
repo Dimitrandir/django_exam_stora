@@ -361,3 +361,34 @@ class FiscalCounter(models.Model):
             counter.next_number = n + 1
             counter.save(update_fields=['next_number'])
             return n
+
+
+class ServiceCashMovement(models.Model):
+    """One row per служебно въвеждане/извеждане (FDServiceSum) -- money put
+    into or taken out of the till outside of a sale (e.g. topping up change,
+    or pulling cash for a bank deposit). amount keeps the device's own sign
+    convention (positive = cash in, negative = cash out), so a single field
+    covers both directions without a separate choice field. Logged the same
+    way as ProductChangeLog -- who/when/what, for accountability over real
+    cash movement -- even though, unlike a Sale, there's no underlying STORA
+    record this is "attached" to; the fiscal action itself IS the record."""
+    amount = models.DecimalField(max_digits=12, decimal_places=2, verbose_name=_('Amount'))
+    comment = models.CharField(max_length=28, blank=True, verbose_name=_('Comment'))
+    performed_by = models.ForeignKey(
+        Employee, on_delete=models.SET_NULL, null=True, related_name='service_cash_movements',
+        verbose_name=_('Performed By'),
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name=_('Date'))
+    cash_sum_after = models.DecimalField(
+        max_digits=12, decimal_places=2, null=True, blank=True, verbose_name=_('Cash In Till After'),
+    )
+    fiscal_status = models.CharField(
+        max_length=7, choices=SaleAttributes.FISCAL_STATUS_CHOICES, default=SaleAttributes.FISCAL_NONE,
+        verbose_name=_('Fiscal Status'),
+    )
+    fiscal_error = models.CharField(max_length=255, blank=True, verbose_name=_('Fiscal Error'))
+
+    class Meta:
+        verbose_name = _('Service Cash Movement')
+        verbose_name_plural = _('Service Cash Movements')
+        ordering = ['-created_at']

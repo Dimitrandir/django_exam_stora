@@ -462,6 +462,63 @@ def print_z_report():
     _print_daily_report(_DAILY_RPT_ITEM_Z)
 
 
+def service_cash_move(amount, comment=''):
+    """Служебно въвеждане (amount > 0) / служебно извеждане (amount < 0) --
+    FDServiceSum [70 (46h)]. Unlike print_x_report/print_z_report this DOES
+    return structured data (CashSum/ServInput/ServOutput), straight from the
+    guide's own worked example -- Amount is sent as a number there, not a
+    string like FDSaleItem's Price/Qty, so kept as a number here too rather
+    than assuming every numeric field in this API needs str(). The device
+    itself refuses to run this with an open receipt, and refuses a cash-out
+    bigger than what's actually in the till -- both surface as a normal
+    FiscalPrintError via _post_command's generic HasErr/ErrorCode handling,
+    nothing extra to check for those two cases specifically. 'Code' in the
+    response ('P'=success, 'F'=failed) is this command's OWN result flag,
+    separate from the generic ErrorCode/IsValid checked in _post_command --
+    worth checking explicitly since the guide doesn't say ErrorCode is
+    guaranteed non-zero when Code is 'F'."""
+    if not settings.FISCAL_ENABLED:
+        raise FiscalPrintError('Fiscal printing is disabled (FISCAL_ENABLED).')
+    process = _start_ecrcommapp()
+    try:
+        result = _post_command('FDServiceSum', {
+            'Amount': float(amount),
+            'Text1': comment[:28],
+            'Text2': '',
+        })
+    finally:
+        _stop_ecrcommapp(process)
+    if result.get('Code') == 'F':
+        raise FiscalPrintError('Fiscal device refused the service cash movement (Code F).')
+    return result
+
+
+def record_service_cash_move(amount, comment, performed_by):
+    """Unlike attempt_print/attempt_print_refund, this DOES re-raise
+    FiscalPrintError after logging -- there's no pre-existing STORA record
+    to flag as failed and retry later (this action IS the record, and a
+    failed attempt moved no real money, so there's nothing to retry either),
+    so the caller (the view) needs the exception to tell the operator it
+    didn't go through. Still logs a row either way, successful or not, for
+    an honest audit trail of what was attempted."""
+    from .models import SaleAttributes, ServiceCashMovement
+
+    movement = ServiceCashMovement(amount=amount, comment=comment, performed_by=performed_by)
+    try:
+        result = service_cash_move(amount, comment)
+    except FiscalPrintError as exc:
+        movement.fiscal_status = SaleAttributes.FISCAL_FAILED
+        movement.fiscal_error = str(exc)
+        movement.save()
+        logger.warning('Fiscal service cash movement failed: %s', exc)
+        raise
+    else:
+        movement.fiscal_status = SaleAttributes.FISCAL_PRINTED
+        movement.cash_sum_after = result.get('CashSum')
+        movement.save()
+        return movement
+
+
 def print_period_report(start_date, end_date):
     """Detailed fiscal-memory report for a date range (start_date/end_date
     are date objects) -- covers "monthly"/"yearly" reports, there's no

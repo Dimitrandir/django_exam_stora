@@ -21,4 +21,5 @@ urlpatterns = [
     path('fiscal-reports/x/', views.fiscal_report_x, name='fiscal_report_x'),
     path('fiscal-reports/z/', views.fiscal_report_z, name='fiscal_report_z'),
     path('fiscal-reports/period/', views.fiscal_report_period, name='fiscal_report_period'),
+    path('fiscal-reports/service-cash/', views.fiscal_service_cash, name='fiscal_service_cash'),
 ]

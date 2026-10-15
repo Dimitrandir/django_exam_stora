@@ -14,9 +14,28 @@
 
 <div class="mb-4">
     <h2 class="h4">{% translate "Daily" %}</h2>
-    <p class="text-muted small">{% translate "X Report is just a reading -- run it as many times as you like. Z Report closes out the day and resets today's totals on the device -- run it once, at the end of the day." %}</p>
+    <p class="text-muted small">{% translate "X Report is meant to be just a reading. Z Report closes out the day and resets today's totals on the device -- run it once, at the end of the day." %}</p>
+    <div class="form-errors">{% translate "X Report is not fully verified on this device yet -- it may reset today's totals like Z Report does. Confirm with a manager before using it." %}</div>
     <button type="button" id="fiscal-x-btn" class="btn button-save">{% translate "X Report" %}</button>
     <button type="button" id="fiscal-z-btn" class="btn btn-outline-danger">{% translate "Z Report (resets today's totals)" %}</button>
+</div>
+
+<div class="mb-4">
+    <h2 class="h4">{% translate "Service Cash In / Out" %}</h2>
+    <p class="text-muted small">{% translate "For money moved into or out of the till outside of a sale -- e.g. topping up change, or pulling cash for a bank deposit." %}</p>
+    <form id="fiscal-service-cash-form" class="d-flex align-items-end gap-2 flex-wrap">
+        {% csrf_token %}
+        <div>
+            <label for="fiscal-service-amount" class="form-label">{% translate "Amount" %}</label>
+            <input type="text" inputmode="decimal" id="fiscal-service-amount" name="amount" class="form-control" required>
+        </div>
+        <div>
+            <label for="fiscal-service-comment" class="form-label">{% translate "Comment (optional)" %}</label>
+            <input type="text" id="fiscal-service-comment" name="comment" class="form-control" maxlength="28">
+        </div>
+        <button type="button" id="fiscal-service-in-btn" class="btn button-save">{% translate "Cash In" %}</button>
+        <button type="button" id="fiscal-service-out-btn" class="btn btn-outline-danger">{% translate "Cash Out" %}</button>
+    </form>
 </div>
 
 <div class="mb-4">
@@ -59,12 +78,30 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     document.getElementById('fiscal-x-btn').addEventListener('click', function () {
+        if (!confirm('{% translate "This has not been fully verified yet and may reset today’s totals like Z Report does. Continue?" %}')) return;
         runReport('{% url "fiscal_report_x" %}', '', this);
     });
 
     document.getElementById('fiscal-z-btn').addEventListener('click', function () {
         if (!confirm('{% translate "Print the Z report? This resets the accumulated daily totals on the fiscal device -- only do this once, at the end of the day." %}')) return;
         runReport('{% url "fiscal_report_z" %}', '', this);
+    });
+
+    function runServiceCash(direction, button) {
+        var amount = document.getElementById('fiscal-service-amount').value;
+        if (!amount) { alert('{% translate "Enter an amount." %}'); return; }
+        var comment = document.getElementById('fiscal-service-comment').value;
+        var body = new URLSearchParams({amount: amount, direction: direction, comment: comment});
+        runReport('{% url "fiscal_service_cash" %}', body, button);
+    }
+
+    document.getElementById('fiscal-service-in-btn').addEventListener('click', function () {
+        runServiceCash('in', this);
+    });
+
+    document.getElementById('fiscal-service-out-btn').addEventListener('click', function () {
+        if (!confirm('{% translate "Take this amount out of the till?" %}')) return;
+        runServiceCash('out', this);
     });
 
     document.getElementById('fiscal-period-form').addEventListener('submit', function (e) {
