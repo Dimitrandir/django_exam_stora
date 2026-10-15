@@ -498,8 +498,21 @@ document.addEventListener('DOMContentLoaded', function () {
     // whatever redraw/cleanup is already in flight (e.g. from inside
     // another cell's own `cellEdited` handler -- the Qty -> Price
     // auto-advance case), is what actually gets the editor to open.
-    function focusCellEditor(row, field) {
-        setTimeout(function () {
+    //
+    // `deferred` (default true) skips that tick for a BRAND NEW row with
+    // no redraw-in-flight to wait for (addProductRow/selectBatch's own
+    // table.addRow().then() callbacks, not advanceToNext or the "re-scan
+    // an existing row" path, which still need the default). Confirmed
+    // live: with the defer, the Qty cell sits in its plain (non-editor)
+    // state for one extra tick right after a row is added -- a receiving
+    // clerk who taps that cell themselves in that exact window (out of
+    // habit, to start typing the quantity) finds no editor there yet, so
+    // the tap isn't swallowed and bubbles up as a plain row click instead,
+    // silently marking the brand-new row for deletion. Nothing looks
+    // wrong in the moment -- the editor still opens right after anyway --
+    // so it only surfaces later, as rows that refuse to "unmark".
+    function focusCellEditor(row, field, deferred) {
+        function run() {
             var cell = row.getCell(field);
             cell.edit(true);
             var input = cell.getElement().querySelector('input, textarea');
@@ -507,7 +520,12 @@ document.addEventListener('DOMContentLoaded', function () {
                 input.focus();
                 if (input.select) input.select();
             }
-        }, 0);
+        }
+        if (deferred === false) {
+            run();
+        } else {
+            setTimeout(run, 0);
+        }
     }
 
     // Tabulator's built-in editor:'number' has no Enter-key handling at
@@ -967,8 +985,10 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         table.addRow(buildRow(product, {delivery_quantity: 1})).then(function (row) {
             // "add a product -> quantity lights up ready to type" per the
-            // receiving clerk's requested quick-entry flow.
-            focusCellEditor(row, 'delivery_quantity');
+            // receiving clerk's requested quick-entry flow. Not deferred --
+            // see focusCellEditor's own comment for why a brand-new row
+            // doesn't need (and shouldn't have) that extra tick.
+            focusCellEditor(row, 'delivery_quantity', false);
         });
     }
 
@@ -1497,7 +1517,9 @@ document.addEventListener('DOMContentLoaded', function () {
                 expiry_date: batch.expiry_date,
                 source_item: batch.id,
             })).then(function (row) {
-                focusCellEditor(row, 'delivery_quantity');
+                // Not deferred -- same brand-new-row reasoning as
+                // addProductRow's own call, see focusCellEditor's comment.
+                focusCellEditor(row, 'delivery_quantity', false);
             });
             batchResultsBox.classList.remove('is-open');
             batchSearchInput.value = '';
