@@ -699,6 +699,94 @@ class ProductInlineUpdateViewTests(TestCase):
         self.assertEqual(entry.changed_by, self.manager)
 
 
+class ProductAttributeInlineUpdateTests(TestCase):
+    """"Enable Edit" on the Products grid can also edit the per-shop
+    attribute columns (attribute_<id>) -- stored inside Product.attributes,
+    not a real Product field, so they get their own branch in
+    ProductInlineUpdateView."""
+
+    def setUp(self):
+        self.manager = Employee.objects.create_user(
+            username='manager-attr', password='pass12345', role=Employee.MANAGER
+        )
+        self.cashier = Employee.objects.create_user(
+            username='cashier-attr', password='pass12345', role=Employee.CASHIER
+        )
+        self.brand = ProductAttribute.objects.create(name='Brand')
+        self.color = ProductAttribute.objects.create(name='Color', choices=['Red', 'Blue'])
+        self.product = Product.objects.create(
+            internal_code='P1000014', name='Attribute Widget', sell_price=1.50, quantity=7,
+            attributes={str(self.color.pk): 'Red'},
+        )
+
+    def _post(self, attribute, value):
+        return self.client.post(
+            reverse('product_inline_update', kwargs={'pk': self.product.pk}),
+            {'field': f'attribute_{attribute.pk}', 'value': value},
+        )
+
+    def test_cashier_cannot_edit(self):
+        self.client.force_login(self.cashier)
+        self.assertEqual(self._post(self.brand, 'Nike').status_code, 403)
+        self.product.refresh_from_db()
+        self.assertNotIn(str(self.brand.pk), self.product.attributes)
+
+    def test_free_text_attribute_is_saved_and_other_attributes_kept(self):
+        self.client.force_login(self.manager)
+        response = self._post(self.brand, '  Nike ')
+        self.assertEqual(response.status_code, 200)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.attributes, {str(self.brand.pk): 'Nike', str(self.color.pk): 'Red'})
+
+    def test_choice_attribute_accepts_a_listed_value(self):
+        self.client.force_login(self.manager)
+        self.assertEqual(self._post(self.color, 'Blue').status_code, 200)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.attributes[str(self.color.pk)], 'Blue')
+
+    def test_choice_attribute_rejects_an_unlisted_value(self):
+        self.client.force_login(self.manager)
+        self.assertEqual(self._post(self.color, 'Green').status_code, 400)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.attributes[str(self.color.pk)], 'Red')
+
+    def test_blank_value_removes_the_key(self):
+        self.client.force_login(self.manager)
+        self.assertEqual(self._post(self.color, '').status_code, 200)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.attributes, {})
+
+    def test_unknown_attribute_id_rejected(self):
+        self.client.force_login(self.manager)
+        response = self.client.post(
+            reverse('product_inline_update', kwargs={'pk': self.product.pk}),
+            {'field': 'attribute_99999', 'value': 'x'},
+        )
+        self.assertEqual(response.status_code, 400)
+        response = self.client.post(
+            reverse('product_inline_update', kwargs={'pk': self.product.pk}),
+            {'field': 'attribute_abc', 'value': 'x'},
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_editing_an_attribute_does_not_touch_other_fields(self):
+        self.client.force_login(self.manager)
+        self._post(self.brand, 'Nike')
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.name, 'Attribute Widget')
+        self.assertEqual(self.product.quantity, 7)
+        self.assertEqual(str(self.product.sell_price), '1.50')
+
+    def test_list_page_hands_the_grid_each_attributes_editor_definition(self):
+        self.client.force_login(self.manager)
+        response = self.client.get(reverse('product_list'))
+        self.assertEqual(response.context['attribute_defs'], [
+            {'id': self.brand.pk, 'choices': []},
+            {'id': self.color.pk, 'choices': ['Red', 'Blue']},
+        ])
+        self.assertContains(response, 'id="products-attribute-defs"')
+
+
 class ProductBarcodeInlineUpdateViewTests(TestCase):
     def setUp(self):
         self.manager = Employee.objects.create_user(

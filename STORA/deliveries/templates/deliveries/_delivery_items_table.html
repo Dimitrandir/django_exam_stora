@@ -341,6 +341,7 @@ document.addEventListener('DOMContentLoaded', function () {
             new_product_category: imported.category_id || '',
             new_product_supplier: imported.supplier_id || '',
             new_product_barcodes: imported.barcodes || [],
+            new_product_attributes: imported.attributes || {},
             duplicate_candidate: imported.duplicate_candidate || null,
         };
     }
@@ -1671,6 +1672,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 fields.new_product_barcode_1 = barcodes[0] || '';
                 fields.new_product_barcode_2 = barcodes[1] || '';
                 fields.new_product_barcode_3 = barcodes[2] || '';
+                fields.new_product_attributes = JSON.stringify(data.new_product_attributes || {});
             }
             Object.keys(fields).forEach(function (name) {
                 var input = document.createElement('input');

@@ -1,4 +1,5 @@
 import io
+import json
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -13,7 +14,7 @@ from STORA.deliveries.excel_import import parse_delivery_import
 from STORA.deliveries.models import (
     DeliveryAttributes, DeliveryItems, DeliveryItemRemoval, DocumentType, ScrapReason, Suppliers,
 )
-from STORA.products.models import Barcode, Category, Product, ProductSupplier, TaxGroup
+from STORA.products.models import Barcode, Category, Product, ProductAttribute, ProductSupplier, TaxGroup
 
 
 User = get_user_model()
@@ -1187,12 +1188,13 @@ class ScrapViewTests(TestCase):
         self.assertEqual(self.product.quantity, Decimal('8.000'))
 
 
-def _build_import_xlsx(rows):
-    """rows: list of tuples matching excel_import.COLUMN_HEADERS order."""
+def _build_import_xlsx(rows, extra_headers=()):
+    """rows: list of tuples matching excel_import.COLUMN_HEADERS order
+    (followed by one cell per `extra_headers` entry, e.g. attribute columns)."""
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.append(['Code', 'Name', 'Unit Type', 'Quantity', 'Category', 'Subcategory', 'Delivery Price',
-               'Sell Price', 'Main Supplier', 'Barcode 1', 'Barcode 2', 'Barcode 3'])
+               'Sell Price', 'Main Supplier', 'Barcode 1', 'Barcode 2', 'Barcode 3'] + list(extra_headers))
     for row in rows:
         ws.append(row)
     buf = io.BytesIO()
@@ -1368,6 +1370,62 @@ class ExcelImportParsingTests(TestCase):
         self.assertIsNone(row['duplicate_candidate'])
 
 
+class ExcelImportAttributeTests(TestCase):
+    """Attribute columns (one per shop-defined ProductAttribute, after the
+    fixed 12) -- matched by header text, only ever applied to NEW products."""
+
+    def setUp(self):
+        self.brand = ProductAttribute.objects.create(name='Brand')
+        self.color = ProductAttribute.objects.create(name='Color', choices=['Red', 'Blue'])
+        self.size = ProductAttribute.objects.create(name='Size')
+        self.existing = Product.objects.create(
+            internal_code='ATTREX1', name='Attribute Existing Product',
+            delivery_price=Decimal('1.00'), sell_price=Decimal('2.00'), quantity=Decimal('1.000'),
+        )
+
+    def _row(self, name, *extra, code=''):
+        return (code, name, '', 1, '', '', '', '', '', '', '', '') + extra
+
+    def test_new_product_reads_attribute_columns_by_header(self):
+        buf = _build_import_xlsx([self._row('Attr Item One', 'Nike', 'blue', 42.0)],
+                                 extra_headers=['brand', 'COLOR', 'Size'])
+        result = parse_delivery_import(buf)
+        self.assertEqual(result['errors'], [])
+        # case-insensitive header match, choice stored in its canonical
+        # spelling, whole-number float written without the ".0"
+        self.assertEqual(result['rows'][0]['attributes'], {
+            str(self.brand.pk): 'Nike', str(self.color.pk): 'Blue', str(self.size.pk): '42',
+        })
+
+    def test_blank_attribute_cells_are_omitted(self):
+        buf = _build_import_xlsx([self._row('Attr Item Two', 'Nike', None, '')],
+                                 extra_headers=['Brand', 'Color', 'Size'])
+        result = parse_delivery_import(buf)
+        self.assertEqual(result['rows'][0]['attributes'], {str(self.brand.pk): 'Nike'})
+
+    def test_value_outside_choices_is_dropped_with_a_warning(self):
+        buf = _build_import_xlsx([self._row('Attr Item Three', 'Green')], extra_headers=['Color'])
+        result = parse_delivery_import(buf)
+        self.assertEqual(result['rows'][0]['attributes'], {})
+        self.assertEqual(len(result['errors']), 1)
+        self.assertIn('Green', result['errors'][0])
+        self.assertIn('Color', result['errors'][0])
+
+    def test_unknown_extra_header_is_ignored(self):
+        buf = _build_import_xlsx([self._row('Attr Item Four', 'whatever', 'Nike')],
+                                 extra_headers=['Not An Attribute', 'Brand'])
+        result = parse_delivery_import(buf)
+        self.assertEqual(result['errors'], [])
+        self.assertEqual(result['rows'][0]['attributes'], {str(self.brand.pk): 'Nike'})
+
+    def test_existing_product_match_never_gets_attributes(self):
+        buf = _build_import_xlsx([self._row(self.existing.name, 'Nike', code='ATTREX1')], extra_headers=['Brand'])
+        result = parse_delivery_import(buf)
+        row = result['rows'][0]
+        self.assertFalse(row['is_new'])
+        self.assertNotIn('attributes', row)
+
+
 class ExcelImportViewTests(TestCase):
     def setUp(self):
         self.warehouse = User.objects.create_user(username='wh_import', password='pass12345', role=User.WAREHOUSE)
@@ -1391,6 +1449,15 @@ class ExcelImportViewTests(TestCase):
         self.assertEqual(headers, ['Code', 'Name', 'Unit Type', 'Quantity', 'Category', 'Subcategory',
                                     'Delivery Price', 'Sell Price', 'Main Supplier',
                                     'Barcode 1', 'Barcode 2', 'Barcode 3'])
+
+    def test_template_download_has_one_column_per_attribute(self):
+        ProductAttribute.objects.create(name='Brand')
+        ProductAttribute.objects.create(name='Color')
+        self.client.force_login(self.warehouse)
+        response = self.client.get(reverse('delivery_import_template'))
+        wb = openpyxl.load_workbook(io.BytesIO(response.content))
+        headers = [c.value for c in wb.active[1]]
+        self.assertEqual(headers[12:], ['Brand', 'Color'])
 
     def test_import_endpoint_requires_permission(self):
         self.client.force_login(self.cashier)
@@ -1482,6 +1549,50 @@ class DeliveryAddWithNewProductRowsTests(TestCase):
 
         delivery = DeliveryAttributes.objects.get(document_number='IMP-101')
         self.assertEqual(delivery.items.get().delivery_item, product)
+
+    def _single_new_product_post(self, document_number, attributes_json):
+        data = self._general_info(document_number=document_number)
+        data.update({
+            'items-TOTAL_FORMS': '1', 'items-INITIAL_FORMS': '0',
+            'items-MIN_NUM_FORMS': '0', 'items-MAX_NUM_FORMS': '1000',
+            'items-0-id': '', 'items-0-delivery_item': '',
+            'items-0-delivery_quantity': '2.000', 'items-0-price_at_delivery': '3.00',
+            'items-0-total_price_row': '6.00', 'items-0-DELETE': '',
+            'items-0-new_product': '1', 'items-0-new_product_name': 'Imported With Attributes',
+            'items-0-new_product_code': '', 'items-0-new_product_delivery_price': '3.00',
+            'items-0-new_product_sell_price': '5.00', 'items-0-new_product_category': '',
+            'items-0-new_product_supplier': '', 'items-0-new_product_barcode_1': '',
+            'items-0-new_product_barcode_2': '', 'items-0-new_product_barcode_3': '',
+            'items-0-new_product_attributes': attributes_json,
+        })
+        return self.client.post(reverse('delivery_add'), data)
+
+    def test_attributes_are_saved_on_the_created_product(self):
+        brand = ProductAttribute.objects.create(name='Brand')
+        color = ProductAttribute.objects.create(name='Color', choices=['Red', 'Blue'])
+        response = self._single_new_product_post(
+            'IMP-103', json.dumps({str(brand.pk): 'Nike', str(color.pk): 'Red'}))
+        self.assertRedirects(response, reverse('delivery_add'))
+        product = Product.objects.get(name='Imported With Attributes')
+        self.assertEqual(product.attributes, {str(brand.pk): 'Nike', str(color.pk): 'Red'})
+
+    def test_unusable_attribute_values_are_dropped_not_fatal(self):
+        # Posted data is re-checked server-side: an id that isn't a real
+        # attribute, a value outside a choices list, a non-string, and a
+        # blank are all discarded -- the delivery itself still saves.
+        brand = ProductAttribute.objects.create(name='Brand')
+        color = ProductAttribute.objects.create(name='Color', choices=['Red', 'Blue'])
+        response = self._single_new_product_post('IMP-104', json.dumps({
+            str(brand.pk): 'Nike', str(color.pk): 'Green', '99999': 'ghost', str(brand.pk + 1000): 5,
+        }))
+        self.assertRedirects(response, reverse('delivery_add'))
+        product = Product.objects.get(name='Imported With Attributes')
+        self.assertEqual(product.attributes, {str(brand.pk): 'Nike'})
+
+    def test_malformed_attributes_blob_is_ignored(self):
+        response = self._single_new_product_post('IMP-105', '{not json')
+        self.assertRedirects(response, reverse('delivery_add'))
+        self.assertEqual(Product.objects.get(name='Imported With Attributes').attributes, {})
 
     def test_zero_quantity_creates_product_only_no_delivery_item(self):
         # Paired with a normal qty>0 row -- a delivery consisting of ONLY a

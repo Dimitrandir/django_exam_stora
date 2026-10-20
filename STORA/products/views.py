@@ -150,6 +150,12 @@ class ProductListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListView
 
         context['products_data'] = products_data
         context['product_attributes'] = product_attributes
+        # What the grid's "Enable Edit" mode needs per attribute column
+        # (see products_list.html): a dropdown for a choices-restricted
+        # one, a plain text editor otherwise.
+        context['attribute_defs'] = [
+            {'id': a.pk, 'choices': a.choices} for a in product_attributes
+        ]
         return context
 
 
@@ -164,6 +170,13 @@ class ProductInlineUpdateView(LoginRequiredMixin, StaffPermissionRequiredMixin, 
         product = get_object_or_404(Product, pk=pk)
         field = request.POST.get('field')
         value = request.POST.get('value', '')
+
+        # attribute_<id> columns (one per shop-defined ProductAttribute, see
+        # ProductListView) aren't real Product fields -- the value lives
+        # inside the Product.attributes JSON blob, so it can't go through
+        # ProductInlineEditForm at all.
+        if field and field.startswith('attribute_'):
+            return self._update_attribute(request, product, field, value)
 
         if field not in ProductInlineEditForm.base_fields:
             return JsonResponse({'error': _('That field cannot be edited here.')}, status=400)
@@ -193,6 +206,30 @@ class ProductInlineUpdateView(LoginRequiredMixin, StaffPermissionRequiredMixin, 
             'sell_price': float(product.sell_price) if product.sell_price is not None else None,
             'delivery_price': float(product.delivery_price) if product.delivery_price is not None else None,
         })
+
+
+    def _update_attribute(self, request, product, field, value):
+        """Sets/clears one attribute in Product.attributes -- same rules as
+        the product form's own attribute fields (ProductForms): a blank
+        value removes the key entirely (not stored as ''), and an attribute
+        with a predefined choices list only accepts one of them."""
+        try:
+            attribute = ProductAttribute.objects.get(pk=int(field[len('attribute_'):]))
+        except (ValueError, ProductAttribute.DoesNotExist):
+            return JsonResponse({'error': _('That field cannot be edited here.')}, status=400)
+
+        value = value.strip()
+        if value and attribute.choices and value not in attribute.choices:
+            return JsonResponse({'error': _('Pick one of the allowed values for this attribute.')}, status=400)
+
+        attributes = dict(product.attributes)
+        if value:
+            attributes[str(attribute.pk)] = value
+        else:
+            attributes.pop(str(attribute.pk), None)
+        product.attributes = attributes
+        product.save(update_fields=['attributes'])
+        return JsonResponse({'value': value})
 
 
 class ProductBarcodeInlineUpdateView(LoginRequiredMixin, StaffPermissionRequiredMixin, View):

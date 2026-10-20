@@ -34,7 +34,7 @@ from STORA.deliveries.forms import (
     DeliveryForms, DeliveryItemFormSet, DocumentTypeForm, WriteOffForm, ScrapForm, ScrapReasonForm,
 )
 from STORA.deliveries.models import DeliveryAttributes, DeliveryItems, DocumentType, ScrapReason
-from STORA.products.models import Barcode, Product, ProductSupplier, Suppliers
+from STORA.products.models import Barcode, Product, ProductAttribute, ProductSupplier, Suppliers
 from STORA.products.views import get_free_internal_codes
 
 logger = logging.getLogger(__name__)
@@ -77,6 +77,35 @@ def _items_initial_from_instance(delivery):
         }
         for item in delivery.items.all()
     ])
+
+
+def _clean_pending_attributes(raw_json, attributes_by_id):
+    """`new_product_attributes` hidden field (a JSON object, attribute id ->
+    value, built from the Excel import -- see excel_import) -> the dict to
+    store on Product.attributes. It arrives through a plain POST, so it's
+    re-checked here rather than trusted: ids that aren't a real
+    ProductAttribute, blank/non-string values, and values outside a
+    choices-restricted attribute's list are all dropped, same rules as
+    ProductForms' own attribute fields. A malformed blob just yields {} --
+    attributes are optional, never a reason to fail the whole delivery."""
+    if not raw_json:
+        return {}
+    try:
+        data = json.loads(raw_json)
+    except ValueError:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    cleaned = {}
+    for attribute_id, value in data.items():
+        attribute = attributes_by_id.get(str(attribute_id))
+        if attribute is None or not isinstance(value, str):
+            continue
+        value = value.strip()
+        if not value or (attribute.choices and value not in attribute.choices):
+            continue
+        cleaned[str(attribute.pk)] = value
+    return cleaned
 
 
 def _materialize_pending_products(post_data):
@@ -131,6 +160,7 @@ def _materialize_pending_products(post_data):
     )
     next_code_counter = None
     kept_rows = []
+    attributes_by_id = {str(a.pk): a for a in ProductAttribute.objects.all()}
 
     for index in range(total_forms):
         prefix = f'items-{index}-'
@@ -181,6 +211,7 @@ def _materialize_pending_products(post_data):
             delivery_price=delivery_price if delivery_price > 0 else None,
             sell_price=sell_price,
             category_id=category_id,
+            attributes=_clean_pending_attributes(post_data.get(prefix + 'new_product_attributes'), attributes_by_id),
         )
 
         for position, barcode_code in enumerate(

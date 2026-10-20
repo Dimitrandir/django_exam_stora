@@ -76,6 +76,7 @@
 </div>
 
 {{ products_data|json_script:"products-table-data" }}
+{{ attribute_defs|json_script:"products-attribute-defs" }}
 <div class="data-table-card tabulator-classic">
     <div id="products-table" class="tabulator-classic"></div>
 </div>
@@ -200,6 +201,18 @@ document.addEventListener('DOMContentLoaded', function () {
         barcode_2: {editor: 'input'},
         barcode_3: {editor: 'input'},
     };
+
+    // One editable column per shop-defined attribute (Brand/Color/...) --
+    // a dropdown for an attribute with a predefined choices list (clearable,
+    // since every attribute is optional), a plain text box otherwise. Saved
+    // through the same inline-update endpoint as name/price (ProductInline
+    // UpdateView._update_attribute -- the value lives in Product.attributes,
+    // not a real Product field).
+    JSON.parse(document.getElementById('products-attribute-defs').textContent).forEach(function (attribute) {
+        editorConfig['attribute_' + attribute.id] = attribute.choices.length
+            ? {editor: 'list', editorParams: {values: attribute.choices, clearable: true}}
+            : {editor: 'input'};
+    });
 
     // show_on_pos isn't part of editorConfig/"Enable Edit" -- it's a quick,
     // low-stakes toggle meant to be flipped often while curating what shows

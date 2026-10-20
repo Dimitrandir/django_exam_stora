@@ -9,7 +9,19 @@ Column layout (see build_template_workbook) -- only Name is required, every
 other column may be blank:
   Code | Name | Unit Type | Quantity | Category | Subcategory |
   Delivery Price | Sell Price | Main Supplier | Barcode 1 | Barcode 2 |
-  Barcode 3
+  Barcode 3 | <one extra column per shop-defined ProductAttribute>
+
+The attribute columns (Brand/Color/Size/... -- whatever this shop defined, see
+products.ProductAttribute) come AFTER the fixed 12 and are matched by their
+header text against the attribute's name (case-insensitive), not by position
+-- the list is different for every shop and can change, so the template
+download (build_template_workbook) is generated from the live list, and a
+file whose extra headers don't match any attribute simply has those columns
+ignored. Like everything else on a row, they only ever apply to a genuinely
+NEW product; a code/barcode match never gets its attributes edited by this
+file. An attribute with a predefined choices list only accepts one of those
+values (case-insensitive, stored in its canonical spelling) -- anything else
+is left blank with a warning, same "never guess" rule as category matching.
 
 Unit Type ("pcs"/"kg", Bulgarian "бр"/"кг" also accepted, case-insensitive)
 only matters for a genuinely NEW product -- it's ignored for a code/barcode
@@ -73,7 +85,7 @@ from django.conf import settings
 from django.contrib.postgres.search import TrigramSimilarity
 from django.utils.translation import gettext as _
 
-from STORA.products.models import Barcode, Category, Product, Suppliers
+from STORA.products.models import Barcode, Category, Product, ProductAttribute, Suppliers
 
 COLUMN_HEADERS = [
     'Code', 'Name', 'Unit Type', 'Quantity', 'Category', 'Subcategory',
@@ -109,12 +121,14 @@ SIMILARITY_HIGH = 0.55
 
 def build_template_workbook():
     """Blank .xlsx with just the header row -- served by
-    delivery_import_template for "Download template"."""
+    delivery_import_template for "Download template". The fixed columns
+    followed by one per current ProductAttribute (see module docstring)."""
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = 'Import'
-    ws.append(COLUMN_HEADERS)
-    for col_index in range(1, len(COLUMN_HEADERS) + 1):
+    headers = COLUMN_HEADERS + [attribute.name for attribute in ProductAttribute.objects.all()]
+    ws.append(headers)
+    for col_index in range(1, len(headers) + 1):
         ws.column_dimensions[openpyxl.utils.get_column_letter(col_index)].width = 16
     return wb
 
@@ -123,6 +137,26 @@ def _clean_str(value):
     if value is None:
         return ''
     return str(value).strip()
+
+
+def _clean_attribute_value(attribute, value):
+    """One Excel cell -> the string to store in Product.attributes for
+    `attribute`. Returns (value, problem): value is '' when the cell was
+    blank OR not acceptable; problem is the raw text to warn about when
+    the attribute has a predefined choices list and the cell isn't one of
+    them (otherwise None). A whole-number float (Excel hands back 42.0 for a
+    typed 42, e.g. a size) is written without the ".0"."""
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    text = _clean_str(value)
+    if not text:
+        return '', None
+    if attribute.choices:
+        for choice in attribute.choices:
+            if choice.casefold() == text.casefold():
+                return choice, None
+        return '', text
+    return text, None
 
 
 def _clean_decimal(value):
@@ -224,7 +258,7 @@ def parse_delivery_import(file_obj):
       {'row_number', 'is_new': True, 'internal_code', 'name', 'unit_type',
        'quantity', 'delivery_price', 'sell_price', 'category_id',
        'category_name', 'supplier_id', 'supplier_name', 'barcodes': [...],
-       'duplicate_candidate': {'id', 'name'} | None}
+       'attributes': {attribute id as str: value}, 'duplicate_candidate': {'id', 'name'} | None}
     for a genuinely new product candidate.
 
     Two passes: the first resolves every row's Layer-1 matches and collects
@@ -247,6 +281,18 @@ def parse_delivery_import(file_obj):
     all_rows = list(ws.iter_rows(values_only=True))
     if len(all_rows) <= 1:
         return {'rows': [], 'skipped': [], 'errors': [_('The file has no data rows.')]}
+
+    # Columns past the fixed 12 whose header text names a real ProductAttribute
+    # (case-insensitive) -> {column index: attribute}. Anything else out
+    # there is ignored.
+    attributes_by_name = {a.name.casefold(): a for a in ProductAttribute.objects.all()}
+    attribute_columns = {}
+    for col_index, header in enumerate(all_rows[0]):
+        if col_index < len(COLUMN_HEADERS):
+            continue
+        attribute = attributes_by_name.get(_clean_str(header).casefold())
+        if attribute:
+            attribute_columns[col_index] = attribute
 
     for row_number, raw_row in enumerate(all_rows[1:], start=2):
         if raw_row is None or all(cell in (None, '') for cell in raw_row):
@@ -316,6 +362,18 @@ def parse_delivery_import(file_obj):
             code = str(next_code_counter)
             next_code_counter += 1
 
+        # Only reached for a genuinely new product (a code/barcode match
+        # `continue`d above) -- see the module docstring.
+        attributes = {}
+        for col_index, attribute in attribute_columns.items():
+            raw_value = cells[col_index] if col_index < len(cells) else None
+            value, rejected = _clean_attribute_value(attribute, raw_value)
+            if rejected:
+                errors.append(_('Row %(row)s: "%(value)s" is not an allowed value for "%(attribute)s", left blank.') % {
+                    'row': row_number, 'value': rejected, 'attribute': attribute.name})
+            if value:
+                attributes[str(attribute.pk)] = value
+
         row = {
             'row_number': row_number,
             'is_new': True,
@@ -326,6 +384,7 @@ def parse_delivery_import(file_obj):
             'delivery_price': float(delivery_price) if delivery_price is not None else None,
             'sell_price': float(sell_price) if sell_price is not None else None,
             'barcodes': barcodes,
+            'attributes': attributes,
             # Resolved in the second pass below, once Layer 2's verdicts
             # (if any) are in -- placeholders for now.
             '_duplicate': (duplicate_match, _classify_similarity(duplicate_sim)),

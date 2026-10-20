@@ -3749,3 +3749,22 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
 .site-navbar .lang-switch {
     width: fit-content;
 }
+
+/* Tabulator's built-in number editor (Products grid "Enable Edit": Sell/
+   Delivery Price, Markup %) is a real <input type="number">, which the
+   browser decorates with up/down spinner arrows on every such cell --
+   noise in a grid where people type the value (asked for live: "две
+   стрелки нагоре и надолу" on every cell, remove them). Only inside
+   Tabulator tables -- ordinary form inputs elsewhere keep theirs. The
+   custom numberEditors (Deliveries/Sales/Revision/...) are type="text"
+   already and never showed them. */
+.tabulator input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+
+.tabulator input[type="number"]::-webkit-outer-spin-button,
+.tabulator input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
