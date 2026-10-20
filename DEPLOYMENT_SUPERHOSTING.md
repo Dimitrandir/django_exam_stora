@@ -35,7 +35,9 @@ cPanel → **Domains** → „Добавяне на нов домейн“ → `
 cPanel → **Git Version Control** → Create:
 - Clone URL: `https://github.com/Dimitrandir/django_exam_stora.git`
 - Repository Path: `stora`
-- После в Manage → Pull/Deploy избери клона `claude/project-thread-811g76`.
+- После в Manage → Basic Information → Checked-Out Branch избери клона `cloud`.
+  Там се развива само облачната версия, отделно от `main` (магазините).
+  Промените от `main` се вливат в `cloud`, никога обратно.
 
 **Права:** File Manager → домашната папка → маркирай `stora` → Permissions →
 **755** (само на папката). Иначе уеб сървърът дава „Passenger error #2 ...
