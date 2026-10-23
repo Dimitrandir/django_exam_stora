@@ -50,6 +50,22 @@
         <span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--check"></span></span>
         <span class="icon-btn__label">{% translate "Apply price" %}</span>
     </button>
+
+    {% if product_attributes %}
+    {# One attribute at a time: pick which, then its value (a dropdown for a choices attribute, a text box otherwise) -- see the bulk-attribute JS below. #}
+    <select id="bulk-attribute-select" class="pill-input" style="width: 150px;">
+        <option value="">{% translate "Attribute..." %}</option>
+        {% for attribute in product_attributes %}
+        <option value="{{ attribute.pk }}">{{ attribute.name }}</option>
+        {% endfor %}
+    </select>
+    <select id="bulk-attribute-value-select" class="pill-input d-none" style="width: 150px;"></select>
+    <input type="text" id="bulk-attribute-value-input" class="pill-input d-none" style="width: 150px;" placeholder="{% translate 'Value (blank clears)' %}" autocomplete="off">
+    <button type="button" id="bulk-attribute-apply-btn" class="icon-btn icon-btn--apply icon-btn--sm" disabled>
+        <span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--check"></span></span>
+        <span class="icon-btn__label">{% translate "Apply attribute" %}</span>
+    </button>
+    {% endif %}
     {% endif %}
     {% if perms.revisions.add_revisionattributes or perms.deliveries.add_deliveryattributes or perms.orders.add_orderattributes %}
     <div class="d-flex align-items-center gap-1">
@@ -767,13 +783,14 @@ document.addEventListener('DOMContentLoaded', function () {
         bulkBar.classList.toggle('d-flex', data.length > 0);
     });
 
-    function bulkPost(action, value) {
+    function bulkPost(action, value, extra) {
         var selected = table.getSelectedData();
         if (!selected.length) return;
 
         var body = new URLSearchParams();
         body.set('action', action);
         if (value !== undefined) body.set('value', value);
+        if (extra) Object.keys(extra).forEach(function (key) { body.set(key, extra[key]); });
         selected.forEach(function (row) { body.append('ids', row.id); });
 
         return fetch('{% url "product_bulk_action" %}', {
@@ -895,6 +912,77 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (!result.ok) { alert(result.data.error || '{% translate "Could not apply price." %}'); return; }
                 location.reload();
             });
+        });
+    }
+
+    // Bulk "set attribute" -- the attribute picker decides which value
+    // control shows: a dropdown (with a blank "clear" entry) for an
+    // attribute that has a predefined choices list, a free text box
+    // otherwise. A blank value clears that attribute on every selected
+    // product (asked to confirm first, since it's destructive), same
+    // "blank = key removed" rule as the product form/inline edit.
+    var attributeSelect = document.getElementById('bulk-attribute-select');
+    if (attributeSelect) {
+        var attributeDefs = JSON.parse(document.getElementById('products-attribute-defs').textContent);
+        var attributeValueSelect = document.getElementById('bulk-attribute-value-select');
+        var attributeValueInput = document.getElementById('bulk-attribute-value-input');
+        var attributeApplyBtn = document.getElementById('bulk-attribute-apply-btn');
+
+        function currentAttributeDef() {
+            return attributeDefs.find(function (a) { return String(a.id) === attributeSelect.value; });
+        }
+
+        function currentAttributeValue() {
+            var def = currentAttributeDef();
+            return def && def.choices.length ? attributeValueSelect.value : attributeValueInput.value.trim();
+        }
+
+        function resetAttributeControls() {
+            attributeSelect.value = '';
+            attributeValueSelect.classList.add('d-none');
+            attributeValueInput.classList.add('d-none');
+            attributeValueInput.value = '';
+            attributeApplyBtn.disabled = true;
+        }
+
+        attributeSelect.addEventListener('change', function () {
+            var def = currentAttributeDef();
+            attributeValueSelect.classList.add('d-none');
+            attributeValueInput.classList.add('d-none');
+            attributeValueInput.value = '';
+            attributeApplyBtn.disabled = !def;
+            if (!def) return;
+            if (def.choices.length) {
+                attributeValueSelect.innerHTML = '';
+                var blank = document.createElement('option');
+                blank.value = '';
+                blank.textContent = '{% translate "(clear value)" %}';
+                attributeValueSelect.appendChild(blank);
+                def.choices.forEach(function (choice) {
+                    var option = document.createElement('option');
+                    option.value = choice;
+                    option.textContent = choice;
+                    attributeValueSelect.appendChild(option);
+                });
+                attributeValueSelect.classList.remove('d-none');
+            } else {
+                attributeValueInput.classList.remove('d-none');
+            }
+        });
+
+        attributeApplyBtn.addEventListener('click', function () {
+            var def = currentAttributeDef();
+            if (!def) return;
+            var value = currentAttributeValue();
+            if (!value && !confirm('{% translate "Clear this attribute on all selected products?" %}')) return;
+            bulkPost('set_attribute', value, {attribute: def.id}).then(function (result) {
+                if (!result.ok) { alert(result.data.error || '{% translate "Could not apply attribute." %}'); return; }
+                location.reload();
+            });
+        });
+
+        table.on('rowSelectionChanged', function (data) {
+            if (!data.length) resetAttributeControls();
         });
     }
 

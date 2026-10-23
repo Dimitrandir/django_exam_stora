@@ -781,10 +781,90 @@ class ProductAttributeInlineUpdateTests(TestCase):
         self.client.force_login(self.manager)
         response = self.client.get(reverse('product_list'))
         self.assertEqual(response.context['attribute_defs'], [
-            {'id': self.brand.pk, 'choices': []},
-            {'id': self.color.pk, 'choices': ['Red', 'Blue']},
+            {'id': self.brand.pk, 'name': 'Brand', 'choices': []},
+            {'id': self.color.pk, 'name': 'Color', 'choices': ['Red', 'Blue']},
         ])
         self.assertContains(response, 'id="products-attribute-defs"')
+
+
+class ProductBulkSetAttributeTests(TestCase):
+    """Bulk action `set_attribute` -- one UPDATE for the selected products,
+    touching only that attribute's key inside Product.attributes."""
+
+    def setUp(self):
+        self.manager = Employee.objects.create_user(
+            username='manager-bulkattr', password='pass12345', role=Employee.MANAGER
+        )
+        self.cashier = Employee.objects.create_user(
+            username='cashier-bulkattr', password='pass12345', role=Employee.CASHIER
+        )
+        self.brand = ProductAttribute.objects.create(name='Brand')
+        self.color = ProductAttribute.objects.create(name='Color', choices=['Red', 'Blue'])
+        self.a = Product.objects.create(
+            internal_code='BULKA001', name='Bulk A', sell_price=1, quantity=1,
+            attributes={str(self.color.pk): 'Red'},
+        )
+        self.b = Product.objects.create(internal_code='BULKB001', name='Bulk B', sell_price=1, quantity=1)
+        self.untouched = Product.objects.create(
+            internal_code='BULKC001', name='Bulk C', sell_price=1, quantity=1,
+            attributes={str(self.brand.pk): 'Old'},
+        )
+
+    def _post(self, attribute, value, products=None):
+        products = products if products is not None else [self.a, self.b]
+        return self.client.post(reverse('product_bulk_action'), {
+            'action': 'set_attribute', 'attribute': attribute.pk, 'value': value,
+            'ids': [p.pk for p in products],
+        })
+
+    def test_cashier_cannot(self):
+        self.client.force_login(self.cashier)
+        self.assertEqual(self._post(self.brand, 'Nike').status_code, 403)
+
+    def test_sets_the_value_on_every_selected_product_and_keeps_other_attributes(self):
+        self.client.force_login(self.manager)
+        response = self._post(self.brand, 'Nike')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['updated'], 2)
+        self.a.refresh_from_db()
+        self.b.refresh_from_db()
+        self.assertEqual(self.a.attributes, {str(self.color.pk): 'Red', str(self.brand.pk): 'Nike'})
+        self.assertEqual(self.b.attributes, {str(self.brand.pk): 'Nike'})
+
+    def test_products_outside_the_selection_are_untouched(self):
+        self.client.force_login(self.manager)
+        self._post(self.brand, 'Nike')
+        self.untouched.refresh_from_db()
+        self.assertEqual(self.untouched.attributes, {str(self.brand.pk): 'Old'})
+
+    def test_overwrites_an_existing_value(self):
+        self.client.force_login(self.manager)
+        self._post(self.color, 'Blue')
+        self.a.refresh_from_db()
+        self.assertEqual(self.a.attributes[str(self.color.pk)], 'Blue')
+
+    def test_blank_value_removes_only_that_key(self):
+        self.client.force_login(self.manager)
+        self._post(self.brand, 'Nike')
+        response = self._post(self.brand, '')
+        self.assertEqual(response.status_code, 200)
+        self.a.refresh_from_db()
+        self.b.refresh_from_db()
+        self.assertEqual(self.a.attributes, {str(self.color.pk): 'Red'})
+        self.assertEqual(self.b.attributes, {})
+
+    def test_value_outside_choices_is_rejected(self):
+        self.client.force_login(self.manager)
+        self.assertEqual(self._post(self.color, 'Green').status_code, 400)
+        self.a.refresh_from_db()
+        self.assertEqual(self.a.attributes[str(self.color.pk)], 'Red')
+
+    def test_unknown_attribute_is_rejected(self):
+        self.client.force_login(self.manager)
+        response = self.client.post(reverse('product_bulk_action'), {
+            'action': 'set_attribute', 'attribute': '99999', 'value': 'x', 'ids': [self.a.pk],
+        })
+        self.assertEqual(response.status_code, 400)
 
 
 class ProductBarcodeInlineUpdateViewTests(TestCase):

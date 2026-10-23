@@ -6,11 +6,12 @@ import logging
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.contrib.postgres.fields import ArrayField
 from django.contrib.postgres.search import TrigramSimilarity
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import F, ProtectedError, Sum
-from django.db.models.functions import Coalesce
+from django.db.models import F, Func, JSONField, ProtectedError, Sum, TextField, Value
+from django.db.models.functions import Cast, Coalesce
 from django.forms.models import model_to_dict
 from django.http import HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -154,7 +155,7 @@ class ProductListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListView
         # (see products_list.html): a dropdown for a choices-restricted
         # one, a plain text editor otherwise.
         context['attribute_defs'] = [
-            {'id': a.pk, 'choices': a.choices} for a in product_attributes
+            {'id': a.pk, 'name': a.name, 'choices': a.choices} for a in product_attributes
         ]
         return context
 
@@ -332,6 +333,39 @@ class ProductBulkActionView(LoginRequiredMixin, View):
             if price < Decimal('0.01'):
                 return JsonResponse({'error': _('Price must be at least 0.01.')}, status=400)
             updated = products.update(sell_price=price)
+            return JsonResponse({'updated': updated})
+
+        if action == 'set_attribute':
+            if not request.user.has_perm('products.change_product'):
+                return JsonResponse({'error': _('You do not have permission to do this.')}, status=403)
+            try:
+                attribute = ProductAttribute.objects.get(pk=int(request.POST.get('attribute', '')))
+            except (ValueError, ProductAttribute.DoesNotExist):
+                return JsonResponse({'error': _('Unknown attribute.')}, status=400)
+            value = request.POST.get('value', '').strip()
+            if value and attribute.choices and value not in attribute.choices:
+                return JsonResponse({'error': _('Pick one of the allowed values for this attribute.')}, status=400)
+            key = str(attribute.pk)
+            # One UPDATE for the whole batch, touching ONLY this attribute's
+            # key inside the Product.attributes JSON blob (every other
+            # attribute on each product is left exactly as it was) --
+            # jsonb_set to write it, the jsonb "-" operator to remove it
+            # (a blank value clears it, same as the product form/inline
+            # edit: the key is dropped, not stored as ''). Like the other
+            # bulk actions this bypasses model signals; attributes aren't in
+            # ProductChangeLog's tracked fields anyway.
+            if value:
+                new_attributes = Func(
+                    F('attributes'), Value([key], output_field=ArrayField(TextField())),
+                    Value(value, output_field=JSONField()), function='jsonb_set',
+                    output_field=JSONField(),
+                )
+            else:
+                new_attributes = Func(
+                    F('attributes'), Cast(Value(key), TextField()),
+                    arg_joiner=' - ', template='(%(expressions)s)', output_field=JSONField(),
+                )
+            updated = products.update(attributes=new_attributes)
             return JsonResponse({'updated': updated})
 
         if action == 'delete':
