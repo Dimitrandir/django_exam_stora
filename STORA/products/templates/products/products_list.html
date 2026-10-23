@@ -34,7 +34,7 @@
 <div id="bulk-actions-bar" class="bulk-actions-bar d-none align-items-center gap-2 flex-wrap mb-2">
     <strong><span id="bulk-selected-count">0</span> {% translate "selected" %}</strong>
     {% if perms.products.change_product %}
-    <div class="pill-search-wrapper pill-search-wrapper--with-browse" style="max-width: 340px; flex: 1 1 260px;">
+    <div class="pill-search-wrapper pill-search-wrapper--with-browse" style="max-width: 190px; flex: 0 1 165px;">
         <span class="pill-search-wrapper__icon"></span>
         <input type="text" id="bulk-category-search-input" class="pill-input" placeholder="{% translate 'Category...' %}" autocomplete="off">
         <button type="button" id="bulk-category-tree-btn" class="pill-search-wrapper__browse-btn" title="{% translate 'Browse categories as a tree' %}">{% translate "Browse" %}</button>
@@ -45,7 +45,7 @@
         <span class="icon-btn__label">{% translate "Pick a category" %}</span>
     </button>
 
-    <input type="number" id="bulk-price-input" class="pill-input" style="width: 110px;" step="0.01" min="0.01" placeholder="{% translate 'Sell price' %}">
+    <input type="number" id="bulk-price-input" class="pill-input" style="width: 125px;" step="0.01" min="0.01" placeholder="{% translate 'Sell price' %}">
     <button type="button" id="bulk-price-apply-btn" class="icon-btn icon-btn--apply icon-btn--sm">
         <span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--check"></span></span>
         <span class="icon-btn__label">{% translate "Apply price" %}</span>
@@ -53,14 +53,14 @@
 
     {% if product_attributes %}
     {# One attribute at a time: pick which, then its value (a dropdown for a choices attribute, a text box otherwise) -- see the bulk-attribute JS below. #}
-    <select id="bulk-attribute-select" class="pill-input" style="width: 150px;">
+    <select id="bulk-attribute-select" class="pill-input" style="width: 120px;">
         <option value="">{% translate "Attribute..." %}</option>
         {% for attribute in product_attributes %}
         <option value="{{ attribute.pk }}">{{ attribute.name }}</option>
         {% endfor %}
     </select>
-    <select id="bulk-attribute-value-select" class="pill-input d-none" style="width: 150px;"></select>
-    <input type="text" id="bulk-attribute-value-input" class="pill-input d-none" style="width: 150px;" placeholder="{% translate 'Value (blank clears)' %}" autocomplete="off">
+    <select id="bulk-attribute-value-select" class="pill-input d-none" style="width: 125px;"></select>
+    <input type="text" id="bulk-attribute-value-input" class="pill-input d-none" style="width: 125px;" placeholder="{% translate 'Value (blank clears)' %}" autocomplete="off">
     <button type="button" id="bulk-attribute-apply-btn" class="icon-btn icon-btn--apply icon-btn--sm" disabled>
         <span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--check"></span></span>
         <span class="icon-btn__label">{% translate "Apply attribute" %}</span>
@@ -68,20 +68,25 @@
     {% endif %}
     {% endif %}
     {% if perms.revisions.add_revisionattributes or perms.deliveries.add_deliveryattributes or perms.orders.add_orderattributes %}
-    <div class="d-flex align-items-center gap-1">
-        <span class="text-muted small">{% translate "Load into:" %}</span>
+    {# One dropdown + a go button instead of five buttons in a row (asked for live -- the bar was too wide); the button, not the dropdown's own change event, does the navigation so arrowing through a closed <select> can't fling the clerk to another screen. #}
+    <select id="bulk-load-select" class="pill-input" style="width: 125px;">
+        <option value="">{% translate "Load into..." %}</option>
         {% if perms.revisions.add_revisionattributes %}
-        <button type="button" id="bulk-load-revision-btn" class="btn btn-sm btn-outline-secondary">{% translate "Revision" %}</button>
+        <option value="{% url 'revision_home' %}">{% translate "Revision" %}</option>
         {% endif %}
         {% if perms.deliveries.add_deliveryattributes %}
-        <button type="button" id="bulk-load-delivery-btn" class="btn btn-sm btn-outline-secondary">{% translate "Delivery" %}</button>
-        <button type="button" id="bulk-load-writeoff-btn" class="btn btn-sm btn-outline-secondary">{% translate "Write-off" %}</button>
-        <button type="button" id="bulk-load-scrap-btn" class="btn btn-sm btn-outline-secondary">{% translate "Scrap" %}</button>
+        <option value="{% url 'delivery_add' %}">{% translate "Delivery" %}</option>
+        <option value="{% url 'writeoff_add' %}">{% translate "Write-off" %}</option>
+        <option value="{% url 'scrap_add' %}">{% translate "Scrap" %}</option>
         {% endif %}
         {% if perms.orders.add_orderattributes %}
-        <button type="button" id="bulk-load-order-btn" class="btn btn-sm btn-outline-secondary">{% translate "Order" %}</button>
+        <option value="{% url 'order_new' %}">{% translate "Order" %}</option>
         {% endif %}
-    </div>
+    </select>
+    <button type="button" id="bulk-load-apply-btn" class="icon-btn icon-btn--apply icon-btn--sm" disabled>
+        <span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--check"></span></span>
+        <span class="icon-btn__label">{% translate "Load" %}</span>
+    </button>
     {% endif %}
     {% if perms.products.delete_product %}
     <button type="button" id="bulk-delete-btn" class="icon-btn icon-btn--delete icon-btn--sm ms-auto">
@@ -1017,25 +1022,14 @@ document.addEventListener('DOMContentLoaded', function () {
         window.location = url + '?preload=' + ids.join(',');
     }
 
-    var loadRevisionBtn = document.getElementById('bulk-load-revision-btn');
-    if (loadRevisionBtn) {
-        loadRevisionBtn.addEventListener('click', function () { loadInto('{% url "revision_home" %}'); });
-    }
-    var loadDeliveryBtn = document.getElementById('bulk-load-delivery-btn');
-    if (loadDeliveryBtn) {
-        loadDeliveryBtn.addEventListener('click', function () { loadInto('{% url "delivery_add" %}'); });
-    }
-    var loadWriteoffBtn = document.getElementById('bulk-load-writeoff-btn');
-    if (loadWriteoffBtn) {
-        loadWriteoffBtn.addEventListener('click', function () { loadInto('{% url "writeoff_add" %}'); });
-    }
-    var loadScrapBtn = document.getElementById('bulk-load-scrap-btn');
-    if (loadScrapBtn) {
-        loadScrapBtn.addEventListener('click', function () { loadInto('{% url "scrap_add" %}'); });
-    }
-    var loadOrderBtn = document.getElementById('bulk-load-order-btn');
-    if (loadOrderBtn) {
-        loadOrderBtn.addEventListener('click', function () { loadInto('{% url "order_new" %}'); });
+    var loadSelect = document.getElementById('bulk-load-select');
+    if (loadSelect) {
+        var loadApplyBtn = document.getElementById('bulk-load-apply-btn');
+        loadSelect.addEventListener('change', function () { loadApplyBtn.disabled = !loadSelect.value; });
+        loadApplyBtn.addEventListener('click', function () { if (loadSelect.value) loadInto(loadSelect.value); });
+        table.on('rowSelectionChanged', function (data) {
+            if (!data.length) { loadSelect.value = ''; loadApplyBtn.disabled = true; }
+        });
     }
 });
 </script>

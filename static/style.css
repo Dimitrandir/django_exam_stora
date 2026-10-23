@@ -3758,13 +3758,24 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
    Tabulator tables -- ordinary form inputs elsewhere keep theirs. The
    custom numberEditors (Deliveries/Sales/Revision/...) are type="text"
    already and never showed them. */
-.tabulator input[type="number"] {
+.tabulator input[type="number"],
+.bulk-actions-bar input[type="number"] {
     -moz-appearance: textfield;
     appearance: textfield;
 }
 
 .tabulator input[type="number"]::-webkit-outer-spin-button,
-.tabulator input[type="number"]::-webkit-inner-spin-button {
+.tabulator input[type="number"]::-webkit-inner-spin-button,
+.bulk-actions-bar input[type="number"]::-webkit-outer-spin-button,
+.bulk-actions-bar input[type="number"]::-webkit-inner-spin-button {
     -webkit-appearance: none;
     margin: 0;
+}
+
+/* The Products bulk bar (category / price / attribute / "Load into")
+   should fit on ONE row at normal desktop widths (flagged live from a
+   screenshot: it wrapped onto two) -- slightly tighter gap between its
+   controls; it still wraps as a fallback on a genuinely narrow window. */
+.bulk-actions-bar {
+    gap: 0.4rem !important;
 }
