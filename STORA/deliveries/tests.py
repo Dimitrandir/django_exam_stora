@@ -8,6 +8,7 @@ import openpyxl
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
+from django.utils import translation
 from django.urls import reverse
 
 from STORA.deliveries.excel_import import parse_delivery_import
@@ -1426,6 +1427,53 @@ class ExcelImportAttributeTests(TestCase):
         self.assertNotIn('attributes', row)
 
 
+class ExcelImportDuplicateWithinFileTests(TestCase):
+    """Name and barcode are UNIQUE on the catalog -- two NEW rows in one
+    file sharing either are caught at parse time (per row), not left to
+    blow up the whole delivery at Save."""
+
+    def _row(self, name, barcode='', qty=1):
+        return ('', name, '', qty, '', '', '', '', '', barcode, '', '')
+
+    def test_second_row_with_same_name_is_skipped_with_a_warning(self):
+        buf = _build_import_xlsx([
+            self._row('Twin Product', '1110000000001'),
+            self._row('Other Product', '1110000000002'),
+            self._row('twin product ', '1110000000003'),  # case/space-insensitive
+        ])
+        with translation.override('en'):
+            result = parse_delivery_import(buf)
+        self.assertEqual([r['name'] for r in result['rows']], ['Twin Product', 'Other Product'])
+        self.assertEqual(len(result['errors']), 1)
+        self.assertIn('Row 4', result['errors'][0])
+        self.assertIn('row 2', result['errors'][0])
+
+    def test_second_row_with_same_barcode_is_skipped_with_a_warning(self):
+        buf = _build_import_xlsx([
+            self._row('First Barcode Product', '2220000000001'),
+            self._row('Second Barcode Product', '2220000000001'),
+        ])
+        result = parse_delivery_import(buf)
+        self.assertEqual([r['name'] for r in result['rows']], ['First Barcode Product'])
+        self.assertEqual(len(result['errors']), 1)
+        self.assertIn('2220000000001', result['errors'][0])
+
+    def test_same_existing_product_twice_is_not_treated_as_a_clash(self):
+        # Two rows that both MATCH an existing product just add up -- the
+        # uniqueness guard is only about NEW products.
+        existing = Product.objects.create(
+            internal_code='DUPEX001', name='Existing For Dup', delivery_price=Decimal('1.00'),
+            sell_price=Decimal('2.00'), quantity=Decimal('1.000'),
+        )
+        buf = _build_import_xlsx([
+            ('DUPEX001', existing.name, '', 1, '', '', '', '', '', '', '', ''),
+            ('DUPEX001', existing.name, '', 2, '', '', '', '', '', '', '', ''),
+        ])
+        result = parse_delivery_import(buf)
+        self.assertEqual(result['errors'], [])
+        self.assertEqual(len(result['rows']), 2)
+
+
 class ExcelImportViewTests(TestCase):
     def setUp(self):
         self.warehouse = User.objects.create_user(username='wh_import', password='pass12345', role=User.WAREHOUSE)
@@ -1593,6 +1641,61 @@ class DeliveryAddWithNewProductRowsTests(TestCase):
         response = self._single_new_product_post('IMP-105', '{not json')
         self.assertRedirects(response, reverse('delivery_add'))
         self.assertEqual(Product.objects.get(name='Imported With Attributes').attributes, {})
+
+    def _pending_row_fields(self, index, name, quantity='1.000', barcode=''):
+        prefix = f'items-{index}-'
+        return {
+            prefix + 'id': '', prefix + 'delivery_item': '', prefix + 'delivery_quantity': quantity,
+            prefix + 'price_at_delivery': '2.00', prefix + 'total_price_row': '2.00', prefix + 'DELETE': '',
+            prefix + 'new_product': '1', prefix + 'new_product_name': name, prefix + 'new_product_code': '',
+            prefix + 'new_product_delivery_price': '2.00', prefix + 'new_product_sell_price': '3.00',
+            prefix + 'new_product_category': '', prefix + 'new_product_supplier': '',
+            prefix + 'new_product_barcode_1': barcode, prefix + 'new_product_barcode_2': '',
+            prefix + 'new_product_barcode_3': '',
+        }
+
+    def _post_pending(self, rows, document_number='IMP-200', **general):
+        data = self._general_info(document_number=document_number, **general)
+        data.update({
+            'items-TOTAL_FORMS': str(len(rows)), 'items-INITIAL_FORMS': '0',
+            'items-MIN_NUM_FORMS': '0', 'items-MAX_NUM_FORMS': '1000',
+        })
+        for index, (name, barcode) in enumerate(rows):
+            data.update(self._pending_row_fields(index, name, barcode=barcode))
+        return self.client.post(reverse('delivery_add'), data, HTTP_ACCEPT_LANGUAGE='en')
+
+    def test_two_pending_rows_with_the_same_name_fail_with_a_clear_message(self):
+        response = self._post_pending([('Twin Name', '3330000000001'), ('Twin Name', '3330000000002')])
+        self.assertEqual(response.status_code, 200)  # redisplayed, not saved
+        self.assertFalse(Product.objects.filter(name='Twin Name').exists())  # rolled back
+        self.assertFalse(DeliveryAttributes.objects.filter(document_number='IMP-200').exists())
+        message = ' '.join(str(m) for m in response.context['messages'])
+        self.assertIn('Could not create the new product "Twin Name"', message)
+
+    def test_pending_row_with_an_existing_catalog_name_fails_with_a_clear_message(self):
+        Product.objects.create(
+            internal_code='TAKEN001', name='Already In Catalog', delivery_price=Decimal('1.00'),
+            sell_price=Decimal('2.00'), quantity=Decimal('0.000'),
+        )
+        response = self._post_pending([('Already In Catalog', '')], document_number='IMP-201')
+        message = ' '.join(str(m) for m in response.context['messages'])
+        self.assertIn('Could not create the new product "Already In Catalog"', message)
+        self.assertEqual(Product.objects.filter(name='Already In Catalog').count(), 1)
+
+    def test_failed_save_does_not_print_delivery_item_required_for_pending_rows(self):
+        # A header problem (no document date) rolls everything back; the
+        # pending rows have no delivery_item id by then and used to each
+        # show a meaningless "delivery_item: This field is required".
+        response = self._post_pending(
+            [('Fine Name One', '4440000000001'), ('Fine Name Two', '4440000000002')],
+            document_number='IMP-202', document_date='',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context['form'].errors)
+        self.assertEqual(response.context['formset'].errors, [])
+        # the per-row error box the template prints for each errored form
+        self.assertNotIn('Product row 1:', response.content.decode())
+        self.assertFalse(Product.objects.filter(name='Fine Name One').exists())
 
     def test_zero_quantity_creates_product_only_no_delivery_item(self):
         # Paired with a normal qty>0 row -- a delivery consisting of ONLY a

@@ -5,7 +5,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: STORA\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-20 09:56+0000\n"
+"POT-Creation-Date: 2026-10-23 13:34+0000\n"
 "PO-Revision-Date: 2026-10-02 00:00+0000\n"
 "Language-Team: Bulgarian\n"
 "Language: bg\n"
@@ -256,22 +256,42 @@ msgstr "Регистрация"
 msgid "Could not read this file -- is it a real .xlsx?"
 msgstr "Файлът не може да бъде прочетен -- истински .xlsx ли е?"
 
-#: STORA/deliveries/excel_import.py:283
+#: STORA/deliveries/excel_import.py:289
 msgid "The file has no data rows."
 msgstr "Файлът няма редове с данни."
 
-#: STORA/deliveries/excel_import.py:308
+#: STORA/deliveries/excel_import.py:314
 #, python-format
 msgid "Row %(row)s: name is required, row skipped."
 msgstr "Ред %(row)s: името е задължително, редът е пропуснат."
 
-#: STORA/deliveries/excel_import.py:327
+#: STORA/deliveries/excel_import.py:333
 #, python-format
 msgid "Row %(row)s: \"%(name)s\" already exists, skipped (quantity was 0)."
 msgstr ""
 "Ред %(row)s: „%(name)s“ вече съществува, пропуснат (количеството беше 0)."
 
-#: STORA/deliveries/excel_import.py:372
+#: STORA/deliveries/excel_import.py:347
+#, python-format
+msgid ""
+"Row %(row)s: \"%(name)s\" has the same name as row %(first)s -- product "
+"names must be unique, so this row was skipped. Give it a distinct name in "
+"the file and import it again."
+msgstr ""
+"Ред %(row)s: \"%(name)s\" има същото име като ред %(first)s -- имената на "
+"продуктите трябва да са уникални, затова този ред е пропуснат. Дай му "
+"различно име във файла и го импортирай отново."
+
+#: STORA/deliveries/excel_import.py:354
+#, python-format
+msgid ""
+"Row %(row)s: barcode %(barcode)s is already used by row %(first)s, row "
+"skipped."
+msgstr ""
+"Ред %(row)s: баркод %(barcode)s вече се ползва от ред %(first)s, редът е "
+"пропуснат."
+
+#: STORA/deliveries/excel_import.py:395
 #, python-format
 msgid ""
 "Row %(row)s: \"%(value)s\" is not an allowed value for \"%(attribute)s\", "
@@ -1151,7 +1171,18 @@ msgstr "Добави нова причина за брак"
 msgid "No scrap reasons found."
 msgstr "Няма намерени причини за брак."
 
-#: STORA/deliveries/views.py:334 STORA/products/views.py:794
+#: STORA/deliveries/views.py:283
+#, python-format
+msgid ""
+"Could not create the new product \"%(name)s\" -- its name, code or barcode "
+"is probably already used by another product, or by another row of this "
+"delivery. Nothing was saved: remove or fix that row and try again."
+msgstr ""
+"Не може да се създаде новият продукт \"%(name)s\" -- името, кодът или "
+"баркодът му вероятно вече се ползват от друг продукт или от друг ред на тази "
+"доставка. Нищо не е запазено: махни или поправи този ред и опитай пак."
+
+#: STORA/deliveries/views.py:381 STORA/products/views.py:794
 #: STORA/products/views.py:881
 msgid ""
 "Saving failed due to an unexpected error. Nothing was lost -- your entered "
@@ -1162,11 +1193,11 @@ msgstr ""
 "въведеното от вас е все още по-долу. Опитайте отново, или се обърнете към "
 "администратор, ако продължава да се случва."
 
-#: STORA/deliveries/views.py:442
+#: STORA/deliveries/views.py:489
 msgid "No file was uploaded."
 msgstr "Не е качен файл."
 
-#: STORA/deliveries/views.py:576
+#: STORA/deliveries/views.py:623
 msgid ""
 "Saving failed due to an unexpected error. Nothing was lost -- your edits are "
 "still below. Please try again, or contact the administrator if it keeps "

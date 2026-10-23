@@ -277,6 +277,12 @@ def parse_delivery_import(file_obj):
     errors = []
     ai_pending = []
     next_code_counter = None
+    # Name and barcode are UNIQUE on the catalog, so two NEW rows in the same
+    # file sharing either would make the second one fail at Save (taking the
+    # whole delivery down with it) -- caught here instead, per row, so the
+    # rest of the file still loads. casefold(name) / barcode -> first row.
+    seen_new_names = {}
+    seen_new_barcodes = {}
 
     all_rows = list(ws.iter_rows(values_only=True))
     if len(all_rows) <= 1:
@@ -334,6 +340,23 @@ def parse_delivery_import(file_obj):
                 'quantity': float(quantity),
             })
             continue
+
+        first_row_with_name = seen_new_names.get(name.casefold())
+        if first_row_with_name:
+            errors.append(_(
+                'Row %(row)s: "%(name)s" has the same name as row %(first)s -- product names must be '
+                'unique, so this row was skipped. Give it a distinct name in the file and import it again.'
+            ) % {'row': row_number, 'name': name, 'first': first_row_with_name})
+            continue
+        clashing_barcode = next((b for b in barcodes if b in seen_new_barcodes), None)
+        if clashing_barcode:
+            errors.append(_(
+                'Row %(row)s: barcode %(barcode)s is already used by row %(first)s, row skipped.'
+            ) % {'row': row_number, 'barcode': clashing_barcode, 'first': seen_new_barcodes[clashing_barcode]})
+            continue
+        seen_new_names[name.casefold()] = row_number
+        for barcode in barcodes:
+            seen_new_barcodes[barcode] = row_number
 
         duplicate_match, duplicate_sim = _best_name_match(name, Product.objects.all())
 

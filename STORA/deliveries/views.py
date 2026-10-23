@@ -4,7 +4,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.postgres.search import TrigramSimilarity
-from django.db import transaction
+from django.db import DataError, IntegrityError, transaction
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse_lazy
@@ -77,6 +77,55 @@ def _items_initial_from_instance(delivery):
         }
         for item in delivery.items.all()
     ])
+
+
+class PendingProductError(Exception):
+    """An Excel-imported "new product" row couldn't be turned into a real
+    Product at Save time -- the message is already translated and safe to
+    show the clerk as-is (see deliveries_add)."""
+
+
+_ITEM_SUFFIXES = (
+    'id', 'delivery_item', 'delivery_quantity', 'price_at_delivery',
+    'total_price_row', 'expiry_date', 'source_item', 'scrap_reason', 'DELETE',
+)
+
+
+def _rewrite_item_rows(post_data, total_forms, kept_rows):
+    """Replaces every items-<i>-* key in `post_data` with `kept_rows`
+    (dicts of _ITEM_SUFFIXES values), re-indexed from 0, and fixes
+    TOTAL_FORMS. Every old key is cleared first so a dropped row's stale
+    keys can't linger under an index that now belongs to a different row."""
+    for index in range(total_forms):
+        prefix = f'items-{index}-'
+        for key in list(post_data.keys()):
+            if key.startswith(prefix):
+                del post_data[key]
+    for new_index, row in enumerate(kept_rows):
+        prefix = f'items-{new_index}-'
+        for suffix, value in row.items():
+            post_data[prefix + suffix] = value
+    post_data['items-TOTAL_FORMS'] = str(len(kept_rows))
+    return post_data
+
+
+def _without_pending_rows(post_data):
+    """A copy of `post_data` with every Excel-imported "new product" row
+    removed -- for the error redisplay, where those rows were rolled back
+    and never got a real delivery_item id: binding them to the formset would
+    just print a meaningless "delivery_item: This field is required" for
+    each one, on top of the real problem."""
+    post_data = post_data.copy()
+    try:
+        total_forms = int(post_data.get('items-TOTAL_FORMS', 0))
+    except ValueError:
+        return post_data
+    kept_rows = [
+        {suffix: post_data.get(f'items-{index}-{suffix}', '') for suffix in _ITEM_SUFFIXES}
+        for index in range(total_forms)
+        if post_data.get(f'items-{index}-new_product') != '1'
+    ]
+    return _rewrite_item_rows(post_data, total_forms, kept_rows)
 
 
 def _clean_pending_attributes(raw_json, attributes_by_id):
@@ -154,10 +203,7 @@ def _materialize_pending_products(post_data):
     except ValueError:
         return post_data
 
-    item_suffixes = (
-        'id', 'delivery_item', 'delivery_quantity', 'price_at_delivery',
-        'total_price_row', 'expiry_date', 'source_item', 'scrap_reason', 'DELETE',
-    )
+    item_suffixes = _ITEM_SUFFIXES
     next_code_counter = None
     kept_rows = []
     attributes_by_id = {str(a.pk): a for a in ProductAttribute.objects.all()}
@@ -204,28 +250,40 @@ def _materialize_pending_products(post_data):
         if unit_type not in (Product.PIECE, Product.WEIGHT):
             unit_type = Product.PIECE
 
-        product = Product.objects.create(
-            internal_code=code,
-            name=name,
-            unit_type=unit_type,
-            delivery_price=delivery_price if delivery_price > 0 else None,
-            sell_price=sell_price,
-            category_id=category_id,
-            attributes=_clean_pending_attributes(post_data.get(prefix + 'new_product_attributes'), attributes_by_id),
-        )
+        try:
+            product = Product.objects.create(
+                internal_code=code,
+                name=name,
+                unit_type=unit_type,
+                delivery_price=delivery_price if delivery_price > 0 else None,
+                sell_price=sell_price,
+                category_id=category_id,
+                attributes=_clean_pending_attributes(post_data.get(prefix + 'new_product_attributes'), attributes_by_id),
+            )
 
-        for position, barcode_code in enumerate(
-            [b for b in (
-                post_data.get(prefix + 'new_product_barcode_1'),
-                post_data.get(prefix + 'new_product_barcode_2'),
-                post_data.get(prefix + 'new_product_barcode_3'),
-            ) if b],
-            start=1,
-        ):
-            Barcode.objects.create(product=product, code=barcode_code, position=position)
+            for position, barcode_code in enumerate(
+                [b for b in (
+                    post_data.get(prefix + 'new_product_barcode_1'),
+                    post_data.get(prefix + 'new_product_barcode_2'),
+                    post_data.get(prefix + 'new_product_barcode_3'),
+                ) if b],
+                start=1,
+            ):
+                Barcode.objects.create(product=product, code=barcode_code, position=position)
 
-        if supplier_id:
-            ProductSupplier.objects.get_or_create(product=product, supplier_id=supplier_id, defaults={'position': 1})
+            if supplier_id:
+                ProductSupplier.objects.get_or_create(product=product, supplier_id=supplier_id, defaults={'position': 1})
+        except (IntegrityError, DataError):
+            # Name/code/barcode are UNIQUE (or too long for the column) --
+            # most often two rows of the SAME file sharing a name or
+            # barcode, or a name that already exists in the catalog. The
+            # whole delivery is rolled back by the caller; say exactly
+            # WHICH product tripped it instead of a generic failure.
+            raise PendingProductError(_(
+                'Could not create the new product "%(name)s" -- its name, code or barcode is probably '
+                'already used by another product, or by another row of this delivery. Nothing was '
+                'saved: remove or fix that row and try again.'
+            ) % {'name': name})
 
         raw_qty = post_data.get(prefix + 'delivery_quantity') or '0'
         try:
@@ -240,23 +298,7 @@ def _materialize_pending_products(post_data):
         # else: product-only row -- created above, nothing added to
         # kept_rows, so it never reaches the formset at all.
 
-    # Every items-<i>-* key gets rewritten from kept_rows below, at
-    # whatever new (possibly different) index it lands on -- clear the
-    # old ones first so a dropped row's stale keys can't linger under an
-    # index that now belongs to a different, kept row.
-    for index in range(total_forms):
-        prefix = f'items-{index}-'
-        for key in list(post_data.keys()):
-            if key.startswith(prefix):
-                del post_data[key]
-
-    for new_index, row in enumerate(kept_rows):
-        prefix = f'items-{new_index}-'
-        for suffix, value in row.items():
-            post_data[prefix + suffix] = value
-
-    post_data[total_forms_key] = str(len(kept_rows))
-    return post_data
+    return _rewrite_item_rows(post_data, total_forms, kept_rows)
 
 
 @login_required
@@ -316,6 +358,11 @@ def deliveries_add(request, movement_type=DeliveryAttributes.MOVEMENT_DELIVERY):
                     formset.save()
                 else:
                     transaction.set_rollback(True)
+        except PendingProductError as exc:
+            # A specific, already-explained reason (see _materialize_pending_
+            # products) -- shown as-is instead of the generic message below.
+            messages.error(request, str(exc))
+            delivery = None
         except Exception:
             # Anything unexpected here (a DB error, a bug) must not behave
             # any differently from "the form was invalid" as far as the
@@ -372,7 +419,7 @@ def deliveries_add(request, movement_type=DeliveryAttributes.MOVEMENT_DELIVERY):
         form = form_class(request.POST, current_user=request.user)
         formset_initial = extracted_state.get('forms', [])
         formset = DeliveryItemFormSet(
-            request.POST,
+            _without_pending_rows(request.POST),
             prefix=formset_prefix,
             initial=formset_initial,
         )

@@ -1043,6 +1043,24 @@ Apps: accounts, core, products, deliveries, sales, reports.
   поле на `ProductInlineEditForm`; празна стойност маха ключа изцяло.
   `.tabulator input[type="number"]` няма spinner стрелки (вграденият
   `editor: 'number'` на Products грида ги рисуваше на всяка клетка).
+- **Импорт: два НОВИ реда с еднакво име/баркод във файла (`Product.name`**
+  **и `Barcode.code` са UNIQUE) вече не чупят цялата доставка при Save.**
+  Хванато на живо от реален файл (2026-10-23): втория Create гърмеше
+  `IntegrityError` → всичко се връщаше назад, а екранът показваше
+  подвеждащото "Ред N: delivery_item — Това поле е задължително" за ВСЕКИ
+  нов ред (пренавързваха се оригиналния POST, където чакащите редове
+  нямат `delivery_item`). Три слоя: (1) `parse_delivery_import` пропуска
+  втория ред със същото име (casefold) или баркод с ясно съобщение в
+  `errors` — останалите се зареждат; (2) `_materialize_pending_products`
+  хваща `IntegrityError`/`DataError` и хвърля `PendingProductError` с
+  името на продукта, което `deliveries_add` показва като `messages.error`;
+  (3) при redisplay формсетът се връзва към `_without_pending_rows(POST)`,
+  не към суровия POST — иначе всеки чакащ ред пак печата фалшива грешка.
+  **Позната дупка (не е поправена):** при ВСЯКА грешка при Save чакащите
+  (Excel) редове изчезват от показания грид (`_items_initial_from_rows` ги
+  пропуска, защото нямат `delivery_item`; сесийната чернова не носи
+  `new_product_*` полетата) — трябва нов импорт. Не е мащабна промяна,
+  но пипа споделения `core.session_service` — питай преди да я правиш.
 - **Триене на ред от доставка (продукт подменен, или ред изтрит изцяло)**
   **оставя следа в историята на продукта (`DeliveryItemRemoval` модел,**
   **deliveries/models.py).** Преди това триенето на `DeliveryItems` не
