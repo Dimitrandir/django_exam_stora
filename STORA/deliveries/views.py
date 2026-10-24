@@ -34,7 +34,7 @@ from STORA.deliveries.forms import (
     DeliveryForms, DeliveryItemFormSet, DocumentTypeForm, WriteOffForm, ScrapForm, ScrapReasonForm,
 )
 from STORA.deliveries.models import DeliveryAttributes, DeliveryItems, DocumentType, ScrapReason
-from STORA.products.models import Barcode, Product, ProductAttribute, ProductSupplier, Suppliers
+from STORA.products.models import Barcode, Product, ProductAttribute, ProductSupplier, Suppliers, TaxGroup
 from STORA.products.views import get_free_internal_codes
 
 logger = logging.getLogger(__name__)
@@ -207,6 +207,8 @@ def _materialize_pending_products(post_data):
     next_code_counter = None
     kept_rows = []
     attributes_by_id = {str(a.pk): a for a in ProductAttribute.objects.all()}
+    tax_groups_by_id = {str(g.pk): g for g in TaxGroup.objects.all()}
+    default_tax_group = TaxGroup.default()
 
     for index in range(total_forms):
         prefix = f'items-{index}-'
@@ -258,6 +260,10 @@ def _materialize_pending_products(post_data):
                 delivery_price=delivery_price if delivery_price > 0 else None,
                 sell_price=sell_price,
                 category_id=category_id,
+                # Posted id re-checked (comes from a plain POST); anything
+                # blank/unknown falls back to the shop's default group,
+                # same as a new product on the product form.
+                tax_group=tax_groups_by_id.get(post_data.get(prefix + 'new_product_tax_group') or '') or default_tax_group,
                 attributes=_clean_pending_attributes(post_data.get(prefix + 'new_product_attributes'), attributes_by_id),
             )
 

@@ -96,6 +96,18 @@ class TaxGroup(models.Model):
     # legal/accounting problem, not just a display bug.
     fiscal_letter = models.CharField(max_length=1, blank=True, verbose_name=_('Fiscal device letter'))
 
+    # Every product in this shop is VAT group "Б" (20%) unless someone picks
+    # something else -- the group a NEW product starts with (product form's
+    # tax_group default, Excel delivery import when its VAT Group cell is
+    # blank). Looked up by NAME, not a hardcoded pk (which differs between
+    # dev/pilot/production databases); None if this database has no such
+    # group, so callers just leave tax_group empty instead of crashing.
+    DEFAULT_NAME = 'Б'
+
+    @classmethod
+    def default(cls):
+        return cls.objects.filter(name=cls.DEFAULT_NAME).first()
+
     class Meta:
         verbose_name = _('Tax Group')
         verbose_name_plural = _('Tax Groups')

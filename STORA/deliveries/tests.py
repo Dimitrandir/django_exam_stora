@@ -1474,6 +1474,71 @@ class ExcelImportDuplicateWithinFileTests(TestCase):
         self.assertEqual(len(result['rows']), 2)
 
 
+class ExcelImportVatGroupTests(TestCase):
+    """VAT Group column (found by header text, after the fixed 12) -- blank
+    or unknown falls back to the shop default "Б", only for NEW products."""
+
+    def setUp(self):
+        self.default_group, _created = TaxGroup.objects.get_or_create(name='Б', defaults={'rate': Decimal('20.00')})
+        self.reduced_group = TaxGroup.objects.create(name='Г', rate=Decimal('9.00'))
+        self.existing = Product.objects.create(
+            internal_code='VATEX001', name='Vat Existing Product', delivery_price=Decimal('1.00'),
+            sell_price=Decimal('2.00'), quantity=Decimal('1.000'),
+        )
+
+    def _row(self, name, vat='', code=''):
+        return (code, name, '', 1, '', '', '', '', '', '', '', '', vat)
+
+    def _parse(self, rows, headers=('VAT Group',)):
+        return parse_delivery_import(_build_import_xlsx(rows, extra_headers=headers))
+
+    def test_group_matched_by_name_case_insensitively(self):
+        result = self._parse([self._row('Vat Item One', 'г')])
+        self.assertEqual(result['errors'], [])
+        self.assertEqual(result['rows'][0]['tax_group_id'], self.reduced_group.pk)
+        self.assertEqual(result['rows'][0]['tax_rate'], 9.0)
+
+    def test_group_matched_by_rate(self):
+        for text in ('9', '9%', '9,0'):
+            result = self._parse([self._row('Vat Item Rate', text)])
+            self.assertEqual(result['rows'][0]['tax_group_id'], self.reduced_group.pk, text)
+
+    def test_blank_cell_gets_the_default_group(self):
+        result = self._parse([self._row('Vat Item Blank', '')])
+        self.assertEqual(result['errors'], [])
+        self.assertEqual(result['rows'][0]['tax_group_id'], self.default_group.pk)
+        self.assertEqual(result['rows'][0]['tax_rate'], 20.0)
+
+    def test_unknown_value_falls_back_to_default_with_a_warning(self):
+        result = self._parse([self._row('Vat Item Unknown', 'Zzz')])
+        self.assertEqual(result['rows'][0]['tax_group_id'], self.default_group.pk)
+        self.assertEqual(len(result['errors']), 1)
+        self.assertIn('Zzz', result['errors'][0])
+
+    def test_file_without_the_column_still_gets_the_default(self):
+        buf = _build_import_xlsx([('', 'Vat Item No Column', '', 1, '', '', '', '', '', '', '', '')])
+        result = parse_delivery_import(buf)
+        self.assertEqual(result['errors'], [])
+        self.assertEqual(result['rows'][0]['tax_group_id'], self.default_group.pk)
+
+    def test_column_found_by_header_even_after_attribute_columns(self):
+        # An older file: attribute columns right after the fixed 12, VAT
+        # Group somewhere later -- found by its header, not its position.
+        ProductAttribute.objects.create(name='Brand')
+        buf = _build_import_xlsx(
+            [('', 'Vat Item Moved', '', 1, '', '', '', '', '', '', '', '', 'Nike', 'Г')],
+            extra_headers=['Brand', 'ДДС група'],
+        )
+        result = parse_delivery_import(buf)
+        self.assertEqual(result['rows'][0]['tax_group_id'], self.reduced_group.pk)
+
+    def test_existing_product_row_is_untouched(self):
+        result = self._parse([self._row(self.existing.name, 'Г', code='VATEX001')])
+        row = result['rows'][0]
+        self.assertFalse(row['is_new'])
+        self.assertNotIn('tax_group_id', row)
+
+
 class ExcelImportViewTests(TestCase):
     def setUp(self):
         self.warehouse = User.objects.create_user(username='wh_import', password='pass12345', role=User.WAREHOUSE)
@@ -1496,7 +1561,7 @@ class ExcelImportViewTests(TestCase):
         headers = [c.value for c in wb.active[1]]
         self.assertEqual(headers, ['Code', 'Name', 'Unit Type', 'Quantity', 'Category', 'Subcategory',
                                     'Delivery Price', 'Sell Price', 'Main Supplier',
-                                    'Barcode 1', 'Barcode 2', 'Barcode 3'])
+                                    'Barcode 1', 'Barcode 2', 'Barcode 3', 'VAT Group'])
 
     def test_template_download_has_one_column_per_attribute(self):
         ProductAttribute.objects.create(name='Brand')
@@ -1505,7 +1570,7 @@ class ExcelImportViewTests(TestCase):
         response = self.client.get(reverse('delivery_import_template'))
         wb = openpyxl.load_workbook(io.BytesIO(response.content))
         headers = [c.value for c in wb.active[1]]
-        self.assertEqual(headers[12:], ['Brand', 'Color'])
+        self.assertEqual(headers[13:], ['Brand', 'Color'])  # after the 12 fixed ones + VAT Group
 
     def test_import_endpoint_requires_permission(self):
         self.client.force_login(self.cashier)
@@ -1623,6 +1688,30 @@ class DeliveryAddWithNewProductRowsTests(TestCase):
         self.assertRedirects(response, reverse('delivery_add'))
         product = Product.objects.get(name='Imported With Attributes')
         self.assertEqual(product.attributes, {str(brand.pk): 'Nike', str(color.pk): 'Red'})
+
+    def _post_with_tax_group(self, document_number, tax_group_value, name='Imported With Vat'):
+        data = self._general_info(document_number=document_number)
+        data.update(self._pending_row_fields(0, name))
+        data.update({
+            'items-TOTAL_FORMS': '1', 'items-INITIAL_FORMS': '0',
+            'items-MIN_NUM_FORMS': '0', 'items-MAX_NUM_FORMS': '1000',
+        })
+        if tax_group_value is not None:
+            data['items-0-new_product_tax_group'] = tax_group_value
+        return self.client.post(reverse('delivery_add'), data)
+
+    def test_posted_tax_group_is_saved_on_the_new_product(self):
+        TaxGroup.objects.get_or_create(name='Б', defaults={'rate': Decimal('20.00')})
+        reduced = TaxGroup.objects.create(name='Г', rate=Decimal('9.00'))
+        self.assertRedirects(self._post_with_tax_group('IMP-300', str(reduced.pk)), reverse('delivery_add'))
+        self.assertEqual(Product.objects.get(name='Imported With Vat').tax_group, reduced)
+
+    def test_blank_or_bogus_tax_group_falls_back_to_the_default(self):
+        default, _created = TaxGroup.objects.get_or_create(name='Б', defaults={'rate': Decimal('20.00')})
+        for number, value in (('IMP-301', ''), ('IMP-302', '99999'), ('IMP-303', 'abc'), ('IMP-304', None)):
+            name = f'Imported With Vat {number}'
+            self.assertRedirects(self._post_with_tax_group(number, value, name=name), reverse('delivery_add'))
+            self.assertEqual(Product.objects.get(name=name).tax_group, default, value)
 
     def test_unusable_attribute_values_are_dropped_not_fatal(self):
         # Posted data is re-checked server-side: an id that isn't a real

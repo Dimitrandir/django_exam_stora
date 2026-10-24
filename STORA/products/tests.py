@@ -787,6 +787,55 @@ class ProductAttributeInlineUpdateTests(TestCase):
         self.assertContains(response, 'id="products-attribute-defs"')
 
 
+class SetDefaultTaxGroupCommandTests(TestCase):
+    """`manage.py set_default_tax_group` -- only products WITHOUT a group
+    get the default; anything that already has one is never touched."""
+
+    def setUp(self):
+        self.default, _created = TaxGroup.objects.get_or_create(name='Б', defaults={'rate': 20})
+        self.other = TaxGroup.objects.create(name='Г', rate=9)
+        self.bare = Product.objects.create(internal_code='TAXCMD01', name='No Group', sell_price=1, quantity=1)
+        self.has_other = Product.objects.create(
+            internal_code='TAXCMD02', name='Has Other Group', sell_price=1, quantity=1, tax_group=self.other)
+
+    def _run(self, *args):
+        from io import StringIO
+        from django.core.management import call_command
+        out = StringIO()
+        call_command('set_default_tax_group', *args, stdout=out)
+        return out.getvalue()
+
+    def test_only_products_without_a_group_are_changed(self):
+        output = self._run('--yes')
+        self.bare.refresh_from_db()
+        self.has_other.refresh_from_db()
+        self.assertEqual(self.bare.tax_group, self.default)
+        self.assertEqual(self.has_other.tax_group, self.other)
+        self.assertIn('Done', output)
+
+    def test_dry_run_changes_nothing(self):
+        output = self._run('--dry-run')
+        self.bare.refresh_from_db()
+        self.assertIsNone(self.bare.tax_group)
+        self.assertIn('Dry run', output)
+
+    def test_declining_the_question_changes_nothing(self):
+        with patch('builtins.input', return_value='n'):
+            output = self._run()
+        self.bare.refresh_from_db()
+        self.assertIsNone(self.bare.tax_group)
+        self.assertIn('Cancelled', output)
+
+    def test_missing_default_group_is_a_clear_error(self):
+        from django.core.management.base import CommandError
+        self.bare.delete()
+        self.has_other.delete()
+        Product.objects.all().update(tax_group=None)
+        TaxGroup.objects.filter(name='Б').delete()
+        with self.assertRaises(CommandError):
+            self._run('--yes')
+
+
 class ProductBulkSetAttributeTests(TestCase):
     """Bulk action `set_attribute` -- one UPDATE for the selected products,
     touching only that attribute's key inside Product.attributes."""

@@ -9,7 +9,14 @@ Column layout (see build_template_workbook) -- only Name is required, every
 other column may be blank:
   Code | Name | Unit Type | Quantity | Category | Subcategory |
   Delivery Price | Sell Price | Main Supplier | Barcode 1 | Barcode 2 |
-  Barcode 3 | <one extra column per shop-defined ProductAttribute>
+  Barcode 3 | VAT Group | <one extra column per shop-defined ProductAttribute>
+
+VAT Group (a TaxGroup name, e.g. "Б" -- or its rate, "20"/"20%") is found by
+its header text like the attribute columns, not by position, so a file made
+from an older template without it still imports. Blank (or no such column)
+means TaxGroup.default() -- "Б" -- same default a new product gets on the
+product form; a value that matches nothing also falls back to it, with a
+warning. Like everything else it only applies to a genuinely NEW product.
 
 The attribute columns (Brand/Color/Size/... -- whatever this shop defined, see
 products.ProductAttribute) come AFTER the fixed 12 and are matched by their
@@ -85,13 +92,18 @@ from django.conf import settings
 from django.contrib.postgres.search import TrigramSimilarity
 from django.utils.translation import gettext as _
 
-from STORA.products.models import Barcode, Category, Product, ProductAttribute, Suppliers
+from STORA.products.models import Barcode, Category, Product, ProductAttribute, Suppliers, TaxGroup
 
 COLUMN_HEADERS = [
     'Code', 'Name', 'Unit Type', 'Quantity', 'Category', 'Subcategory',
     'Delivery Price', 'Sell Price', 'Main Supplier',
     'Barcode 1', 'Barcode 2', 'Barcode 3',
 ]
+
+# Header text (casefolded) of the optional VAT Group column -- looked up by
+# name among the columns after the fixed 12, English or Bulgarian.
+VAT_GROUP_HEADER = 'VAT Group'
+_VAT_GROUP_HEADERS = {'vat group', 'ддс група', 'ддс'}
 
 # Accepted spellings for the Unit Type column, both languages, lower-cased.
 _WEIGHT_SPELLINGS = {'kg', 'weight', 'кг', 'тегло', 'теглов', 'теглови'}
@@ -126,7 +138,7 @@ def build_template_workbook():
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = 'Import'
-    headers = COLUMN_HEADERS + [attribute.name for attribute in ProductAttribute.objects.all()]
+    headers = COLUMN_HEADERS + [VAT_GROUP_HEADER] + [attribute.name for attribute in ProductAttribute.objects.all()]
     ws.append(headers)
     for col_index in range(1, len(headers) + 1):
         ws.column_dimensions[openpyxl.utils.get_column_letter(col_index)].width = 16
@@ -157,6 +169,26 @@ def _clean_attribute_value(attribute, value):
                 return choice, None
         return '', text
     return text, None
+
+
+def _resolve_tax_group(value, tax_groups):
+    """Excel's VAT Group cell -> (TaxGroup, problem). `tax_groups` is the
+    full list, fetched once per file. Matches by name (case-insensitive),
+    else by rate ("20" / "20%" / "20,0"); a blank cell is not a problem and
+    resolves to None -- the caller applies TaxGroup.default(). `problem` is
+    the raw text when something WAS written but matched nothing."""
+    text = _clean_str(value)
+    if not text:
+        return None, None
+    for group in tax_groups:
+        if group.name.casefold() == text.casefold():
+            return group, None
+    rate = _clean_decimal(text.rstrip('%').strip())
+    if rate is not None:
+        for group in tax_groups:
+            if group.rate == rate:
+                return group, None
+    return None, text
 
 
 def _clean_decimal(value):
@@ -258,7 +290,8 @@ def parse_delivery_import(file_obj):
       {'row_number', 'is_new': True, 'internal_code', 'name', 'unit_type',
        'quantity', 'delivery_price', 'sell_price', 'category_id',
        'category_name', 'supplier_id', 'supplier_name', 'barcodes': [...],
-       'attributes': {attribute id as str: value}, 'duplicate_candidate': {'id', 'name'} | None}
+       'attributes': {attribute id as str: value}, 'tax_group_id', 'tax_rate',
+       'duplicate_candidate': {'id', 'name'} | None}
     for a genuinely new product candidate.
 
     Two passes: the first resolves every row's Layer-1 matches and collects
@@ -293,12 +326,19 @@ def parse_delivery_import(file_obj):
     # there is ignored.
     attributes_by_name = {a.name.casefold(): a for a in ProductAttribute.objects.all()}
     attribute_columns = {}
+    vat_group_column = None
     for col_index, header in enumerate(all_rows[0]):
         if col_index < len(COLUMN_HEADERS):
             continue
-        attribute = attributes_by_name.get(_clean_str(header).casefold())
+        header_text = _clean_str(header).casefold()
+        if header_text in _VAT_GROUP_HEADERS:
+            vat_group_column = col_index
+            continue
+        attribute = attributes_by_name.get(header_text)
         if attribute:
             attribute_columns[col_index] = attribute
+    tax_groups = list(TaxGroup.objects.all())
+    default_tax_group = TaxGroup.default()
 
     for row_number, raw_row in enumerate(all_rows[1:], start=2):
         if raw_row is None or all(cell in (None, '') for cell in raw_row):
@@ -397,6 +437,15 @@ def parse_delivery_import(file_obj):
             if value:
                 attributes[str(attribute.pk)] = value
 
+        tax_group = None
+        if vat_group_column is not None and vat_group_column < len(cells):
+            tax_group, rejected = _resolve_tax_group(cells[vat_group_column], tax_groups)
+            if rejected:
+                errors.append(_(
+                    'Row %(row)s: VAT group "%(value)s" was not found, the default group was used instead.'
+                ) % {'row': row_number, 'value': rejected})
+        tax_group = tax_group or default_tax_group
+
         row = {
             'row_number': row_number,
             'is_new': True,
@@ -408,6 +457,8 @@ def parse_delivery_import(file_obj):
             'sell_price': float(sell_price) if sell_price is not None else None,
             'barcodes': barcodes,
             'attributes': attributes,
+            'tax_group_id': tax_group.pk if tax_group else None,
+            'tax_rate': float(tax_group.rate) if tax_group else 0.0,
             # Resolved in the second pass below, once Layer 2's verdicts
             # (if any) are in -- placeholders for now.
             '_duplicate': (duplicate_match, _classify_similarity(duplicate_sim)),

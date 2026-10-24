@@ -308,6 +308,11 @@ document.addEventListener('DOMContentLoaded', function () {
         var deliveryPrice = imported.delivery_price != null ? imported.delivery_price : 0;
         var sellPrice = imported.sell_price != null ? imported.sell_price : 0;
         var markup = deliveryPrice ? (sellPrice - deliveryPrice) / deliveryPrice * 100 : 0;
+        // The VAT group the import resolved (its own, or the shop default) --
+        // its rate drives the "without VAT" columns exactly like an existing
+        // product's tax group does (see buildRow).
+        var rate = parseFloat(imported.tax_rate) || 0;
+        var withoutVat = rate ? deliveryPrice / (1 + rate / 100) : deliveryPrice;
         return {
             seq: nextSeq++,
             id: '',
@@ -322,13 +327,13 @@ document.addEventListener('DOMContentLoaded', function () {
             // Still editable via the Unit Type column's click-to-switch
             // below, in case the file got it wrong or left it blank.
             unit_type: imported.unit_type || 'piece',
-            tax_rate: 0,
+            tax_rate: rate,
             original_delivery_price: deliveryPrice,
             delivery_quantity: qty,
             price_at_delivery: round2(deliveryPrice),
-            price_without_vat: round2(deliveryPrice),
+            price_without_vat: round2(withoutVat),
             total_price_row: round2(qty * deliveryPrice),
-            total_without_vat: round2(qty * deliveryPrice),
+            total_without_vat: round2(qty * withoutVat),
             sell_price: round2(sellPrice),
             markup_percent: round1(markup),
             expiry_date: '',
@@ -342,6 +347,7 @@ document.addEventListener('DOMContentLoaded', function () {
             new_product_supplier: imported.supplier_id || '',
             new_product_barcodes: imported.barcodes || [],
             new_product_attributes: imported.attributes || {},
+            new_product_tax_group: imported.tax_group_id || '',
             duplicate_candidate: imported.duplicate_candidate || null,
         };
     }
@@ -1673,6 +1679,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 fields.new_product_barcode_2 = barcodes[1] || '';
                 fields.new_product_barcode_3 = barcodes[2] || '';
                 fields.new_product_attributes = JSON.stringify(data.new_product_attributes || {});
+                fields.new_product_tax_group = data.new_product_tax_group || '';
             }
             Object.keys(fields).forEach(function (name) {
                 var input = document.createElement('input');
