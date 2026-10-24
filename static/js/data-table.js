@@ -228,6 +228,18 @@
             }
             widget.buildPanel = buildPanel;
             widget.wrapper.addEventListener('panelopen', buildPanel);
+            // Programmatic "reset this column's filter" -- same path as
+            // ticking (All) in the panel (success('') + onFilterChange), used
+            // by table.clearExcelFilters(). Re-assigned on every editor call
+            // for the same reason as buildPanel above: `success` belongs to
+            // THIS call.
+            widget.clearFilter = function () {
+                if (widget.selectedValues === null) return;
+                widget.selectedValues = null;
+                widget.toggle.classList.remove('is-filtered');
+                success('');
+                if (onFilterChange) onFilterChange(field, null);
+            };
             onRendered(function () {});
             return widget.wrapper;
         };
@@ -319,20 +331,33 @@
         var restoreFilterFns = {};
 
         var filterWidgetCache = {};
+        // Tells the page (a CustomEvent on the table element) that the set of
+        // active column filters changed -- products_list.html uses it to show
+        // a "Clear filters" button. A filter on a HIDDEN column (Columns ▾)
+        // is invisible in the headers but still filters the rows, and with
+        // persistence it survives reloads, so the page needs another way to
+        // know and to undo it.
+        function notifyFiltersChanged() {
+            var el = document.querySelector(elementSelector);
+            if (el) el.dispatchEvent(new CustomEvent('excelfilterchange'));
+        }
+
         var excelStyleFilterEditor = makeExcelStyleFilterEditor(filterWidgetCache, function (field, selectedValues) {
             if (restoreFilterFns[field]) {
                 table.removeFilter(restoreFilterFns[field]);
                 delete restoreFilterFns[field];
             }
-            if (!filterPersistKey) return;
-            if (selectedValues === null) {
-                delete savedFilters[field];
-            } else {
-                savedFilters[field] = selectedValues;
+            if (filterPersistKey) {
+                if (selectedValues === null) {
+                    delete savedFilters[field];
+                } else {
+                    savedFilters[field] = selectedValues;
+                }
+                try {
+                    window.localStorage.setItem(filterPersistKey, JSON.stringify(savedFilters));
+                } catch (e) {}
             }
-            try {
-                window.localStorage.setItem(filterPersistKey, JSON.stringify(savedFilters));
-            } catch (e) {}
+            notifyFiltersChanged();
         });
 
         columns.forEach(function (col) {
@@ -504,6 +529,20 @@
         // and ▾ indicator look right if the user opens it later -- those
         // are plain property/class assignments, not Tabulator API calls,
         // so none of this can throw the way the built-in restore path did.
+        // Field names whose column currently has an Excel-style filter on
+        // (hidden columns included), and a reset for all of them at once.
+        table.activeExcelFilterFields = function () {
+            return Object.keys(filterWidgetCache).filter(function (field) {
+                return filterWidgetCache[field].selectedValues !== null;
+            });
+        };
+        table.clearExcelFilters = function () {
+            Object.keys(filterWidgetCache).forEach(function (field) {
+                var widget = filterWidgetCache[field];
+                if (widget.clearFilter) widget.clearFilter();
+            });
+        };
+
         if (filterPersistKey) {
             table.on('tableBuilt', function () {
                 Object.keys(savedFilters).forEach(function (field) {
@@ -516,6 +555,7 @@
                     restoreFilterFns[field] = filterFn;
                     table.addFilter(filterFn);
                 });
+                notifyFiltersChanged();
             });
         }
 

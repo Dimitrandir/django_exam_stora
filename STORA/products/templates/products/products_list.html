@@ -569,6 +569,32 @@ document.addEventListener('DOMContentLoaded', function () {
         leftGroup.appendChild(columnsWidget);
         leftGroup.appendChild(focusBtn);
 
+        // "Clear filters" -- only shown while at least one Excel-style column
+        // filter is on, and its tooltip names the filtered columns. Needed
+        // because filters are remembered between visits AND a filter on a
+        // column hidden via Columns ▾ still hides rows while showing no
+        // highlighted ▾ anywhere (confirmed live: a list that suddenly
+        // showed only 90 of the products, "no active filters" in sight).
+        var clearFiltersBtn = document.createElement('button');
+        clearFiltersBtn.type = 'button';
+        clearFiltersBtn.className = 'icon-btn icon-btn--outline icon-btn--sm is-active d-none';
+        clearFiltersBtn.innerHTML =
+            '<span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--search"></span></span>' +
+            '<span class="icon-btn__label">{% translate "Clear filters" %}</span>';
+        leftGroup.appendChild(clearFiltersBtn);
+
+        function refreshClearFiltersBtn() {
+            var fields = table.activeExcelFilterFields();
+            clearFiltersBtn.classList.toggle('d-none', !fields.length);
+            clearFiltersBtn.title = fields.map(function (field) {
+                var column = table.getColumn(field);
+                return column ? column.getDefinition().title : field;
+            }).join(', ');
+        }
+        document.getElementById('products-table').addEventListener('excelfilterchange', refreshClearFiltersBtn);
+        clearFiltersBtn.addEventListener('click', function () { table.clearExcelFilters(); });
+        refreshClearFiltersBtn();
+
         focusBtn.addEventListener('click', function () {
             var on = document.body.classList.toggle('products-table-focus');
             focusBtn.classList.toggle('is-active', on);

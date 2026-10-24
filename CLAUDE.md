@@ -2046,6 +2046,17 @@ helper в `core/utils.py` (разбива по whitespace, AND между дум
     се задават директно (plain property/class, не Tabulator API), за да
     изглежда панелът коректен при отваряне, без риск да гръмнат като
     горното.
+    **Филтър върху СКРИТА колона (Columns ▾) продължава да филтрира, но не
+    свети никъде** — сам по себе си с persistence това е капан (хванато на
+    живо: списъкът показваше само 90 от хиляди продукта, "няма активни
+    филтри"). Затова `initExcelStyleTable` вече дава на таблицата
+    `activeExcelFilterFields()`/`clearExcelFilters()` и вдига
+    `CustomEvent('excelfilterchange')` на елемента ѝ при всяка промяна;
+    Products списъкът показва бутон "Clear filters" (само докато има
+    активен филтър, подсказката изброява колоните, скритите включително)
+    до Full Screen. Сваляне през `widget.clearFilter()` — същия път като
+    "(All)" в панела (`success('')` + `onFilterChange`), НЕ през
+    `table.clearHeaderFilter()` (същия crash като `setHeaderFilterValue`).
 
 **Кеш на статични файлове при разработка:** style.css и data-table.js се  
    
