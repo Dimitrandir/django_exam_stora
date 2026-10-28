@@ -151,24 +151,55 @@ WhiteNoise (`DEBUG=False`) чете статичните файлове в па�
 
 ## 8. Дневен бекъп на базата
 
-Създай `backup.bat` (напр. в `C:\stora-backup\backup.bat`):
+Скриптът `scripts\backup_db.bat` (в репото, обновява се с `git pull`) прави
+`pg_dump` в `C:\stora-backup`, пише резултата в `backup.log`, пази последните
+30 дни и (по избор) копира всеки нов бекъп на второ място. **Паролата не е в
+скрипта** — `pg_dump` я чете от отделен файл.
 
+**Настройка (веднъж):**
+
+1. Провери най-горните редове на `scripts\backup_db.bat`: версията на
+   PostgreSQL в `PGBIN` (при нас `18`), `DB_NAME`/`DB_USER`, и по желание
+   `COPY_TO` (напр. `E:\stora-backup` — USB диск или мрежова папка).
+2. Създай файла `C:\stora-backup\pgpass.conf` с ЕДИН ред (паролата на
+   `stora_usr`, същата като `DB_PASSWORD` в `.env`):
+   ```
+   127.0.0.1:5432:stora_db:stora_usr:паролата
+   ```
+   и го заключи само за администратори (иначе всеки потребител на
+   компютъра може да прочете паролата):
+   ```bat
+   icacls C:\stora-backup\pgpass.conf /inheritance:r /grant:r Administrators:F SYSTEM:F
+   ```
+3. Пусни скрипта ръчно веднъж и провери, че се е появил
+   `C:\stora-backup\stora_<дата>.dump`, а `backup.log` завършва с `OK`:
+   ```bat
+   C:\път\до\репото\scripts\backup_db.bat
+   ```
+4. Планирай го за всяка нощ (команда в **административен** cmd; сменя се
+   пътят до репото):
+   ```bat
+   schtasks /Create /TN "STORA Backup" /TR "C:\път\до\репото\scripts\backup_db.bat" /SC DAILY /ST 03:00 /RU SYSTEM
+   ```
+   После в **Task Scheduler** → "STORA Backup" → Properties → Settings →
+   сложи отметка "Run task as soon as possible after a scheduled start is
+   missed" (иначе, ако компютърът е изключен в 03:00, тази нощ няма бекъп).
+
+**Редовно:** отвори `C:\stora-backup\backup.log` от време на време — последният
+ред трябва да е `OK` със скорошна дата. `FAILED` значи, че бекъп няма
+(най-честите причини: сменена парола в `pgpass.conf`, друга версия на
+PostgreSQL в `PGBIN`).
+
+Възстановяване, ако някога потрябва (ВНИМАНИЕ: `--clean` изтрива сегашното
+съдържание на базата — първо спри услугата с `nssm stop STORA`):
 ```bat
-@echo off
-set PGPASSWORD=паролата-на-stora_usr
-"C:\Program Files\PostgreSQL\16\bin\pg_dump.exe" -U stora_usr -h 127.0.0.1 -F c stora_db > "C:\stora-backup\stora_%date:~-4%-%date:~3,2%-%date:~0,2%.dump"
+"C:\Program Files\PostgreSQL\18\bin\pg_restore.exe" -U stora_usr -h 127.0.0.1 -d stora_db --clean C:\stora-backup\stora_2026-10-28_03-00.dump
 ```
 
-После в Windows **Task Scheduler** → Create Task → Trigger: Daily (напр. 03:00
-през нощта, извън работно време) → Action: стартира `backup.bat`.
-
-Възстановяване, ако някога потрябва:
-```bash
-pg_restore -U stora_usr -h 127.0.0.1 -d stora_db --clean stora_2026-09-13.dump
-```
-
-Пази бекъпите на второ място (USB диск, друг компютър) — само на самия
-компютър не пази при хардуерен проблем.
+Бекъп, който никога не е пробван за възстановяване, не е сигурен бекъп —
+поне веднъж пробвай възстановяване в **отделна тестова база**, не върху
+работната. Пази бекъпите и извън самия компютър (`COPY_TO`, USB диск, друг
+компютър) — само на него не пази при хардуерен проблем.
 
 ## 9. Фискален принтер (Daisy Perfect S01)
 
