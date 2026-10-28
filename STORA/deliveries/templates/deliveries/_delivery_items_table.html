@@ -352,7 +352,57 @@ document.addEventListener('DOMContentLoaded', function () {
         };
     }
 
+    // The flat new_product_* fields of a still-pending Excel row -- the
+    // exact shape the submit-time hidden inputs (rebuildHiddenInputs) and
+    // the session draft (getDeliveryItemsDraftState) both carry, so a
+    // pending row survives a failed Save and a page reload instead of
+    // vanishing from the grid. new_product_tax_rate is display-only (drives
+    // the "without VAT" columns); the server re-reads the tax GROUP id.
+    function pendingProductFields(data) {
+        var barcodes = data.new_product_barcodes || [];
+        return {
+            new_product: '1',
+            new_product_name: data.name || '',
+            new_product_code: data.internal_code || '',
+            new_product_unit_type: data.unit_type || 'piece',
+            new_product_delivery_price: data.price_at_delivery || '',
+            new_product_sell_price: data.sell_price || '',
+            new_product_category: data.new_product_category || '',
+            new_product_supplier: data.new_product_supplier || '',
+            new_product_barcode_1: barcodes[0] || '',
+            new_product_barcode_2: barcodes[1] || '',
+            new_product_barcode_3: barcodes[2] || '',
+            new_product_attributes: JSON.stringify(data.new_product_attributes || {}),
+            new_product_tax_group: data.new_product_tax_group || '',
+            new_product_tax_rate: data.tax_rate || 0,
+        };
+    }
+
+    // Inverse of pendingProductFields: a draft / redisplayed POST row back
+    // into the `imported` shape buildNewProductRow expects.
+    function pendingRowFromSaved(raw) {
+        var attributes = {};
+        try { attributes = JSON.parse(raw.new_product_attributes || '{}') || {}; } catch (e) { attributes = {}; }
+        var row = buildNewProductRow({
+            internal_code: raw.new_product_code,
+            name: raw.new_product_name,
+            unit_type: raw.new_product_unit_type,
+            quantity: parseFloat(raw.delivery_quantity) || 0,
+            delivery_price: parseFloat(raw.new_product_delivery_price) || 0,
+            sell_price: parseFloat(raw.new_product_sell_price) || 0,
+            tax_rate: raw.new_product_tax_rate,
+            category_id: raw.new_product_category,
+            supplier_id: raw.new_product_supplier,
+            barcodes: [raw.new_product_barcode_1, raw.new_product_barcode_2, raw.new_product_barcode_3].filter(Boolean),
+            attributes: attributes,
+            tax_group_id: raw.new_product_tax_group,
+        });
+        row.expiry_date = raw.expiry_date || '';
+        return row;
+    }
+
     var seedRows = initialRows.map(function (raw) {
+        if (raw.new_product === '1') return pendingRowFromSaved(raw);
         var product = productsById[String(raw.delivery_item)];
         return product ? buildRow(product, raw) : null;
     }).filter(Boolean);
@@ -1666,20 +1716,7 @@ document.addEventListener('DOMContentLoaded', function () {
             // rewrites `delivery_item` above to point at it (or blanks the
             // whole row out, for a quantity-0 "just create it" row).
             if (data.is_new_product) {
-                fields.new_product = '1';
-                fields.new_product_name = data.name || '';
-                fields.new_product_code = data.internal_code || '';
-                fields.new_product_unit_type = data.unit_type || 'piece';
-                fields.new_product_delivery_price = data.price_at_delivery || '';
-                fields.new_product_sell_price = data.sell_price || '';
-                fields.new_product_category = data.new_product_category || '';
-                fields.new_product_supplier = data.new_product_supplier || '';
-                var barcodes = data.new_product_barcodes || [];
-                fields.new_product_barcode_1 = barcodes[0] || '';
-                fields.new_product_barcode_2 = barcodes[1] || '';
-                fields.new_product_barcode_3 = barcodes[2] || '';
-                fields.new_product_attributes = JSON.stringify(data.new_product_attributes || {});
-                fields.new_product_tax_group = data.new_product_tax_group || '';
+                Object.assign(fields, pendingProductFields(data));
             }
             Object.keys(fields).forEach(function (name) {
                 var input = document.createElement('input');
@@ -1699,7 +1736,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     window.getDeliveryItemsDraftState = function () {
         return {TOTAL_FORMS: table.getData().length, forms: table.getData().map(function (data) {
-            return {
+            var row = {
                 id: data.id || '',
                 delivery_item: data.delivery_item,
                 delivery_quantity: data.delivery_quantity,
@@ -1710,6 +1747,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 scrap_reason: data.scrap_reason || '',
                 DELETE: '',
             };
+            if (data.is_new_product) Object.assign(row, pendingProductFields(data));
+            return row;
         })};
     };
 });

@@ -17,7 +17,7 @@ import json
 import logging
 
 from STORA.core.mixins import StaffPermissionRequiredMixin
-from STORA.core.session_service import extract_formset_state
+from STORA.core.session_service import NEW_PRODUCT_STATE_FIELDS, extract_formset_state
 from STORA.core.utils import (
     build_cashier_operation_state,
     build_restore_formset_data,
@@ -43,8 +43,12 @@ def _items_initial_from_rows(rows):
     resolves `delivery_item` against the already-loaded `products_data` for
     display (code/name/unit_type) -- this only needs to carry the bare
     model values."""
-    return [
-        {
+    items = []
+    for row in rows:
+        is_pending = row.get('new_product') == '1'
+        if not row.get('delivery_item') and not is_pending:
+            continue
+        item = {
             'id': row.get('id') or '',
             'delivery_item': row.get('delivery_item') or '',
             'delivery_quantity': row.get('delivery_quantity') or '',
@@ -54,9 +58,13 @@ def _items_initial_from_rows(rows):
             'source_item': row.get('source_item') or '',
             'scrap_reason': row.get('scrap_reason') or '',
         }
-        for row in rows
-        if row.get('delivery_item')
-    ]
+        if is_pending:
+            # An Excel-imported row that never became a real product (the
+            # Save failed, or the page was reloaded from the draft) -- the
+            # grid rebuilds it from these fields (pendingRowFromSaved).
+            item.update({name: row.get(name, '') for name in NEW_PRODUCT_STATE_FIELDS})
+        items.append(item)
+    return items
 
 
 def _items_initial_from_instance(delivery):
@@ -122,6 +130,22 @@ def _without_pending_rows(post_data):
         if post_data.get(f'items-{index}-new_product') != '1'
     ]
     return _rewrite_item_rows(post_data, total_forms, kept_rows)
+
+
+def _formset_for_redisplay(data, initial=None):
+    """The items formset to render alongside the grid. Pending Excel rows are
+    stripped from `data` first (see _without_pending_rows); if that leaves
+    NOTHING (every row was pending), the formset is left unbound instead --
+    a bound empty one would print "You must add at least one delivery item"
+    for a grid that visibly has rows."""
+    stripped = _without_pending_rows(data)
+    had_pending = any(
+        data.get(f'items-{i}-new_product') == '1'
+        for i in range(int(data.get('items-TOTAL_FORMS', 0) or 0))
+    )
+    if had_pending and stripped.get('items-TOTAL_FORMS') == '0':
+        return DeliveryItemFormSet(prefix='items')
+    return DeliveryItemFormSet(stripped, prefix='items', initial=initial)
 
 
 def _clean_pending_attributes(raw_json, attributes_by_id):
@@ -429,25 +453,20 @@ def deliveries_add(request, movement_type=DeliveryAttributes.MOVEMENT_DELIVERY):
 
         form = form_class(request.POST, current_user=request.user)
         formset_initial = extracted_state.get('forms', [])
-        formset = DeliveryItemFormSet(
-            _without_pending_rows(request.POST),
-            prefix=formset_prefix,
-            initial=formset_initial,
-        )
+        formset = _formset_for_redisplay(request.POST, initial=formset_initial)
     else:
         if state and state.get('type') == operation_type and state.get('active'):
             form = form_class(initial=state.get('data', {}), current_user=request.user)
             formset_initial = state.get('formset_data', {}).get('forms', []) or [{}]
+            # Pending Excel rows live only in the grid (delivery_items_initial
+            # below), not in the bound formset (see _formset_for_redisplay).
             restore_post_data = build_restore_formset_data(formset_prefix, formset_initial)
             delivery_items_initial = _items_initial_from_rows(formset_initial)
             draft_supplier_id = state.get('data', {}).get('supplier') or None
             selected_supplier = Suppliers.objects.filter(pk=draft_supplier_id).first() if draft_supplier_id else None
             selected_supplier_name = selected_supplier.name if selected_supplier else ''
 
-            formset = DeliveryItemFormSet(
-                data=restore_post_data,
-                prefix=formset_prefix,
-            )
+            formset = _formset_for_redisplay(restore_post_data)
             delivery_draft = state
         else:
             form = form_class(current_user=request.user)

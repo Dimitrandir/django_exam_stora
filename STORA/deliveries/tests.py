@@ -1782,9 +1782,43 @@ class DeliveryAddWithNewProductRowsTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.context['form'].errors)
         self.assertEqual(response.context['formset'].errors, [])
+        self.assertEqual(response.context['formset'].non_form_errors(), [])
         # the per-row error box the template prints for each errored form
         self.assertNotIn('Product row 1:', response.content.decode())
         self.assertFalse(Product.objects.filter(name='Fine Name One').exists())
+
+    def test_failed_save_keeps_pending_rows_in_the_grid(self):
+        # Used to drop them (no delivery_item) -- the clerk had to re-import.
+        response = self._post_pending(
+            [('Keep Me One', '5550000000001'), ('Keep Me Two', '5550000000002')],
+            document_number='IMP-203', document_date='',
+        )
+        initial = response.context['delivery_items_initial']
+        self.assertEqual([r['new_product_name'] for r in initial], ['Keep Me One', 'Keep Me Two'])
+        self.assertEqual(initial[0]['new_product'], '1')
+        self.assertEqual(initial[0]['new_product_barcode_1'], '5550000000001')
+        self.assertEqual(initial[0]['delivery_quantity'], '1.000')
+
+    def test_pending_rows_survive_a_reload_from_the_session_draft(self):
+        row = {
+            'delivery_item': '', 'delivery_quantity': '4', 'price_at_delivery': '2.5',
+            'total_price_row': '10', 'new_product': '1', 'new_product_name': 'Drafted Pending',
+            'new_product_code': '', 'new_product_unit_type': 'piece', 'new_product_delivery_price': '2.5',
+            'new_product_sell_price': '4', 'new_product_attributes': '{}', 'new_product_tax_rate': 20,
+        }
+        self.client.post(reverse('delivery_draft_save'), data=json.dumps({
+            'path': '/deliveries/add/', 'form_data': {},
+            'formset_data': {'TOTAL_FORMS': 1, 'forms': [row]},
+        }), content_type='application/json')
+        response = self.client.get(reverse('delivery_add'))
+        initial = response.context['delivery_items_initial']
+        self.assertEqual([r['new_product_name'] for r in initial], ['Drafted Pending'])
+        self.assertEqual(initial[0]['new_product_tax_rate'], 20)
+        self.assertEqual(response.context['formset'].errors, [])  # no fake "delivery_item required"
+        self.assertEqual(response.context['formset'].non_form_errors(), [])  # nor "at least one item"
+        # ...and a tab holding only pending rows counts as in use.
+        by_tab = {t['tab']: t for t in response.context['delivery_tabs_summary']}
+        self.assertTrue(by_tab['1']['has_items'])
 
     def test_zero_quantity_creates_product_only_no_delivery_item(self):
         # Paired with a normal qty>0 row -- a delivery consisting of ONLY a

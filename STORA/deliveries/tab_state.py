@@ -52,7 +52,7 @@ def draft_has_items(draft: dict | None) -> bool:
     if not draft:
         return False
     forms = draft.get('formset_data', {}).get('forms', [])
-    return any(row.get('delivery_item') for row in forms)
+    return any(row.get('delivery_item') or row.get('new_product') == '1' for row in forms)
 
 
 def resolve_tab_for_page(request, operation_type: str) -> str:

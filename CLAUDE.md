@@ -1081,11 +1081,21 @@ Apps: accounts, core, products, deliveries, sales, reports.
   името на продукта, което `deliveries_add` показва като `messages.error`;
   (3) при redisplay формсетът се връзва към `_without_pending_rows(POST)`,
   не към суровия POST — иначе всеки чакащ ред пак печата фалшива грешка.
-  **Позната дупка (не е поправена):** при ВСЯКА грешка при Save чакащите
-  (Excel) редове изчезват от показания грид (`_items_initial_from_rows` ги
-  пропуска, защото нямат `delivery_item`; сесийната чернова не носи
-  `new_product_*` полетата) — трябва нов импорт. Не е мащабна промяна,
-  но пипа споделения `core.session_service` — питай преди да я правиш.
+  **Чакащите (Excel) редове вече ПРЕЖИВЯВАТ провал на Save и презареждане**
+  **(поправена дупка).** Преди това изчезваха от грида (нямаха
+  `delivery_item`, а чернова-та не носеше `new_product_*` полетата).
+  Сега и скритите полета при submit, и сесийната чернова носят едни и същи
+  плоски `new_product_*` ключове (JS `pendingProductFields()`, сървърен
+  списък `core.session_service.NEW_PRODUCT_STATE_FIELDS`, копират се само
+  за ред с `new_product == '1'`, та продажбените чернови не се променят).
+  `_items_initial_from_rows` вече не филтрира такива редове, а JS
+  `pendingRowFromSaved()` ги връща в грида през `buildNewProductRow`.
+  Редът НЕ влиза в bound формсета (`_formset_for_redisplay`) — иначе
+  "delivery_item е задължително"; ако са били САМО чакащи редове, формсетът
+  остава unbound, за да не излиза фалшивото "добави поне един артикул".
+  `new_product_tax_rate` е само за показване (колоните без ДДС); сървърът
+  пак чете ДДС ГРУПАТА по id. Губи се само `duplicate_candidate`
+  подсказката от импорта.
 - **Bulk "Apply attribute" в Products грида** (`ProductBulkActionView`,
   action=`set_attribute`) — избираш няколко продукта, после атрибут +
   стойност (падащо меню с празен "изчисти" запис за атрибут с `choices`,
