@@ -7,7 +7,7 @@ from django.contrib.postgres.search import TrigramSimilarity
 from django.db import DataError, IntegrityError, transaction
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render, redirect, get_object_or_404
-from django.urls import reverse_lazy
+from django.urls import reverse, reverse_lazy
 from django.views import View
 from django.views.generic import ListView, DetailView, CreateView, UpdateView, DeleteView
 from django.views.decorators.http import require_POST
@@ -17,18 +17,14 @@ import json
 import logging
 
 from STORA.core.mixins import StaffPermissionRequiredMixin
-from STORA.core.session_service import (
-    clear_cashier_operation_state,
-    extract_formset_state,
-    get_cashier_operation_state,
-    set_cashier_operation_state,
-)
+from STORA.core.session_service import extract_formset_state
 from STORA.core.utils import (
     build_cashier_operation_state,
     build_restore_formset_data,
     get_cashier_operation_type,
     multi_token_icontains_q,
 )
+from STORA.deliveries import tab_state
 from STORA.deliveries.excel_import import build_template_workbook, parse_delivery_import
 from STORA.deliveries.forms import (
     DeliveryForms, DeliveryItemFormSet, DocumentTypeForm, WriteOffForm, ScrapForm, ScrapReasonForm,
@@ -325,7 +321,16 @@ def deliveries_add(request, movement_type=DeliveryAttributes.MOVEMENT_DELIVERY):
 
     formset_prefix = 'items'
     operation_type = get_cashier_operation_type(request.path)
-    state = get_cashier_operation_state(request)
+    # Which of the 3 parallel drafts (tab_state) this page belongs to. A
+    # POST names its tab explicitly (hidden `draft_tab`, rendered below) so
+    # a second browser window can't redirect the save to the wrong draft.
+    if request.method == "POST" and request.POST.get('draft_tab') in tab_state.TAB_IDS:
+        draft_tab = request.POST['draft_tab']
+    elif request.method == "POST":
+        draft_tab = tab_state.get_active_tab(request)
+    else:
+        draft_tab = tab_state.resolve_tab_for_page(request, operation_type)
+    state = tab_state.get_tab_draft(request, draft_tab)
     delivery_draft = None
     formset_initial = []
     delivery_items_initial = []
@@ -391,7 +396,7 @@ def deliveries_add(request, movement_type=DeliveryAttributes.MOVEMENT_DELIVERY):
             delivery = None
 
         if delivery is not None:
-            clear_cashier_operation_state(request)
+            tab_state.clear_tab_draft(request, draft_tab)
             if movement_type != DeliveryAttributes.MOVEMENT_DELIVERY:
                 return redirect('delivery_details', pk=delivery.pk)
             # deliveries_list isn't in the nav menu anymore (superseded by
@@ -420,7 +425,7 @@ def deliveries_add(request, movement_type=DeliveryAttributes.MOVEMENT_DELIVERY):
             formset_data=extracted_state,
             active=True,
         )
-        set_cashier_operation_state(request, delivery_draft)
+        tab_state.set_tab_draft(request, draft_tab, delivery_draft)
 
         form = form_class(request.POST, current_user=request.user)
         formset_initial = extracted_state.get('forms', [])
@@ -458,6 +463,8 @@ def deliveries_add(request, movement_type=DeliveryAttributes.MOVEMENT_DELIVERY):
         'delivery_formset_initial_count': len(formset_initial) if formset_initial else 0,
         'delivery_items_initial': delivery_items_initial,
         'selected_supplier_name': selected_supplier_name,
+        'delivery_tab': draft_tab,
+        'delivery_tabs_summary': tab_state.tabs_summary(request),
         'movement_type': movement_type,
         'is_write_off': is_write_off,
         'is_scrap': is_scrap,
@@ -498,16 +505,22 @@ def delivery_import_excel(request):
 
 
 @login_required
+@permission_required('deliveries.add_deliveryattributes', raise_exception=True)
 @require_POST
 def delivery_draft_save(request):
     payload = json.loads(request.body.decode('utf-8'))
     form_data = payload.get('form_data', {})
     formset_data = payload.get('formset_data', {})
-    # The same draft-save endpoint is shared by the delivery and write-off
-    # add screens -- the caller tells us which page it was on so the draft
-    # is tagged with the right operation_type, otherwise a write-off draft
-    # would get saved (and later resumed) as a delivery.
+    # The same draft-save endpoint is shared by the delivery, write-off and
+    # scrap add screens -- the caller tells us which page it was on so the
+    # draft is tagged with the right operation_type, otherwise a write-off
+    # draft would get saved (and later resumed) as a delivery.
     path = payload.get('path') or '/deliveries/add/'
+    # ...and which of the 3 parallel drafts it belongs to (falls back to
+    # the session's active tab for an older page that doesn't send one).
+    tab = payload.get('tab')
+    if tab not in tab_state.TAB_IDS:
+        tab = tab_state.get_active_tab(request)
 
     draft = build_cashier_operation_state(
         operation_type=get_cashier_operation_type(path) or 'delivery',
@@ -516,8 +529,48 @@ def delivery_draft_save(request):
         formset_data=formset_data,
         active=True,
     )
-    set_cashier_operation_state(request, draft)
+    tab_state.set_tab_draft(request, tab, draft)
     return JsonResponse({'status': 'ok'})
+
+
+@login_required
+@permission_required('deliveries.add_deliveryattributes', raise_exception=True)
+@require_POST
+def switch_delivery_tab(request):
+    """Switches which of the 3 parallel drafts is active and tells the JS
+    which page to load next: the target tab's own screen if it holds a
+    draft (a write-off draft must reopen on the write-off page), otherwise
+    the page the clerk is already on (an empty tab takes whatever kind of
+    operation they start there)."""
+    payload = json.loads(request.body.decode('utf-8'))
+    tab = payload.get('tab')
+    if tab not in tab_state.TAB_IDS:
+        return JsonResponse({'error': _('Invalid tab.')}, status=400)
+    draft = tab_state.get_tab_draft(request, tab)
+    if tab_state.draft_has_items(draft) and get_cashier_operation_type(draft.get('path', '')):
+        next_path = draft['path']
+    else:
+        current_path = payload.get('path') or ''
+        next_path = current_path if get_cashier_operation_type(current_path) else reverse('delivery_add')
+    tab_state.set_active_tab(request, tab)
+    return JsonResponse({'status': 'ok', 'path': next_path})
+
+
+@login_required
+@permission_required('deliveries.add_deliveryattributes', raise_exception=True)
+def cancel_delivery_tab(request):
+    """The add screens' "Cancel" -- discards just the draft on the tab the
+    page was rendered for (?tab=) and lands on a fresh screen of the same
+    kind, leaving the other two tabs untouched."""
+    tab = request.GET.get('tab')
+    if tab not in tab_state.TAB_IDS:
+        tab = tab_state.get_active_tab(request)
+    tab_state.clear_tab_draft(request, tab)
+    tab_state.set_active_tab(request, tab)
+    return redirect({
+        DeliveryAttributes.MOVEMENT_WRITE_OFF: 'writeoff_add',
+        DeliveryAttributes.MOVEMENT_SCRAP: 'scrap_add',
+    }.get(request.GET.get('type'), 'delivery_add'))
 
 
 class DeliveryDetailView(LoginRequiredMixin, StaffPermissionRequiredMixin, DetailView):

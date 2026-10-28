@@ -5,7 +5,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: STORA\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-24 05:56+0000\n"
+"POT-Creation-Date: 2026-10-28 14:46+0000\n"
 "PO-Revision-Date: 2026-10-02 00:00+0000\n"
 "Language-Team: Bulgarian\n"
 "Language: bg\n"
@@ -588,7 +588,7 @@ msgstr "Изтегли празен шаблон"
 
 #: STORA/deliveries/templates/deliveries/_delivery_items_table.html:104
 #: STORA/deliveries/templates/deliveries/_delivery_items_table.html:154
-#: STORA/deliveries/templates/deliveries/delivery_add.html:122
+#: STORA/deliveries/templates/deliveries/delivery_add.html:139
 #: STORA/deliveries/templates/deliveries/delivery_edit.html:117
 #: STORA/deliveries/templates/deliveries/document_type_form.html:22
 #: STORA/deliveries/templates/deliveries/scrap_reason_form.html:22
@@ -691,14 +691,14 @@ msgstr "цъкни за свързване"
 #: STORA/deliveries/templates/deliveries/_delivery_items_table.html:477
 #: STORA/products/forms.py:105
 #: STORA/products/templates/products/products_list.html:119
-#: STORA/sales/templates/sales/sale_add.html:711
+#: STORA/sales/templates/sales/sale_add.html:716
 msgid "kg"
 msgstr "кг"
 
 #: STORA/deliveries/templates/deliveries/_delivery_items_table.html:477
 #: STORA/products/forms.py:105
 #: STORA/products/templates/products/products_list.html:119
-#: STORA/sales/templates/sales/sale_add.html:711
+#: STORA/sales/templates/sales/sale_add.html:716
 msgid "pcs"
 msgstr "бр."
 
@@ -748,7 +748,7 @@ msgstr "Код"
 #: STORA/revisions/templates/revisions/revision_detail.html:200
 #: STORA/revisions/templates/revisions/revision_details.html:87
 #: STORA/revisions/templates/revisions/revision_list.html:32
-#: STORA/sales/templates/sales/sale_add.html:902
+#: STORA/sales/templates/sales/sale_add.html:924
 msgid "Name"
 msgstr "Име"
 
@@ -758,7 +758,7 @@ msgstr "Мярка"
 
 #: STORA/deliveries/templates/deliveries/_delivery_items_table.html:726
 #: STORA/deliveries/templates/deliveries/delivery_details.html:112
-#: STORA/sales/templates/sales/sale_add.html:928
+#: STORA/sales/templates/sales/sale_add.html:950
 msgid "Qty"
 msgstr "К-во"
 
@@ -809,8 +809,8 @@ msgstr "Все още няма добавени продукти в тази д�
 
 #: STORA/deliveries/templates/deliveries/_delivery_items_table.html:840
 #: STORA/revisions/templates/revisions/revision_detail.html:257
-#: STORA/sales/templates/sales/sale_add.html:1109
-#: STORA/sales/templates/sales/sale_add.html:1149
+#: STORA/sales/templates/sales/sale_add.html:1131
+#: STORA/sales/templates/sales/sale_add.html:1171
 msgid "Select a line first (tap its row)."
 msgstr "Първо избери ред (цъкни върху него)."
 
@@ -893,7 +893,7 @@ msgstr "Импортът е неуспешен (мрежова грешка)."
 #: STORA/deliveries/templates/deliveries/_delivery_items_table.html:1245
 #: STORA/deliveries/templates/deliveries/_delivery_items_table.html:1421
 #: STORA/deliveries/templates/deliveries/_delivery_items_table.html:1565
-#: STORA/deliveries/templates/deliveries/delivery_add.html:166
+#: STORA/deliveries/templates/deliveries/delivery_add.html:183
 #: STORA/deliveries/templates/deliveries/delivery_edit.html:153
 #: STORA/products/templates/products/_recipe_formset.html:223
 #: STORA/products/templates/products/_supplier_formset.html:79
@@ -952,7 +952,27 @@ msgstr "Ново изписване"
 msgid "New Scrap"
 msgstr "Нов брак"
 
-#: STORA/deliveries/templates/deliveries/delivery_add.html:20
+#: STORA/deliveries/templates/deliveries/delivery_add.html:25
+msgid "Open operations"
+msgstr "Отворени операции"
+
+#: STORA/deliveries/templates/deliveries/delivery_add.html:29
+msgid "Delivery in progress"
+msgstr "Доставка в процес"
+
+#: STORA/deliveries/templates/deliveries/delivery_add.html:29
+msgid "Write-off in progress"
+msgstr "Изписване в процес"
+
+#: STORA/deliveries/templates/deliveries/delivery_add.html:29
+msgid "Scrap in progress"
+msgstr "Брак в процес"
+
+#: STORA/deliveries/templates/deliveries/delivery_add.html:29
+msgid "Empty"
+msgstr "Празен"
+
+#: STORA/deliveries/templates/deliveries/delivery_add.html:36
 msgid ""
 "Connection trouble -- your latest changes aren't saving automatically right "
 "now. Keep working; don't press Save/Complete until this message disappears."
@@ -961,19 +981,19 @@ msgstr ""
 "автоматично. Продължавайте да работите; не натискайте Запази/Завърши, докато "
 "това съобщение не изчезне."
 
-#: STORA/deliveries/templates/deliveries/delivery_add.html:39
+#: STORA/deliveries/templates/deliveries/delivery_add.html:55
 #: STORA/deliveries/templates/deliveries/delivery_edit.html:35
 #, python-format
 msgid "Product row %(row)s:"
 msgstr "Ред %(row)s:"
 
-#: STORA/deliveries/templates/deliveries/delivery_add.html:50
+#: STORA/deliveries/templates/deliveries/delivery_add.html:67
 #: STORA/deliveries/templates/deliveries/delivery_edit.html:46
 #: STORA/pricelists/templates/pricelists/price_list_form.html:32
 msgid "General Information"
 msgstr "Обща информация"
 
-#: STORA/deliveries/templates/deliveries/delivery_add.html:72
+#: STORA/deliveries/templates/deliveries/delivery_add.html:89
 #: STORA/deliveries/templates/deliveries/delivery_edit.html:68
 #: STORA/orders/templates/orders/order_new.html:35
 #: STORA/pricelists/templates/pricelists/price_list_form.html:63
@@ -982,38 +1002,38 @@ msgstr "Обща информация"
 msgid "Search supplier by name..."
 msgstr "Търси доставчик по име..."
 
-#: STORA/deliveries/templates/deliveries/delivery_add.html:80
+#: STORA/deliveries/templates/deliveries/delivery_add.html:97
 #: STORA/deliveries/templates/deliveries/delivery_edit.html:76
 msgid "New supplier"
 msgstr "Нов доставчик"
 
-#: STORA/deliveries/templates/deliveries/delivery_add.html:113
+#: STORA/deliveries/templates/deliveries/delivery_add.html:130
 #: STORA/deliveries/templates/deliveries/delivery_edit.html:109
 #: STORA/products/models.py:260
 #: STORA/reports/templates/reports/dashboard.html:46
-#: STORA/sales/templates/sales/sale_add.html:2007 templates/base.html:78
+#: STORA/sales/templates/sales/sale_add.html:2029 templates/base.html:78
 #: templates/base.html:268
 msgid "Products"
 msgstr "Продукти"
 
-#: STORA/deliveries/templates/deliveries/delivery_add.html:120
+#: STORA/deliveries/templates/deliveries/delivery_add.html:137
 msgid "Complete Write-off"
 msgstr "Приключи изписването"
 
-#: STORA/deliveries/templates/deliveries/delivery_add.html:120
+#: STORA/deliveries/templates/deliveries/delivery_add.html:137
 msgid "Complete Scrap"
 msgstr "Приключи брака"
 
-#: STORA/deliveries/templates/deliveries/delivery_add.html:120
+#: STORA/deliveries/templates/deliveries/delivery_add.html:137
 msgid "Complete Delivery"
 msgstr "Приключи доставката"
 
-#: STORA/deliveries/templates/deliveries/delivery_add.html:122
+#: STORA/deliveries/templates/deliveries/delivery_add.html:139
 msgid "Cancel this delivery? Everything entered so far will be discarded."
 msgstr "Отказ от тази доставка? Всичко въведено досега ще бъде изгубено."
 
-#: STORA/deliveries/templates/deliveries/delivery_add.html:296
-#: STORA/sales/templates/sales/sale_add.html:858
+#: STORA/deliveries/templates/deliveries/delivery_add.html:341
+#: STORA/sales/templates/sales/sale_add.html:863
 msgid ""
 "Connection trouble -- wait for the warning banner to disappear before "
 "saving, so nothing gets lost."
@@ -1126,7 +1146,7 @@ msgstr "Добави нов тип документ"
 #: STORA/products/templates/products/tax_group_list.html:24
 #: STORA/sales/templates/sales/sale_add.html:226
 #: STORA/sales/templates/sales/sale_add.html:278
-#: STORA/sales/templates/sales/sale_add.html:2069
+#: STORA/sales/templates/sales/sale_add.html:2093
 msgid "Edit"
 msgstr "Редакция"
 
@@ -1180,7 +1200,7 @@ msgstr "Добави нова причина за брак"
 msgid "No scrap reasons found."
 msgstr "Няма намерени причини за брак."
 
-#: STORA/deliveries/views.py:289
+#: STORA/deliveries/views.py:285
 #, python-format
 msgid ""
 "Could not create the new product \"%(name)s\" -- its name, code or barcode "
@@ -1191,7 +1211,7 @@ msgstr ""
 "баркодът му вероятно вече се ползват от друг продукт или от друг ред на тази "
 "доставка. Нищо не е запазено: махни или поправи този ред и опитай пак."
 
-#: STORA/deliveries/views.py:387 STORA/products/views.py:828
+#: STORA/deliveries/views.py:392 STORA/products/views.py:828
 #: STORA/products/views.py:915
 msgid ""
 "Saving failed due to an unexpected error. Nothing was lost -- your entered "
@@ -1202,11 +1222,15 @@ msgstr ""
 "въведеното от вас е все още по-долу. Опитайте отново, или се обърнете към "
 "администратор, ако продължава да се случва."
 
-#: STORA/deliveries/views.py:495
+#: STORA/deliveries/views.py:502
 msgid "No file was uploaded."
 msgstr "Не е качен файл."
 
-#: STORA/deliveries/views.py:629
+#: STORA/deliveries/views.py:548 STORA/sales/views.py:453
+msgid "Invalid tab."
+msgstr "Невалиден таб."
+
+#: STORA/deliveries/views.py:682
 msgid ""
 "Saving failed due to an unexpected error. Nothing was lost -- your edits are "
 "still below. Please try again, or contact the administrator if it keeps "
@@ -1960,7 +1984,7 @@ msgid ""
 msgstr ""
 "Ако е отметнато, категорията се показва като бутон-папка на касовия екран."
 
-#: STORA/products/models.py:58 STORA/sales/templates/sales/sale_add.html:1998
+#: STORA/products/models.py:58 STORA/sales/templates/sales/sale_add.html:2020
 #: templates/base.html:83 templates/base.html:270
 msgid "Categories"
 msgstr "Категории"
@@ -2189,7 +2213,7 @@ msgid "+ Add another barcode"
 msgstr "+ Добави още баркод"
 
 #: STORA/products/templates/products/_popup_close.html:3
-#: STORA/sales/templates/sales/sale_add.html:2069
+#: STORA/sales/templates/sales/sale_add.html:2093
 msgid "Done"
 msgstr "Готово"
 
@@ -2524,7 +2548,7 @@ msgstr "Управление на атрибути"
 #: STORA/products/templates/products/product_create.html:152
 #: STORA/products/templates/products/product_edit.html:157
 #: STORA/sales/templates/sales/sale_add.html:413
-#: STORA/sales/templates/sales/sale_add.html:935
+#: STORA/sales/templates/sales/sale_add.html:957
 msgid "Price"
 msgstr "Цена"
 
@@ -3052,7 +3076,7 @@ msgstr "Няма избрани продукти."
 msgid "You do not have permission to do this."
 msgstr "Нямаш права за това действие."
 
-#: STORA/products/views.py:332 STORA/sales/templates/sales/sale_add.html:1296
+#: STORA/products/views.py:332 STORA/sales/templates/sales/sale_add.html:1318
 msgid "Enter a valid price."
 msgstr "Въведи валидна цена."
 
@@ -3791,7 +3815,7 @@ msgid "Could not remove:"
 msgstr "Не можа да бъде премахнато:"
 
 #: STORA/revisions/templates/revisions/revision_detail.html:613
-#: STORA/sales/templates/sales/sale_add.html:1582
+#: STORA/sales/templates/sales/sale_add.html:1604
 msgid "Product not found"
 msgstr "Продуктът не е намерен"
 
@@ -4413,59 +4437,59 @@ msgstr "Редакция на ред"
 msgid "Show shortcuts"
 msgstr "Покажи бързите бутони"
 
-#: STORA/sales/templates/sales/sale_add.html:716
+#: STORA/sales/templates/sales/sale_add.html:721
 msgid "invalid check digit"
 msgstr "невалидна контролна цифра"
 
-#: STORA/sales/templates/sales/sale_add.html:878
+#: STORA/sales/templates/sales/sale_add.html:900
 msgid "Scan or search a product above to start the sale."
 msgstr "Сканирай или потърси продукт отгоре, за да започнеш продажбата."
 
-#: STORA/sales/templates/sales/sale_add.html:906
+#: STORA/sales/templates/sales/sale_add.html:928
 msgid "Text size"
 msgstr "Размер на текста"
 
-#: STORA/sales/templates/sales/sale_add.html:907
+#: STORA/sales/templates/sales/sale_add.html:929
 msgid "Decrease text size"
 msgstr "Намали текста"
 
-#: STORA/sales/templates/sales/sale_add.html:908
+#: STORA/sales/templates/sales/sale_add.html:930
 msgid "Increase text size"
 msgstr "Увеличи текста"
 
-#: STORA/sales/templates/sales/sale_add.html:945
+#: STORA/sales/templates/sales/sale_add.html:967
 msgid "Sum"
 msgstr "Сума"
 
-#: STORA/sales/templates/sales/sale_add.html:1110
+#: STORA/sales/templates/sales/sale_add.html:1132
 msgid "Select exactly one line for this (several are selected)."
 msgstr "Избери точно един ред за това (в момента са избрани няколко)."
 
-#: STORA/sales/templates/sales/sale_add.html:1289
+#: STORA/sales/templates/sales/sale_add.html:1311
 msgid "Enter a quantity greater than 0."
 msgstr "Въведи количество, по-голямо от 0."
 
-#: STORA/sales/templates/sales/sale_add.html:1310
+#: STORA/sales/templates/sales/sale_add.html:1332
 msgid "Are you sure you want to delete the whole bill?"
 msgstr "Сигурен ли си, че искаш да изтриеш цялата сметка?"
 
-#: STORA/sales/templates/sales/sale_add.html:1682 templates/base.html:44
+#: STORA/sales/templates/sales/sale_add.html:1704 templates/base.html:44
 msgid "Switch keyboard language"
 msgstr "Смени езика на клавиатурата"
 
-#: STORA/sales/templates/sales/sale_add.html:1693 templates/base.html:45
+#: STORA/sales/templates/sales/sale_add.html:1715 templates/base.html:45
 msgid "Space"
 msgstr "Интервал"
 
-#: STORA/sales/templates/sales/sale_add.html:1975
+#: STORA/sales/templates/sales/sale_add.html:1997
 msgid "Remove shortcut"
 msgstr "Премахни бързия бутон"
 
-#: STORA/sales/templates/sales/sale_add.html:1985
+#: STORA/sales/templates/sales/sale_add.html:2007
 msgid "+ Add shortcut"
 msgstr "+ Добави бърз бутон"
 
-#: STORA/sales/templates/sales/sale_add.html:2019
+#: STORA/sales/templates/sales/sale_add.html:2041
 msgid ""
 "Nothing left to pin -- flag more categories/products as „Show on POS screen“ "
 "first."
@@ -4473,27 +4497,27 @@ msgstr ""
 "Няма какво повече да се закачи -- първо маркирай още категории/продукти с "
 "„Показвай на касовия екран“."
 
-#: STORA/sales/templates/sales/sale_add.html:2048
+#: STORA/sales/templates/sales/sale_add.html:2070
 msgid "Could not add this shortcut."
 msgstr "Бързият бутон не можа да бъде добавен."
 
-#: STORA/sales/templates/sales/sale_add.html:2060
+#: STORA/sales/templates/sales/sale_add.html:2083
 msgid "Could not remove this shortcut."
 msgstr "Бързият бутон не можа да бъде премахнат."
 
-#: STORA/sales/templates/sales/sale_add.html:2196
+#: STORA/sales/templates/sales/sale_add.html:2220
 msgid "Add at least one product before completing the sale."
 msgstr "Добави поне един продукт, преди да приключиш продажбата."
 
-#: STORA/sales/templates/sales/sale_add.html:2206
+#: STORA/sales/templates/sales/sale_add.html:2230
 msgid "Choose a payment method."
 msgstr "Избери начин на плащане."
 
-#: STORA/sales/templates/sales/sale_add.html:2217
+#: STORA/sales/templates/sales/sale_add.html:2241
 msgid "Paid amount is less than the total."
 msgstr "Платената сума е по-малка от общата."
 
-#: STORA/sales/templates/sales/sale_add.html:2228
+#: STORA/sales/templates/sales/sale_add.html:2252
 msgid ""
 "Card amount must be more than 0 and less than the total for a mixed payment."
 msgstr ""
@@ -4567,10 +4591,6 @@ msgid ""
 msgstr ""
 "Тази продажба не може да бъде изтрита -- към нея има сторно. Сторното е "
 "запис за върнати пари и трябва да остане заедно с продажбата си."
-
-#: STORA/sales/views.py:453
-msgid "Invalid tab."
-msgstr "Невалиден таб."
 
 #: STORA/sales/views.py:489
 msgid "Invalid type"

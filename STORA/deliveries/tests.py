@@ -1978,3 +1978,114 @@ class DeliverySaveCrashSafetyTests(TestCase):
 
         messages = [str(m) for m in response.context['messages']]
         self.assertTrue(messages, 'expected an error message to be flashed')
+
+class DeliveryTabsTests(TestCase):
+    """The 3 parallel open operations (deliveries/tab_state.py): each tab
+    keeps its own independent draft, and a tab remembers whether it holds a
+    delivery, write-off or scrap."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username='tabs-clerk', password='pass12345', role=User.WAREHOUSE)
+        self.client.login(username='tabs-clerk', password='pass12345')
+        self.product = Product.objects.create(
+            internal_code='TAB0001', name='Tabs Product', delivery_price=Decimal('1.00'), sell_price=Decimal('2.00'),
+        )
+
+    def _save_draft(self, path='/deliveries/add/', tab=None, with_item=True, comment=''):
+        payload = {
+            'path': path,
+            'form_data': {'comment': comment},
+            'formset_data': {
+                'TOTAL_FORMS': 1 if with_item else 0,
+                'forms': [{'delivery_item': str(self.product.pk), 'delivery_quantity': '1'}] if with_item else [],
+            },
+        }
+        if tab:
+            payload['tab'] = tab
+        return self.client.post(reverse('delivery_draft_save'), data=json.dumps(payload), content_type='application/json')
+
+    def _switch(self, tab, path='/deliveries/add/'):
+        return self.client.post(
+            reverse('switch_delivery_tab'), data=json.dumps({'tab': tab, 'path': path}), content_type='application/json',
+        )
+
+    def test_drafts_on_different_tabs_stay_independent(self):
+        self._save_draft(tab='1', comment='first')
+        self._save_draft(tab='2', comment='second')
+        self._switch('1')
+        response = self.client.get(reverse('delivery_add'))
+        self.assertEqual(response.context['form'].initial['comment'], 'first')
+        self._switch('2')
+        response = self.client.get(reverse('delivery_add'))
+        self.assertEqual(response.context['form'].initial['comment'], 'second')
+
+    def test_switch_returns_the_page_of_the_target_tabs_draft(self):
+        self._save_draft(path='/deliveries/write-off/add/', tab='2')
+        result = self._switch('2', path='/deliveries/add/').json()
+        self.assertEqual(result['path'], '/deliveries/write-off/add/')
+
+    def test_switch_to_empty_tab_stays_on_current_page(self):
+        result = self._switch('3', path='/deliveries/scrap/add/').json()
+        self.assertEqual(result['path'], '/deliveries/scrap/add/')
+
+    def test_invalid_tab_rejected(self):
+        self.assertEqual(self._switch('9').status_code, 400)
+
+    def test_opening_other_operation_does_not_overwrite_a_filled_tab(self):
+        self._save_draft(path='/deliveries/add/', tab='1', comment='keep me')
+        response = self.client.get(reverse('writeoff_add'))
+        # tab 1 holds a delivery, so the write-off page moves to a free tab.
+        self.assertEqual(response.context['delivery_tab'], '2')
+        self._save_draft(path='/deliveries/write-off/add/', tab='2')
+        self._switch('1')
+        response = self.client.get(reverse('delivery_add'))
+        self.assertEqual(response.context['form'].initial['comment'], 'keep me')
+
+    def test_tabs_summary_marks_filled_tabs(self):
+        self._save_draft(tab='2')
+        self._save_draft(tab='3', with_item=False)  # header-only draft doesn't count
+        response = self.client.get(reverse('delivery_add'))
+        by_tab = {t['tab']: t for t in response.context['delivery_tabs_summary']}
+        self.assertFalse(by_tab['1']['has_items'])
+        self.assertTrue(by_tab['2']['has_items'])
+        self.assertFalse(by_tab['3']['has_items'])
+
+    def test_cancel_clears_only_that_tab(self):
+        self._save_draft(tab='1', comment='one')
+        self._save_draft(tab='2', comment='two')
+        response = self.client.get(reverse('cancel_delivery_tab') + '?tab=1&type=DELIVERY')
+        self.assertRedirects(response, reverse('delivery_add'), fetch_redirect_response=False)
+        self._switch('2')
+        response = self.client.get(reverse('delivery_add'))
+        self.assertEqual(response.context['form'].initial['comment'], 'two')
+        self._switch('1')
+        response = self.client.get(reverse('delivery_add'))
+        self.assertFalse(response.context['form'].initial.get('comment'))
+
+    def test_completing_a_delivery_clears_only_its_tab(self):
+        self._save_draft(tab='2', comment='other')
+        supplier = Suppliers.objects.create(name='Tabs Supplier')
+        doc_type = DocumentType.objects.get_or_create(name='Invoice')[0]
+        self._switch('1')
+        response = self.client.post(reverse('delivery_add'), {
+            'draft_tab': '1',
+            'receiver': self.user.pk,
+            'supplier': supplier.pk,
+            'time_of_delivery': '2026-10-01T10:00',
+            'document_type': doc_type.pk,
+            'document_number': 'TAB-1',
+            'document_date': '2026-10-01',
+            'items-TOTAL_FORMS': '1',
+            'items-INITIAL_FORMS': '0',
+            'items-MIN_NUM_FORMS': '0',
+            'items-MAX_NUM_FORMS': '1000',
+            'items-0-delivery_item': str(self.product.pk),
+            'items-0-delivery_quantity': '3',
+            'items-0-price_at_delivery': '1.00',
+            'items-0-total_price_row': '3.00',
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(DeliveryAttributes.objects.filter(document_number='TAB-1').exists())
+        self._switch('2')
+        response = self.client.get(reverse('delivery_add'))
+        self.assertEqual(response.context['form'].initial['comment'], 'other')

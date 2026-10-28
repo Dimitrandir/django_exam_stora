@@ -1965,6 +1965,53 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
     font-weight: 700;
 }
 
+/* Open-operation tabs (1/2/3) on the delivery / write-off / scrap add
+   screens -- pill buttons next to the page title. Filled = that tab has
+   products in it, solid = the tab you're on. Color set explicitly because
+   of the global `button { color: white }` rule. */
+.delivery-form .page-header {
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    flex-wrap: wrap;
+}
+
+.op-tabs {
+    display: flex;
+    gap: 0.4rem;
+}
+
+.op-tab-btn {
+    min-width: 2.4rem;
+    padding: 0.3rem 0.8rem;
+    border: 1.5px solid var(--brand-blue-deep);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--brand-blue-deep);
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.op-tab-btn.has-items:not(.is-active) {
+    background: rgba(43, 111, 209, 0.12);
+}
+
+.op-tab-btn.has-items:not(.is-active)::after {
+    content: "";
+    display: inline-block;
+    width: 0.4rem;
+    height: 0.4rem;
+    margin-left: 0.35rem;
+    border-radius: 50%;
+    background: var(--brand-blue-deep);
+    vertical-align: middle;
+}
+
+.op-tab-btn.is-active {
+    background: var(--brand-blue-deep);
+    color: #ffffff;
+}
+
 .qty-negative {
     color: var(--danger-color);
     font-weight: 600;
