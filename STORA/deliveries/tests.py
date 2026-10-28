@@ -2075,6 +2075,17 @@ class DeliveryTabsTests(TestCase):
         response = self.client.get(reverse('delivery_add'))
         self.assertEqual(response.context['form'].initial['comment'], 'keep me')
 
+    def test_header_only_draft_shows_no_validation_errors_on_load(self):
+        # Autosave now fires on any field change, so a draft with the
+        # supplier/number filled in and an EMPTY grid is common -- it used to
+        # reload with "at least one item" + "Row 1: delivery_item required".
+        self._save_draft(tab='1', with_item=False, comment='header only')
+        response = self.client.get(reverse('delivery_add'))
+        self.assertEqual(response.context['form'].initial['comment'], 'header only')
+        self.assertEqual(response.context['formset'].errors, [])
+        self.assertEqual(response.context['formset'].non_form_errors(), [])
+        self.assertNotIn('form-errors', response.content.decode())
+
     def test_tabs_summary_marks_filled_tabs(self):
         self._save_draft(tab='2')
         self._save_draft(tab='3', with_item=False)  # header-only draft doesn't count

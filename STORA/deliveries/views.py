@@ -132,18 +132,21 @@ def _without_pending_rows(post_data):
     return _rewrite_item_rows(post_data, total_forms, kept_rows)
 
 
-def _formset_for_redisplay(data, initial=None):
+def _formset_for_redisplay(data, initial=None, quiet=False):
     """The items formset to render alongside the grid. Pending Excel rows are
     stripped from `data` first (see _without_pending_rows); if that leaves
     NOTHING (every row was pending), the formset is left unbound instead --
     a bound empty one would print "You must add at least one delivery item"
-    for a grid that visibly has rows."""
+    for a grid that visibly has rows. `quiet=True` (restoring a saved draft
+    on a plain page load, not re-showing a failed submit) does the same for
+    a draft with no rows at all: nothing was submitted, so no validation
+    message belongs on screen."""
     stripped = _without_pending_rows(data)
     had_pending = any(
         data.get(f'items-{i}-new_product') == '1'
         for i in range(int(data.get('items-TOTAL_FORMS', 0) or 0))
     )
-    if had_pending and stripped.get('items-TOTAL_FORMS') == '0':
+    if stripped.get('items-TOTAL_FORMS') == '0' and (had_pending or quiet):
         return DeliveryItemFormSet(prefix='items')
     return DeliveryItemFormSet(stripped, prefix='items', initial=initial)
 
@@ -457,7 +460,15 @@ def deliveries_add(request, movement_type=DeliveryAttributes.MOVEMENT_DELIVERY):
     else:
         if state and state.get('type') == operation_type and state.get('active'):
             form = form_class(initial=state.get('data', {}), current_user=request.user)
-            formset_initial = state.get('formset_data', {}).get('forms', []) or [{}]
+            # Only rows that actually hold something -- a header-only draft
+            # (autosaved when the supplier/number changed, grid still
+            # empty) used to be padded with one blank row here, which the
+            # bound formset then flagged as "delivery_item/quantity
+            # required" on a plain page load.
+            formset_initial = [
+                row for row in state.get('formset_data', {}).get('forms', [])
+                if row.get('delivery_item') or row.get('new_product') == '1'
+            ]
             # Pending Excel rows live only in the grid (delivery_items_initial
             # below), not in the bound formset (see _formset_for_redisplay).
             restore_post_data = build_restore_formset_data(formset_prefix, formset_initial)
@@ -466,7 +477,7 @@ def deliveries_add(request, movement_type=DeliveryAttributes.MOVEMENT_DELIVERY):
             selected_supplier = Suppliers.objects.filter(pk=draft_supplier_id).first() if draft_supplier_id else None
             selected_supplier_name = selected_supplier.name if selected_supplier else ''
 
-            formset = _formset_for_redisplay(restore_post_data)
+            formset = _formset_for_redisplay(restore_post_data, quiet=True)
             delivery_draft = state
         else:
             form = form_class(current_user=request.user)
