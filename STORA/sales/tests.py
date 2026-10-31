@@ -1782,3 +1782,101 @@ class RefundFiscalRetryViewTests(TestCase):
         response = self.client.post(reverse('refund_fiscal_retry', kwargs={'pk': self.refund.pk}))
         self.assertEqual(response.status_code, 302)
         self.assertIn('/accounts/login/', response.url)
+
+
+class RefundFiscalVisibilityTests(TestCase):
+    """"The storno was made but no receipt came out and nobody could see why
+    or print it again" -- the details page now always explains a missing
+    fiscal receipt, offers to print it when that can work, and there is a
+    list of refunds to find it from."""
+
+    def setUp(self):
+        self.cashier = User.objects.create_user(username='refund-vis-cashier', password='pass12345', role=User.CASHIER)
+        self.client.force_login(self.cashier)
+
+    def _refund(self, payment_method=SaleAttributes.CASH, fiscal_status=SaleAttributes.FISCAL_NONE, **sale_extra):
+        sale = SaleAttributes.objects.create(
+            cashier=self.cashier, payment_method=payment_method, amount_paid=Decimal('1.00'),
+            fiscal_status=SaleAttributes.FISCAL_PRINTED, fiscal_receipt_number=1, fiscal_printed_at=timezone.now(),
+            **sale_extra,
+        )
+        return RefundAttributes.objects.create(
+            original_sale=sale, cashier=self.cashier, reason=RefundAttributes.RETURN_COMPLAINT,
+            fiscal_status=fiscal_status,
+        )
+
+    def _details(self, refund):
+        return self.client.get(reverse('refund_details', kwargs={'pk': refund.pk}), HTTP_ACCEPT_LANGUAGE='en')
+
+    @override_settings(FISCAL_ENABLED=True)
+    def test_card_sale_refund_explains_why_and_offers_no_print(self):
+        response = self._details(self._refund(payment_method=SaleAttributes.CARD))
+        self.assertIn('paid by', response.context['fiscal_note'])
+        self.assertFalse(response.context['can_fiscal_print'])
+
+    @override_settings(FISCAL_ENABLED=False)
+    def test_disabled_fiscal_explains_why(self):
+        response = self._details(self._refund())
+        self.assertIn('switched off', response.context['fiscal_note'])
+        self.assertFalse(response.context['can_fiscal_print'])
+
+    @override_settings(FISCAL_ENABLED=True)
+    def test_not_attempted_cash_refund_offers_print_button(self):
+        response = self._details(self._refund())
+        self.assertTrue(response.context['fiscal_note'])
+        self.assertTrue(response.context['can_fiscal_print'])
+        self.assertContains(response, 'Print Fiscal Receipt')
+
+    @override_settings(FISCAL_ENABLED=True)
+    def test_failed_refund_offers_retry_even_for_non_cash(self):
+        refund = self._refund(payment_method=SaleAttributes.CARD, fiscal_status=SaleAttributes.FISCAL_FAILED)
+        refund.fiscal_error = 'device unreachable'
+        refund.save()
+        response = self._details(refund)
+        self.assertTrue(response.context['can_fiscal_print'])
+        self.assertContains(response, 'Retry Fiscal Print')
+        self.assertContains(response, 'device unreachable')
+
+    @override_settings(FISCAL_ENABLED=True)
+    def test_printed_refund_has_no_note_and_no_button(self):
+        response = self._details(self._refund(fiscal_status=SaleAttributes.FISCAL_PRINTED))
+        self.assertEqual(response.context['fiscal_note'], '')
+        self.assertFalse(response.context['can_fiscal_print'])
+
+    @override_settings(FISCAL_ENABLED=True)
+    @patch('STORA.sales.views.fiscal.attempt_print_refund')
+    def test_retry_never_prints_a_second_receipt(self, mock_attempt):
+        refund = self._refund(fiscal_status=SaleAttributes.FISCAL_PRINTED)
+        self.client.post(reverse('refund_fiscal_retry', kwargs={'pk': refund.pk}))
+        mock_attempt.assert_not_called()
+
+    @override_settings(FISCAL_ENABLED=True)
+    @patch('STORA.sales.views.fiscal.attempt_print_refund')
+    def test_print_button_works_for_a_refund_that_was_never_attempted(self, mock_attempt):
+        refund = self._refund()
+        self.client.post(reverse('refund_fiscal_retry', kwargs={'pk': refund.pk}))
+        mock_attempt.assert_called_once()
+
+    @patch('STORA.sales.fiscal.print_fiscal_refund')
+    def test_unexpected_error_is_recorded_not_raised(self, mock_print):
+        mock_print.side_effect = KeyError('Europe/Sofia')  # e.g. missing tz data -- not a FiscalPrintError
+        refund = self._refund()
+        fiscal.attempt_print_refund(refund)  # must not raise
+        refund.refresh_from_db()
+        self.assertEqual(refund.fiscal_status, SaleAttributes.FISCAL_FAILED)
+        self.assertIn('Unexpected error', refund.fiscal_error)
+
+    def test_refund_list_shows_refunds_with_fiscal_status(self):
+        failed = self._refund(fiscal_status=SaleAttributes.FISCAL_FAILED)
+        response = self.client.get(reverse('refund_list'), HTTP_ACCEPT_LANGUAGE='en')
+        self.assertEqual(response.status_code, 200)
+        rows = response.context['refunds_data']
+        self.assertEqual([r['id'] for r in rows], [failed.pk])
+        self.assertEqual(rows[0]['fiscal_status'], SaleAttributes.FISCAL_FAILED)
+        self.assertEqual(rows[0]['view_url'], reverse('refund_details', args=[failed.pk]))
+
+    def test_refund_list_requires_login(self):
+        self.client.logout()
+        response = self.client.get(reverse('refund_list'))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn('/accounts/login/', response.url)

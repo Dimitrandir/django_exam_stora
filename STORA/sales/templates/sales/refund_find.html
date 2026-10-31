@@ -11,7 +11,10 @@
 
 <div class="d-flex justify-content-between align-items-center">
     <h1>{% translate "Refund a Sale" %}</h1>
-    <a href="{% url 'sale_add' %}" class="pill-btn pill-btn--outline">{% translate "Back to Sales" %}</a>
+    <div>
+        <a href="{% url 'refund_list' %}" class="pill-btn pill-btn--outline">{% translate "All refunds" %}</a>
+        <a href="{% url 'sale_add' %}" class="pill-btn pill-btn--outline">{% translate "Back to Sales" %}</a>
+    </div>
 </div>
 
 <form method="get" id="refund-search-form" class="refund-search-form">

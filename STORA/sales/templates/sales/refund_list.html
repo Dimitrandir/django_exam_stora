@@ -1,0 +1,63 @@
+{% extends 'base.html' %}
+{% load static cache_bust i18n %}
+
+{% block title %}STORA - {% translate "Refunds" %}{% endblock %}
+
+{% block main_class %}main-wide{% endblock %}
+{% block container_class %}container-fluid{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator_bootstrap5.min.css' %}">
+{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center">
+    <h1>{% translate "Refunds" %}</h1>
+    <a href="{% url 'refund_find' %}" class="pill-btn pill-btn--outline">{% translate "Refund a Sale" %}</a>
+</div>
+
+{{ refunds_data|json_script:"refunds-data" }}
+<div id="refunds-table-card" class="data-table-card">
+    <div id="refunds-table" class="table-sm"></div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'vendor/sheetjs/xlsx.full.min.js' %}"></script>
+<script src="{% static 'vendor/tabulator/tabulator.min.js' %}"></script>
+<script src="{% static_v 'js/data-table.js' %}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    function moneyFormatter(cell) {
+        var v = Number(cell.getValue());
+        return isNaN(v) ? '' : v.toFixed(2);
+    }
+
+    // Colour by the status CODE, show/filter by the translated label.
+    function fiscalFormatter(cell) {
+        var code = cell.getData().fiscal_status;
+        var cls = code === 'PRINTED' ? 'text-success' : code === 'FAILED' ? 'text-danger' : 'text-muted';
+        return '<span class="' + cls + ' fw-semibold">' + cell.getValue() + '</span>';
+    }
+
+    var table = initExcelStyleTable('#refunds-table', 'refunds-data', [
+        {title: '{% translate "ID" %}', field: 'id', width: 70, hozAlign: 'center'},
+        {title: '{% translate "Date" %}', field: 'date', width: 100},
+        {title: '{% translate "Time" %}', field: 'time', width: 80},
+        {title: '{% translate "Sale" %}', field: 'sale_id', width: 80, hozAlign: 'center'},
+        {title: '{% translate "Cashier" %}', field: 'cashier', widthGrow: 2},
+        {title: '{% translate "Reason" %}', field: 'reason', widthGrow: 2},
+        {title: '{% translate "Total" %}', field: 'total', width: 110, hozAlign: 'right', formatter: moneyFormatter},
+        {title: '{% translate "Fiscal Status" %}', field: 'fiscal', width: 150, hozAlign: 'center', formatter: fiscalFormatter},
+    ], {placeholder: '{% translate "No refunds yet." %}'});
+
+    attachTableExportToToolbar(table, '#refunds-table-card', 'refunds.xlsx', '{% translate "Refunds" %}');
+
+    table.on('rowClick', function (e, row) {
+        window.location = row.getData().view_url;
+    });
+});
+</script>
+{% endblock %}

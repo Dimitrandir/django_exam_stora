@@ -13,7 +13,7 @@ from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 from django.utils.translation import gettext as _
-from django.views.generic import DetailView, DeleteView
+from django.views.generic import DetailView, DeleteView, TemplateView
 from django.views.decorators.http import require_POST
 from STORA.sales.tasks import log_sale_completed
 
@@ -317,7 +317,9 @@ def sale_fiscal_retry(request, pk):
     the original attempt at checkout: whoever clicks this is standing next
     to the printer waiting to see if it works this time."""
     sale = get_object_or_404(SaleAttributes, pk=pk)
-    if settings.FISCAL_ENABLED:
+    if sale.fiscal_status == SaleAttributes.FISCAL_PRINTED:
+        messages.warning(request, _('A fiscal receipt was already printed for this sale.'))
+    elif settings.FISCAL_ENABLED:
         fiscal.attempt_print(sale)
     return redirect('sale_details', pk=sale.pk)
 
@@ -743,6 +745,23 @@ def refund_new(request, pk):
     })
 
 
+def _refund_fiscal_note(refund):
+    """Why a refund with fiscal_status NONE has no fiscal receipt -- shown on
+    its details page, so "no receipt and no idea why" always has an answer.
+    '' once a print was attempted (PRINTED/FAILED show their own message)."""
+    if refund.fiscal_status != SaleAttributes.FISCAL_NONE:
+        return ''
+    if not settings.FISCAL_ENABLED:
+        return _('Fiscal printing is switched off on this computer, so nothing was sent to the fiscal device.')
+    original = refund.original_sale
+    if original.payment_method != SaleAttributes.CASH:
+        return _(
+            'The original sale was paid by "%(method)s". For now only cash sales are printed on the '
+            'fiscal device, so no fiscal storno receipt was attempted for this refund.'
+        ) % {'method': original.get_payment_method_display() or '-'}
+    return _('A fiscal storno receipt was not attempted for this refund (no result was recorded).')
+
+
 class RefundDetailView(LoginRequiredMixin, StaffPermissionRequiredMixin, DetailView):
     permission_required = 'sales.view_saleattributes'
     model = RefundAttributes
@@ -751,6 +770,7 @@ class RefundDetailView(LoginRequiredMixin, StaffPermissionRequiredMixin, DetailV
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        refund = self.object
         context['refund_items_data'] = [
             {
                 'product_name': item.original_item.sale_item.name,
@@ -758,7 +778,46 @@ class RefundDetailView(LoginRequiredMixin, StaffPermissionRequiredMixin, DetailV
                 'price_at_refund': float(item.price_at_refund),
                 'total_price_row': float(item.total_price_row or 0),
             }
-            for item in self.object.items.select_related('original_item__sale_item').all()
+            for item in refund.items.select_related('original_item__sale_item').all()
+        ]
+        context['fiscal_note'] = _refund_fiscal_note(refund)
+        # Offered whenever a fiscal storno could actually work: fiscal
+        # printing is on, nothing printed yet, and the original sale was a
+        # cash one (the only kind that has a fiscal receipt to storno).
+        # A FAILED refund always gets the button, whatever the cause.
+        context['can_fiscal_print'] = (
+            settings.FISCAL_ENABLED
+            and refund.fiscal_status != SaleAttributes.FISCAL_PRINTED
+            and (refund.fiscal_status == SaleAttributes.FISCAL_FAILED
+                 or refund.original_sale.payment_method == SaleAttributes.CASH)
+        )
+        return context
+
+
+class RefundListView(LoginRequiredMixin, StaffPermissionRequiredMixin, TemplateView):
+    """All refunds, newest first, with their fiscal status -- the place to
+    find a storno whose receipt didn't come out and print it again (the
+    details page is otherwise only reachable right after creating it)."""
+    permission_required = 'sales.view_saleattributes'
+    template_name = 'sales/refund_list.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        refunds = RefundAttributes.objects.select_related('cashier').order_by('-time_of_refund')
+        context['refunds_data'] = [
+            {
+                'id': refund.pk,
+                'date': timezone.localtime(refund.time_of_refund).strftime('%d.%m.%Y'),
+                'time': timezone.localtime(refund.time_of_refund).strftime('%H:%M'),
+                'sale_id': refund.original_sale_id,
+                'cashier': str(refund.cashier),
+                'reason': refund.get_reason_display(),
+                'total': float(refund.total_amount),
+                'fiscal_status': refund.fiscal_status,
+                'fiscal': refund.get_fiscal_status_display(),
+                'view_url': reverse('refund_details', args=[refund.pk]),
+            }
+            for refund in refunds
         ]
         return context
 
@@ -770,6 +829,10 @@ def refund_fiscal_retry(request, pk):
     """Re-attempts fiscal storno printing for a refund whose first attempt
     failed -- same pattern as sale_fiscal_retry."""
     refund = get_object_or_404(RefundAttributes, pk=pk)
-    if settings.FISCAL_ENABLED:
+    if refund.fiscal_status == SaleAttributes.FISCAL_PRINTED:
+        # Never a second receipt for the same storno -- a double click, or a
+        # stale page opened before the first attempt actually succeeded.
+        messages.warning(request, _('A fiscal storno receipt was already printed for this refund.'))
+    elif settings.FISCAL_ENABLED:
         fiscal.attempt_print_refund(refund)
     return redirect('refund_details', pk=refund.pk)

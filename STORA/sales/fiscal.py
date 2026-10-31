@@ -295,11 +295,14 @@ def attempt_print(sale):
         logger.info('Fiscal: attempting print for Sale #%s on %s', sale.pk, settings.FISCAL_COM_PORT)
     try:
         result = print_fiscal_receipt(sale)
-    except FiscalPrintError as exc:
+    except Exception as exc:
+        # See attempt_print_refund -- same "never raises" guarantee.
+        if not isinstance(exc, FiscalPrintError):
+            logger.exception('Unexpected error printing fiscal receipt for Sale #%s', sale.pk)
         sale.fiscal_status = SaleAttributes.FISCAL_FAILED
-        sale.fiscal_error = str(exc)
+        sale.fiscal_error = str(exc) if isinstance(exc, FiscalPrintError) else f'Unexpected error: {exc!r}'
         sale.save(update_fields=['fiscal_status', 'fiscal_error'])
-        logger.warning('Fiscal print failed for Sale #%s: %s', sale.pk, exc)
+        logger.warning('Fiscal print failed for Sale #%s: %s', sale.pk, sale.fiscal_error)
     else:
         sale.fiscal_status = SaleAttributes.FISCAL_PRINTED
         sale.fiscal_error = ''
@@ -406,11 +409,17 @@ def attempt_print_refund(refund):
         logger.info('Fiscal: attempting storno print for Refund #%s on %s', refund.pk, settings.FISCAL_COM_PORT)
     try:
         unic_sale_num = print_fiscal_refund(refund)
-    except FiscalPrintError as exc:
+    except Exception as exc:
+        # Not just FiscalPrintError -- "never raises" has to hold for a bug
+        # or a missing setting too, otherwise the refund (already saved)
+        # ends in a 500 page with status NONE and no recorded reason, the
+        # exact "no receipt and no idea why" situation reported live.
+        if not isinstance(exc, FiscalPrintError):
+            logger.exception('Unexpected error printing fiscal storno for Refund #%s', refund.pk)
         refund.fiscal_status = SaleAttributes.FISCAL_FAILED
-        refund.fiscal_error = str(exc)
+        refund.fiscal_error = str(exc) if isinstance(exc, FiscalPrintError) else f'Unexpected error: {exc!r}'
         refund.save(update_fields=['fiscal_status', 'fiscal_error'])
-        logger.warning('Fiscal storno failed for Refund #%s: %s', refund.pk, exc)
+        logger.warning('Fiscal storno failed for Refund #%s: %s', refund.pk, refund.fiscal_error)
     else:
         refund.fiscal_status = SaleAttributes.FISCAL_PRINTED
         refund.fiscal_error = ''
