@@ -1710,6 +1710,21 @@ class FiscalDeviceErrorHintTests(TestCase):
         self.assertEqual(fiscal._describe_device_error('199'), '199')
 
 
+class FiscalSentSummaryTests(TestCase):
+    def test_start_receipt_error_shows_sent_fields_with_password_masked(self):
+        summary = fiscal._sent_summary('FDStartFiscRcp', {
+            'Operator': 20, 'Password': 9999, 'Refund': 'R', 'Invoice': '', 'DocLink': 47, 'FiskMem': '36752531',
+        })
+        self.assertIn("'DocLink': 47", summary)
+        self.assertIn("'FiskMem': '36752531'", summary)
+        self.assertIn("'Password': '***'", summary)
+        self.assertNotIn('9999', summary)
+        self.assertNotIn('Invoice', summary)  # blanks left out
+
+    def test_other_commands_add_nothing(self):
+        self.assertEqual(fiscal._sent_summary('FDSaleItem', {'Text1': 'x'}), '')
+
+
 class FiscalAttemptPrintRefundTests(TestCase):
     def setUp(self):
         self.cashier = User.objects.create_user(username='refund-attempt-cashier', password='pass12345')
