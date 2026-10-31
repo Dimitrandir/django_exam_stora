@@ -1086,6 +1086,7 @@ FISCAL_SETTINGS = dict(
     FISCAL_COM_PORT='COM4',
     FISCAL_API_URL='http://127.0.0.1:7000/Api',
     FISCAL_DEVICE_SERIAL='DY000001',
+    FISCAL_DEVICE_FM_NUMBER='36656108',
     FISCAL_OPERATOR_NUM='1',
     FISCAL_OPERATOR_PASSWORD='1',
 )
@@ -1633,6 +1634,7 @@ class FiscalRefundTests(TestCase):
         self.assertEqual(start_data['Reason'], '0')  # RETURN_COMPLAINT -> "0" (string, not int)
         self.assertEqual(start_data['DocLink'], 3)
         self.assertEqual(start_data['DocLinkDT'], '14-03-26 14:30:00')
+        self.assertEqual(start_data['FiskMem'], '36656108')
 
         item_call = mock_post.call_args_list[1]
         item_data = item_call.args[1]
@@ -1675,6 +1677,37 @@ class FiscalRefundTests(TestCase):
 
         sent_commands = [call.args[0] for call in mock_post.call_args_list]
         self.assertEqual(sent_commands, ['FDStartFiscRcp', 'FDSaleItem', 'FDCancelRcp'])
+
+
+class FiscalRefundMissingFmNumberTests(TestCase):
+    """A machine whose .env never got FISCAL_DEVICE_FM_NUMBER used to send
+    FiskMem='' and get the cryptic "service error -- 21" from the device."""
+
+    setUp = FiscalRefundTests.setUp  # same fixture (fiscalized sale + refund), without re-running its tests
+
+    def _assert_rejected_before_touching_the_device(self):
+        with patch('STORA.sales.fiscal._start_ecrcommapp') as mock_start:
+            with self.assertRaises(fiscal.FiscalPrintError) as ctx:
+                fiscal.print_fiscal_refund(self.refund)
+            mock_start.assert_not_called()
+        self.assertIn('FISCAL_DEVICE_FM_NUMBER', str(ctx.exception))
+
+    @override_settings(**{**FISCAL_SETTINGS, 'FISCAL_DEVICE_FM_NUMBER': ''})
+    def test_empty_fm_number_is_caught_with_a_clear_message(self):
+        self._assert_rejected_before_touching_the_device()
+
+    @override_settings(**{**FISCAL_SETTINGS, 'FISCAL_DEVICE_FM_NUMBER': '1234'})
+    def test_fm_number_must_be_eight_digits(self):
+        self._assert_rejected_before_touching_the_device()
+
+
+class FiscalDeviceErrorHintTests(TestCase):
+    def test_known_code_gets_a_plain_english_hint(self):
+        self.assertIn('outside the allowed limits', fiscal._describe_device_error('21'))
+        self.assertTrue(fiscal._describe_device_error(21).startswith('21 ('))
+
+    def test_unknown_code_is_still_shown(self):
+        self.assertEqual(fiscal._describe_device_error('199'), '199')
 
 
 class FiscalAttemptPrintRefundTests(TestCase):
