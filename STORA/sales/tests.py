@@ -1351,10 +1351,10 @@ class FiscalDailyReportTests(TestCase):
     @patch('STORA.sales.fiscal._post_command')
     @patch('STORA.sales.fiscal._start_ecrcommapp')
     @patch('STORA.sales.fiscal._stop_ecrcommapp')
-    def test_x_report_uses_item_1_and_stops_app(self, mock_stop, mock_start, mock_post):
+    def test_x_report_uses_item_2_and_stops_app(self, mock_stop, mock_start, mock_post):
         mock_start.return_value = MagicMock()
         fiscal.print_x_report()
-        mock_post.assert_called_once_with('FDDailyRpt', {'Item': 1, 'Option': ''})
+        mock_post.assert_called_once_with('FDDailyRpt', {'Item': 2, 'Option': ''})
         mock_stop.assert_called_once()
 
     @override_settings(**FISCAL_SETTINGS)

@@ -485,12 +485,14 @@ def attempt_print_refund(refund):
             logger.info('Fiscal: Refund #%s storno printed -- УНП %s', refund.pk, unic_sale_num)
 
 
-# Daily report Item values, straight from the FDDailyRpt table in
-# kasov_aparat_ECRCommApp_Guide.pdf (order they're listed in, 0-indexed --
-# confirmed by the worked example there, which used Item=0 for the Z report
-# it showed a real response for).
+# Daily report Item values. Z=0 is the guide's own worked example. X=2 is
+# what the device's own ECRWebApp sends for "Дневен отчет без нулиране
+# (X Отчет)" (read off its Request panel, 2026-10-31) -- NOT 1, which is what
+# was first guessed from the order the guide lists the options in (the
+# guide's table loses the numeric codes in text extraction) and which, on the
+# real device, closed the day like Z did.
 _DAILY_RPT_ITEM_Z = 0
-_DAILY_RPT_ITEM_X = 1
+_DAILY_RPT_ITEM_X = 2
 
 
 def _print_daily_report(item):
