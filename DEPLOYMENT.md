@@ -203,7 +203,10 @@ WhiteNoise (`DEBUG=False`) чете статичните файлове в па�
    ```bat
    schtasks /Create /TN "STORA Backup" /TR "\"C:\път\до\репото\.venv\Scripts\pythonw.exe\" \"C:\път\до\репото\manage.py\" backup_db" /SC MINUTE /MO 15 /RU <потребител> /IT
    ```
-   (Така `logs\backup_task.log` не се пише — резултатите са само в `backup.log`.)
+   (Така изходът на задачата отива в `logs\background_commands.log` вместо в
+   `logs\backup_task.log`; резултатите на самия бекъп са в `backup.log`. Ако задачата
+   се пуска на 60 мин, сложи `BACKUP_INTERVAL_MINUTES=55` — иначе проверка, паднала
+   минута преди изтичането на часа, пропуска и бекъпът става на ~2 часа.)
 
 **Редовно:** последният ред на `backup.log` в OneDrive папката трябва да е `OK` със скорошна
 дата (поне веднъж на денонощие). `FAILED` = няма бекъп — причината е на същия ред.
