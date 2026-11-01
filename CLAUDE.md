@@ -1527,6 +1527,24 @@ Apps: accounts, core, products, deliveries, sales, reports.
   рецептурен продукт (връща съставките обратно). Регресионен тест в
   `StockAsOfDateReportViewTests.test_refund_after_date_is_undone`.
 
+- **Бекъп: `manage.py backup_db` (`core/management/commands/backup_db.py`),**
+  **в OneDrive папка, настройки `BACKUP_*` в `.env`.** Task Scheduler го пуска
+  на фиксирани 15 мин (`scripts/backup_db.bat`), а командата сама решава:
+  не по-често от `BACKUP_INTERVAL_MINUTES`, само при промени в базата
+  (сбор от `n_tup_ins/upd/del` в `pg_stat_user_tables`, **без
+  `django_session`** — тя се пише при всяко отваряне на страница), задължително
+  след `BACKUP_FORCE_AFTER_HOURS`. Ротация по общ размер (`BACKUP_MAX_SIZE_GB`),
+  никога под `BACKUP_KEEP_MIN` файла. Копира и `.env` + `nssm dump STORA` в
+  `config/`. Файлът се пише като `.part` и се преименува накрая (OneDrive да
+  не качи половин файл). Времената са в часовата зона на обекта
+  (`FISCAL_DEVICE_TIME_ZONE`), не в UTC. Решено с потребителя: OneDrive
+  (безплатните 5 GB → лимит 3 GB), `.env` се качва без допълнителна парола
+  (акаунтът трябва да е с 2FA), задачата върви като потребителя на касата,
+  не SYSTEM (OneDrive синхронизира само неговата папка). WAL архивиране /
+  point-in-time recovery е обсъдено и отложено — излишно при база от
+  няколко MB. Броячите се нулират при рестарт на PostgreSQL → един излишен
+  бекъп, безопасната посока.
+
 **Технически капани (открити наскоро, лесно се повтарят)**  
 - **Product create/edit темплейтите рендират полетата на ProductForms**
   **ръчно, едно по едно (** **{{ form.name }}** **, ** **{{ form.category }}** **, ...), не**

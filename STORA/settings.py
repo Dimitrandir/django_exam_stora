@@ -274,6 +274,28 @@ FISCAL_OPERATOR_PASSWORD = os.environ.get('FISCAL_OPERATOR_PASSWORD', '1')
 # actually reach the console/log file.
 FISCAL_DEBUG = os.environ.get('FISCAL_DEBUG', 'False') == 'True'
 
+# Database backup (`manage.py backup_db`, see DEPLOYMENT.md section 8). Task
+# Scheduler runs the command often (every 15 min); the command itself decides
+# whether a backup is due, from these values -- so the frequency is changed
+# here in .env, never in Task Scheduler.
+BACKUP_DIR = os.environ.get('BACKUP_DIR', '')
+# Minimum minutes between two backups (a backup is also skipped when nothing
+# in the database changed since the last one).
+BACKUP_INTERVAL_MINUTES = int(os.environ.get('BACKUP_INTERVAL_MINUTES', '60'))
+# Once this many hours pass, back up even with no changes -- there's always a
+# recent file, and it shows the backup itself is still alive.
+BACKUP_FORCE_AFTER_HOURS = int(os.environ.get('BACKUP_FORCE_AFTER_HOURS', '24'))
+# Total size cap for the dump files; the oldest are deleted above it...
+BACKUP_MAX_SIZE_GB = float(os.environ.get('BACKUP_MAX_SIZE_GB', '3'))
+# ...but never the newest this many, whatever their size.
+BACKUP_KEEP_MIN = int(os.environ.get('BACKUP_KEEP_MIN', '7'))
+# Full path to pg_dump(.exe). Empty = PATH, then the newest
+# C:\Program Files\PostgreSQL\<version>\bin on Windows.
+BACKUP_PG_DUMP = os.environ.get('BACKUP_PG_DUMP', '')
+# Full path to nssm.exe -- its service settings get copied along with .env.
+# Empty = look on PATH, skipped if not found.
+BACKUP_NSSM = os.environ.get('BACKUP_NSSM', '')
+
 CELERY_BROKER_URL = 'redis://localhost:6379/0'
 CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
 CELERY_ACCEPT_CONTENT = ['json']
