@@ -122,8 +122,23 @@ login екрана. Ctrl+C да спреш пробното пускане, пр
    - Табче **Details** → Startup type: `Automatic`
    - Табче **Exit actions** → Action: `Restart application` (рестартира сам
      при срив)
-4. `C:\nssm\nssm.exe start STORA` — или просто рестартирай компютъра, услугата
+4. Изходът на waitress в отделен лог файл (без това, ако услугата не тръгне,
+   грешката не се вижда никъде):
+   ```bat
+   C:\nssm\nssm.exe set STORA AppStdout C:\път\до\репото\logs\service.log
+   C:\nssm\nssm.exe set STORA AppStderr C:\път\до\репото\logs\service.log
+   ```
+5. `C:\nssm\nssm.exe start STORA` — или просто рестартирай компютъра, услугата
    тръгва сама.
+
+**`Unexpected status SERVICE_PAUSED in response to START control`** = waitress
+тръгва и веднага спира; NSSM спира да го рестартира и слага услугата на пауза.
+Причината е в `logs\service.log` (виж стъпка 4) или се вижда, като пуснеш
+същата команда ръчно — `nssm get STORA Application` / `AppDirectory` /
+`AppParameters` показват точно какво пуска. Чести причини: грешен път до
+`waitress-serve.exe`, waitress не е инсталиран в `.venv` (`pip install -r
+requirements.txt` с активиран `.venv`), портът (8000) вече е зает от ръчно
+пуснат сървър в друг прозорец.
 
 Проверка/спиране по-нататък: `nssm status STORA`, `nssm stop STORA`,
 `nssm restart STORA`.
