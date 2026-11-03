@@ -601,11 +601,20 @@ document.addEventListener('DOMContentLoaded', function () {
     // back to nowhere (the page body, or a bare cell of this grid with no
     // editor in it), never stealing it from something the clerk has moved
     // on to since, and gives up after a few reopen attempts.
+    // Bumped whenever the clerk ends an edit on purpose (Enter, Escape, a
+    // scan routed away) -- any watch still running from before then stops,
+    // instead of reopening an editor the clerk just deliberately closed.
+    var editorWatchToken = 0;
+    function stopEditorFocusWatch() {
+        editorWatchToken += 1;
+    }
+
     function watchEditorFocus(row, field) {
         var attempts = 0;
+        var token = ++editorWatchToken;
         [60, 160, 320, 640].forEach(function (delay) {
             setTimeout(function () {
-                if (attempts >= 3) return;
+                if (attempts >= 3 || token !== editorWatchToken) return;
                 var active = document.activeElement;
                 var focusLost = !active || active === document.body || !document.body.contains(active) ||
                     (table.element.contains(active) && !active.matches('input, textarea, select'));
@@ -668,6 +677,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     // Old value back first -- if anything still commits
                     // on the way out (blur), it commits this, never the code.
                     input.value = originalValue === null || originalValue === undefined ? '' : originalValue;
+                    stopEditorFocusWatch();
                     cancel();
                     setTimeout(function () { routeScannedCode(code); }, 0);
                 }
@@ -739,6 +749,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 // here, not from cellEdited.
                 advanceToNext(cell);
             } else if (e.key === 'Escape') {
+                stopEditorFocusWatch();
                 cancel();
             }
         });
@@ -1124,8 +1135,15 @@ document.addEventListener('DOMContentLoaded', function () {
     // that particular price on the invoice, just wants to skip past it) would
     // silently do nothing if this lived there instead.
     function advanceToNext(cell) {
+        stopEditorFocusWatch();
         var next = nextVisibleField(cell.getField());
-        if (next) focusCellEditor(cell.getRow(), next);
+        if (next) {
+            focusCellEditor(cell.getRow(), next);
+        } else {
+            // End of the row -- straight back to the search box for the next
+            // product (scan or type), instead of leaving the cursor nowhere.
+            setTimeout(function () { searchInput.focus(); }, 0);
+        }
     }
 
     // Recalc/persist side effects only -- advancing focus to the next field
