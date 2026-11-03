@@ -3832,3 +3832,205 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
 .bulk-actions-bar {
     gap: 0.4rem !important;
 }
+
+/* -- Home screen (templates/index.html): greeting, quick-access tiles, and
+   the "What's new" timeline. STYLES.md palette; the timeline is the one
+   bold element, the tiles stay quiet white surfaces. -- */
+.home {
+    max-width: 1040px;
+    margin: 0 auto;
+}
+
+.home-greeting {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.25rem 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+/* The global h1 carries 40px + a blue underline + padding, meant for page
+   titles -- too heavy for a greeting. */
+.home-greeting h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    margin: 0;
+    padding: 0;
+    border-bottom: none;
+    color: #1f2a37;
+}
+
+.home-greeting__date {
+    margin: 0;
+    color: #5b6675;
+    font-size: 1rem;
+}
+
+.home-actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2.5rem;
+}
+
+.home-tile {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    padding: 1.25rem 1.25rem 1.1rem;
+    background: #ffffff;
+    border-radius: 20px;
+    box-shadow: 0 1px 2px rgba(31, 42, 55, 0.06), 0 6px 18px rgba(43, 111, 209, 0.08);
+    color: #1f2a37;
+    text-decoration: none;
+    transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.home-tile:hover {
+    box-shadow: 0 2px 4px rgba(31, 42, 55, 0.08), 0 10px 26px rgba(43, 111, 209, 0.16);
+    transform: translateY(-1px);
+    color: #1f2a37;
+}
+
+.home-tile:focus-visible {
+    outline: 3px solid var(--brand-cyan-mid);
+    outline-offset: 2px;
+}
+
+.home-tile__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    margin-bottom: 0.4rem;
+    border-radius: 14px;
+    background: rgba(77, 217, 245, 0.18);
+    color: var(--brand-blue-deep);
+    font-size: 1.35rem;
+}
+
+.home-tile__label {
+    font-size: 1.1rem;
+    font-weight: 700;
+}
+
+.home-tile__hint {
+    font-size: 0.875rem;
+    font-weight: 400;
+    color: #5b6675;
+}
+
+.home-news {
+    max-width: 46rem;
+}
+
+.home-news h2 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #1f2a37;
+    margin: 0 0 1.25rem;
+}
+
+.news-timeline {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    position: relative;
+}
+
+/* The rail: one line down the left, behind every dot. */
+.news-timeline::before {
+    content: "";
+    position: absolute;
+    left: 7px;
+    top: 0.6rem;
+    bottom: 0.6rem;
+    width: 2px;
+    background: rgba(43, 111, 209, 0.2);
+    border-radius: 2px;
+}
+
+.news-entry {
+    position: relative;
+    padding: 0 0 1.5rem 2.25rem;
+}
+
+.news-entry:last-child {
+    padding-bottom: 0;
+}
+
+/* Dot on the rail: hollow for older entries, filled for recent ones. */
+.news-entry::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0.35rem;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #ffffff;
+    border: 2px solid rgba(43, 111, 209, 0.45);
+    box-sizing: border-box;
+}
+
+.news-entry.is-recent::before {
+    background: var(--brand-blue-deep);
+    border-color: var(--brand-blue-deep);
+    box-shadow: 0 0 0 4px rgba(77, 217, 245, 0.35);
+}
+
+.news-entry__head {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 0.4rem;
+}
+
+.news-entry__head time {
+    font-weight: 700;
+    color: #1f2a37;
+}
+
+.news-entry__badge {
+    padding: 0.1rem 0.6rem;
+    border-radius: 999px;
+    background: rgba(77, 217, 245, 0.25);
+    color: var(--brand-blue-deep);
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.news-entry__points {
+    margin: 0;
+    padding-left: 1.1rem;
+    color: #3d4754;
+    line-height: 1.55;
+}
+
+.news-entry__points li + li {
+    margin-top: 0.3rem;
+}
+
+/* Older entries step back so the recent ones lead. */
+.news-entry:not(.is-recent) .news-entry__head time,
+.news-entry:not(.is-recent) .news-entry__points {
+    color: #6b7582;
+}
+
+.news-entry.is-recent .news-entry__points {
+    padding: 0.75rem 1rem 0.75rem 2rem;
+    background: #ffffff;
+    border-radius: 16px;
+    box-shadow: 0 1px 2px rgba(31, 42, 55, 0.05);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .home-tile {
+        transition: none;
+    }
+    .home-tile:hover {
+        transform: none;
+    }
+}

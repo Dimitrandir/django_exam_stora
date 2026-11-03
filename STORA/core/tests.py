@@ -260,3 +260,34 @@ class BackupDbCommandTests(TestCase):
         with self.assertRaisesMessage(CommandError, 'BACKUP_DIR'):
             call_command('backup_db', stdout=MagicMock())
 
+
+
+class HomeWhatsNewTests(TestCase):
+    def setUp(self):
+        self.user = Employee.objects.create_user(username='home-viewer', password='pass12345')
+        self.client.force_login(self.user)
+
+    def test_home_shows_whats_new_newest_first_in_bulgarian(self):
+        response = self.client.get(reverse('index'), HTTP_ACCEPT_LANGUAGE='bg')
+        self.assertEqual(response.status_code, 200)
+        entries = response.context['whats_new']
+        self.assertEqual([e['date'] for e in entries], sorted((e['date'] for e in entries), reverse=True))
+        self.assertContains(response, 'Какво ново')
+
+    def test_recent_mark_only_within_recent_days(self):
+        from datetime import date, timedelta
+        from STORA.core.whats_new import RECENT_DAYS, WHATS_NEW, whats_new_for_display
+        newest = WHATS_NEW[0]['date']
+        marked = whats_new_for_display(newest + timedelta(days=RECENT_DAYS + 1))
+        self.assertFalse(marked[0]['is_recent'])
+        self.assertTrue(whats_new_for_display(newest)[0]['is_recent'])
+
+    def test_tiles_follow_permissions(self):
+        # A cashier (the default role) gets the till tile but not New Delivery /
+        # Revision -- checked on the tiles themselves, the top menu has its own links.
+        response = self.client.get(reverse('index'), HTTP_ACCEPT_LANGUAGE='en')
+        tile = '<a href="{}" class="home-tile">'
+        self.assertContains(response, tile.format(reverse('sale_add')))
+        self.assertContains(response, tile.format(reverse('reports_dashboard')))
+        self.assertNotContains(response, tile.format(reverse('delivery_add')))
+        self.assertNotContains(response, tile.format(reverse('revision_home')))

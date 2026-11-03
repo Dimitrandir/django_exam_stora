@@ -2,37 +2,75 @@
 {% load i18n %}
 
 {% block content %}
-<div class="row align-items-center g-4">
-    <div class="col-lg-7">
-        <div class="p-4 p-lg-5 bg-white rounded-4 shadow-sm">
-            <span class="badge bg-primary mb-3">{% translate "Warehouse & Sales System" %}</span>
-            <h1 class="display-5 fw-bold mb-3">{% translate "Welcome to STORA" %}</h1>
-            <p class="lead text-muted mb-4">
-                {% translate "Manage products, sales, deliveries and reports in one clean dashboard." %}
-            </p>
+{% comment %}Month names: Django's Bulgarian ones are capitalized ("Ноември"), Bulgarian writes them in lowercase -- hence |lower for bg only.{% endcomment %}
+<div class="home">
+    <header class="home-greeting">
+        <h1>{% blocktranslate with name=user.first_name|default:user.username %}Hello, {{ name }}{% endblocktranslate %}</h1>
+        <p class="home-greeting__date">{% if LANGUAGE_CODE == 'bg' %}{{ today|date:"l, j E Y"|lower }}{% else %}{{ today|date:"l, j F Y" }}{% endif %}</p>
+    </header>
 
-            <div class="d-flex flex-wrap gap-2">
-                <a href="{% url 'product_list' %}" class="btn btn-dark btn-lg">{% translate "Browse Products" %}</a>
-                <a href="{% url 'sales_report' %}" class="btn btn-outline-primary btn-lg">{% translate "Open Sales" %}</a>
-            </div>
-        </div>
+    {% comment %}
+    The screens people open most, one tap each. Every tile is gated by the
+    same permission its own screen checks, so nobody sees a door that
+    would only answer "403".
+    {% endcomment %}
+    {% comment %}A div with role="navigation", not <nav>: the global `nav` rule in style.css (the dark top bar) would paint it.{% endcomment %}
+    <div class="home-actions" role="navigation" aria-label="{% translate 'Quick access' %}">
+        {% if perms.sales.add_saleattributes %}
+        <a href="{% url 'sale_add' %}" class="home-tile">
+            <span class="home-tile__icon"><i class="bi bi-cart3" aria-hidden="true"></i></span>
+            <span class="home-tile__label">{% translate "New Sale" %}</span>
+            <span class="home-tile__hint">{% translate "The till" %}</span>
+        </a>
+        {% endif %}
+        {% if perms.deliveries.add_deliveryattributes %}
+        <a href="{% url 'delivery_add' %}" class="home-tile">
+            <span class="home-tile__icon"><i class="bi bi-truck" aria-hidden="true"></i></span>
+            <span class="home-tile__label">{% translate "New Delivery" %}</span>
+            <span class="home-tile__hint">{% translate "Goods from a supplier" %}</span>
+        </a>
+        {% endif %}
+        {% if perms.revisions.add_revisionattributes %}
+        <a href="{% url 'revision_home' %}" class="home-tile">
+            <span class="home-tile__icon"><i class="bi bi-clipboard-check" aria-hidden="true"></i></span>
+            <span class="home-tile__label">{% translate "Revision" %}</span>
+            <span class="home-tile__hint">{% translate "Count the stock" %}</span>
+        </a>
+        {% endif %}
+        {% if perms.products.view_product %}
+        <a href="{% url 'product_list' %}" class="home-tile">
+            <span class="home-tile__icon"><i class="bi bi-box-seam" aria-hidden="true"></i></span>
+            <span class="home-tile__label">{% translate "Products" %}</span>
+            <span class="home-tile__hint">{% translate "Prices, stock, barcodes" %}</span>
+        </a>
+        {% endif %}
+        <a href="{% url 'reports_dashboard' %}" class="home-tile">
+            <span class="home-tile__icon"><i class="bi bi-bar-chart-line" aria-hidden="true"></i></span>
+            <span class="home-tile__label">{% translate "Reports" %}</span>
+            <span class="home-tile__hint">{% translate "Sales and stock movements" %}</span>
+        </a>
     </div>
 
-    <div class="col-lg-5">
-        <div class="bg-dark text-white p-4 p-lg-5 rounded-4 shadow-sm">
-            <h2 class="h4 mb-3">{% translate "Quick Access" %}</h2>
-            <div class="list-group list-group-flush rounded-3 overflow-hidden">
-                <a href="{% url 'delivery_add' %}" class="list-group-item list-group-item-action">
-                    {% translate "New Delivery" %}
-                </a>
-                <a href="{% url 'sale_add' %}" class="list-group-item list-group-item-action">
-                    {% translate "New Sale" %}
-                </a>
-                <a href="{% url 'sales_report' %}" class="list-group-item list-group-item-action">
-                    {% translate "Sales Report" %}
-                </a>
-            </div>
-        </div>
-    </div>
+    {% comment %}
+    A timeline, newest first: the dates are a real sequence, so the rail and
+    its dots carry information (when), not decoration. Entries from the last
+    few days (core.whats_new.RECENT_DAYS) get the "New" mark and a filled dot.
+    {% endcomment %}
+    <section class="home-news" aria-labelledby="home-news-title">
+        <h2 id="home-news-title">{% translate "What's new" %}</h2>
+        <ol class="news-timeline">
+            {% for entry in whats_new %}
+            <li class="news-entry{% if entry.is_recent %} is-recent{% endif %}">
+                <div class="news-entry__head">
+                    <time datetime="{{ entry.date|date:'Y-m-d' }}">{% if LANGUAGE_CODE == 'bg' %}{{ entry.date|date:"j E Y"|lower }}{% else %}{{ entry.date|date:"j F Y" }}{% endif %}</time>
+                    {% if entry.is_recent %}<span class="news-entry__badge">{% translate "New" %}</span>{% endif %}
+                </div>
+                <ul class="news-entry__points">
+                    {% for point in entry.points %}<li>{{ point }}</li>{% endfor %}
+                </ul>
+            </li>
+            {% endfor %}
+        </ol>
+    </section>
 </div>
 {% endblock %}

@@ -2,7 +2,9 @@ from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 
 import logging
+from zoneinfo import ZoneInfo
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -26,6 +28,7 @@ from django.views.generic import CreateView, ListView, DetailView, UpdateView, D
 from STORA.core.mixins import StaffPermissionRequiredMixin
 from STORA.core.session_service import get_cashier_operation_state
 from STORA.core.utils import dispatch_task, multi_token_icontains_q
+from STORA.core.whats_new import whats_new_for_display
 from STORA.deliveries.models import DeliveryAttributes, DeliveryItems, DeliveryItemRemoval
 from STORA.revisions.models import RevisionAttributes, RevisionItems
 from STORA.products.forms import (
@@ -1286,6 +1289,7 @@ def index(request):
 
     recent_sales = SaleAttributes.objects.order_by('-time_of_sale')[:5]
     last_operation = get_cashier_operation_state(request)
+    shop_today = timezone.now().astimezone(ZoneInfo(settings.FISCAL_DEVICE_TIME_ZONE)).date()
 
     context = {
         'total_products': total_products,
@@ -1293,6 +1297,10 @@ def index(request):
         'total_revenue': total_revenue,
         'recent_sales': recent_sales,
         'last_operation': last_operation if last_operation and last_operation.get('active') else None,
+        # The shop's own calendar day -- TIME_ZONE is UTC, which after
+        # midnight in Sofia would still say "yesterday" for 2-3 hours.
+        'today': shop_today,
+        'whats_new': whats_new_for_display(shop_today),
     }
     return render(request, 'index.html', context)
 
