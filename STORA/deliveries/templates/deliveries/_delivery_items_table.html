@@ -594,6 +594,62 @@ document.addEventListener('DOMContentLoaded', function () {
     // gives explicit control: Enter calls `success(value)` itself --
     // Tabulator's own documented commit API for a custom editor -- so it's
     // not guessing at the built-in editor's undocumented internals.
+    // A barcode scan that lands in an open Qty/Price editor (the clerk
+    // typed a quantity, then scanned the next product without leaving the
+    // cell -- or scanned twice in a row, since adding a product opens its
+    // Qty editor on purpose) used to be typed INTO the cell: the barcode
+    // became the quantity, and its Enter moved on to Unit Price. Told
+    // apart from a person by speed alone -- a scanner sends its characters
+    // well under 30ms apart, nobody types 4+ characters that fast (same
+    // threshold as looksLikeScannerInput / the scan-anywhere listener
+    // below). On such a burst's Enter: put the cell's old value back,
+    // close the editor, and hand the code to the normal scan path.
+    // Registered before the editor's own keydown handler, so
+    // stopImmediatePropagation() keeps that one from committing.
+    function guardEditorAgainstScans(input, originalValue, cancel) {
+        var fastBuffer = '';
+        var lastKeyTime = 0;
+        input.addEventListener('keydown', function (e) {
+            var now = performance.now();
+            var gap = now - lastKeyTime;
+            lastKeyTime = now;
+            if (e.key === 'Enter') {
+                var code = fastBuffer;
+                fastBuffer = '';
+                if (code.length >= 4) {
+                    e.preventDefault();
+                    e.stopImmediatePropagation();
+                    // Old value back first -- if anything still commits
+                    // on the way out (blur), it commits this, never the code.
+                    input.value = originalValue === null || originalValue === undefined ? '' : originalValue;
+                    cancel();
+                    setTimeout(function () { routeScannedCode(code); }, 0);
+                }
+                return;
+            }
+            if (e.key.length === 1) {
+                fastBuffer = (fastBuffer !== '' && gap < 30) ? fastBuffer + e.key : e.key;
+            } else {
+                fastBuffer = '';
+            }
+        });
+    }
+
+    // Sends a code caught by guardEditorAgainstScans through the search
+    // box's own Enter handler -- the exact code/barcode match there, same
+    // as a scan into the box itself (existing row +1 / new row, then the
+    // Qty editor opens as usual). A stale dropdown is closed first so Enter
+    // can't pick a highlighted suggestion instead. If nothing matches, the
+    // code stays visible in the search box.
+    function routeScannedCode(code) {
+        resultsBox.classList.remove('is-open');
+        currentResults = [];
+        highlightedIndex = -1;
+        searchInput.value = code;
+        searchInput.focus();
+        searchInput.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true, cancelable: true}));
+    }
+
     function numberEditor(cell, onRendered, success, cancel, editorParams) {
         var input = document.createElement('input');
         // type="text" + inputmode="decimal", not type="number" -- a
@@ -623,6 +679,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         input.addEventListener('blur', commit);
+        guardEditorAgainstScans(input, cell.getValue(), cancel);
         input.addEventListener('keydown', function (e) {
             if (e.key === 'Enter') {
                 e.preventDefault();
