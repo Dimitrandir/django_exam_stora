@@ -578,12 +578,49 @@ document.addEventListener('DOMContentLoaded', function () {
                 input.focus();
                 if (input.select) input.select();
             }
+            watchEditorFocus(row, field);
         }
         if (deferred === false) {
             run();
         } else {
             setTimeout(run, 0);
         }
+    }
+
+    // Tabulator redraws the whole table on its own whenever the table's
+    // size changes (its built-in auto-resize) -- and adding a NEW row makes
+    // the table taller, so ~10ms after focusCellEditor opened that row's Qty
+    // editor, the redraw wiped it out again: the clerk saw the cell framed
+    // but couldn't type until clicking it (confirmed live with focus +
+    // renderStarted logs in the console; re-scanning an EXISTING row never
+    // changed the height, so that case always worked). A redraw that runs
+    // while an editor is open also throws inside Tabulator itself
+    // (editorClear) and never finishes -- so its 'renderComplete' event
+    // can't be relied on to notice; this just checks a few times over the
+    // next ~0.6s instead. It reopens the editor only if focus has fallen
+    // back to nowhere (the page body, or a bare cell of this grid with no
+    // editor in it), never stealing it from something the clerk has moved
+    // on to since, and gives up after a few reopen attempts.
+    function watchEditorFocus(row, field) {
+        var attempts = 0;
+        [60, 160, 320, 640].forEach(function (delay) {
+            setTimeout(function () {
+                if (attempts >= 3) return;
+                var active = document.activeElement;
+                var focusLost = !active || active === document.body || !document.body.contains(active) ||
+                    (table.element.contains(active) && !active.matches('input, textarea, select'));
+                if (!focusLost) return;
+                var cell = row.getCell(field);
+                if (!cell || !document.body.contains(cell.getElement())) return;
+                attempts += 1;
+                cell.edit(true);
+                var input = cell.getElement().querySelector('input, textarea');
+                if (input) {
+                    input.focus();
+                    if (input.select) input.select();
+                }
+            }, delay);
+        });
     }
 
     // Tabulator's built-in editor:'number' has no Enter-key handling at
@@ -912,6 +949,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // screen is mostly used on touch screens with no modifier keys
     // available -- every tap just toggles that one row's membership.
     var selectedRows = new Set();
+
 
     // Closes the gap deleting a row leaves in "#" (flagged live, with a
     // screenshot -- row 9 removed left 10..18 still showing those numbers
