@@ -4034,3 +4034,238 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
         transform: none;
     }
 }
+
+/* -- Fiscal reports screen (sales/fiscal_reports.html). Same language as
+   the home screen: white rounded cards, pill buttons; blue = a normal
+   action, red outline = can't be undone (Z report, cash out). Every button
+   sets its own color -- the global `button { color: white; padding }`
+   rule would leak in otherwise. -- */
+.fiscal-page {
+    max-width: 760px;
+    margin: 0 auto;
+}
+
+.fiscal-page__header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.fiscal-page__header h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    margin: 0 0 0.25rem;
+    padding: 0;
+    border-bottom: none;
+    color: #1f2a37;
+}
+
+.fiscal-page__intro {
+    margin: 0;
+    color: #5b6675;
+}
+
+.fiscal-card {
+    background: #ffffff;
+    border-radius: 20px;
+    box-shadow: 0 1px 2px rgba(31, 42, 55, 0.06), 0 6px 18px rgba(43, 111, 209, 0.08);
+    padding: 1.4rem 1.5rem;
+    margin-bottom: 1.25rem;
+}
+
+.fiscal-card h2 {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #1f2a37;
+    margin: 0 0 1rem;
+}
+
+.fiscal-card__hint {
+    margin: -0.5rem 0 1rem;
+    color: #5b6675;
+    font-size: 0.925rem;
+}
+
+.fiscal-action-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.4rem 0;
+}
+
+.fiscal-action-row .fiscal-btn {
+    min-width: 8.5rem;
+    justify-content: center;
+}
+
+.fiscal-action-row p {
+    margin: 0;
+    color: #3d4754;
+}
+
+.fiscal-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    border-radius: 999px;
+    padding: 0.6rem 1.25rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+    line-height: 1.2;
+    cursor: pointer;
+    text-decoration: none;
+    border: 1.5px solid transparent;
+    transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.fiscal-btn:focus-visible,
+.fiscal-chip:focus-visible {
+    outline: 3px solid var(--brand-cyan-mid);
+    outline-offset: 2px;
+}
+
+.fiscal-btn:disabled {
+    opacity: 0.55;
+    cursor: wait;
+}
+
+.fiscal-btn--primary {
+    background: var(--brand-blue-deep);
+    border-color: var(--brand-blue-deep);
+    color: #ffffff;
+}
+
+.fiscal-btn--primary:hover:not(:disabled) {
+    background: #2560b8;
+    color: #ffffff;
+    box-shadow: 0 4px 12px rgba(43, 111, 209, 0.3);
+}
+
+.fiscal-btn--danger {
+    background: #ffffff;
+    border-color: var(--danger-color);
+    color: #c0392b;
+}
+
+.fiscal-btn--danger:hover:not(:disabled) {
+    background: #fdecea;
+    color: #c0392b;
+}
+
+.fiscal-btn--quiet {
+    background: #ffffff;
+    border-color: rgba(43, 111, 209, 0.35);
+    color: var(--brand-blue-deep);
+}
+
+.fiscal-btn--quiet:hover {
+    background: var(--light-bg);
+    color: var(--brand-blue-deep);
+}
+
+.fiscal-fields {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.75rem 1rem;
+    margin-bottom: 1rem;
+}
+
+.fiscal-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    margin: 0;
+    flex: 0 1 11rem;
+}
+
+.fiscal-field--wide {
+    flex: 1 1 14rem;
+}
+
+.fiscal-field span {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #3d4754;
+}
+
+.fiscal-field input {
+    border: 1px solid #cfd6df;
+    border-radius: 12px;
+    padding: 0.55rem 0.8rem;
+    font-size: 1rem;
+    background: #ffffff;
+    color: #1f2a37;
+}
+
+.fiscal-field input:focus {
+    outline: none;
+    border-color: var(--brand-cyan-mid);
+    box-shadow: 0 0 0 3px rgba(77, 217, 245, 0.3);
+}
+
+.fiscal-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+.fiscal-presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.fiscal-chip {
+    border-radius: 999px;
+    padding: 0.35rem 0.9rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    background: rgba(77, 217, 245, 0.15);
+    border: 1px solid transparent;
+    color: var(--brand-blue-deep);
+    cursor: pointer;
+}
+
+.fiscal-chip:hover {
+    background: rgba(77, 217, 245, 0.28);
+}
+
+.fiscal-chip.is-active {
+    background: #ffffff;
+    border-color: var(--brand-blue-deep);
+}
+
+.fiscal-status {
+    margin: 1rem 0 0;
+    padding: 0.6rem 0.9rem;
+    border-radius: 12px;
+    font-weight: 600;
+    font-size: 0.95rem;
+}
+
+.fiscal-status.is-ok {
+    background: rgba(47, 174, 107, 0.12);
+    color: var(--brand-green-deep);
+}
+
+.fiscal-status.is-error {
+    background: #fdecea;
+    color: #b03a2e;
+}
+
+@media (max-width: 560px) {
+    .fiscal-action-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.4rem;
+    }
+}
+
+.fiscal-page > .fiscal-status {
+    margin: 0 0 1.25rem;
+}

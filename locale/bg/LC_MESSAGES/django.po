@@ -5,7 +5,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: STORA\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-03 22:42+0000\n"
+"POT-Creation-Date: 2026-11-03 22:58+0000\n"
 "PO-Revision-Date: 2026-10-02 00:00+0000\n"
 "Language-Team: Bulgarian\n"
 "Language: bg\n"
@@ -255,6 +255,16 @@ msgstr "Регистрация"
 
 #: STORA/core/whats_new.py:23
 msgid ""
+"Fiscal reports: a new, clearer screen. The result of each report shows right "
+"under it, and the period report has quick buttons for this month, last month "
+"and this year."
+msgstr ""
+"Фискални отчети: нов, по-ясен екран. Резултатът от всеки отчет се показва "
+"точно под него, а отчетът за период има бързи бутони за този месец, миналия "
+"месец и тази година."
+
+#: STORA/core/whats_new.py:25
+msgid ""
 "Deliveries, write-offs and scrap: scanning a barcode while a quantity box is "
 "open now adds 1 to that product, instead of typing the barcode in as the "
 "quantity."
@@ -263,7 +273,7 @@ msgstr ""
 "е отворено, вече добавя 1 бройка към продукта, вместо да записва баркода като"
 " количество."
 
-#: STORA/core/whats_new.py:25
+#: STORA/core/whats_new.py:27
 msgid ""
 "After you scan a new product, the cursor waits in its quantity box, so you "
 "can type the count straight away."
@@ -271,14 +281,14 @@ msgstr ""
 "След сканиране на нов продукт курсорът остава в полето за количество и можете"
 " веднага да напишете бройката."
 
-#: STORA/core/whats_new.py:27
+#: STORA/core/whats_new.py:29
 msgid ""
 "Enter on the last box of a row takes you back to the search box for the next "
 "product."
 msgstr ""
 "Enter на последното поле в реда ви връща в търсачката за следващия продукт."
 
-#: STORA/core/whats_new.py:28
+#: STORA/core/whats_new.py:30
 msgid ""
 "The hidden character some barcode scanners send before every code no longer "
 "breaks the scan."
@@ -286,14 +296,14 @@ msgstr ""
 "Скритият символ, който някои баркод четци пращат пред всеки код, вече не "
 "обърква сканирането."
 
-#: STORA/core/whats_new.py:34
+#: STORA/core/whats_new.py:36
 msgid ""
 "The database is backed up to OneDrive automatically every hour, whenever "
 "something has changed."
 msgstr ""
 "Базата се архивира автоматично в OneDrive на всеки час, когато има промени."
 
-#: STORA/core/whats_new.py:40
+#: STORA/core/whats_new.py:42
 msgid ""
 "New \"All refunds\" list, showing whether the fiscal receipt of each refund "
 "was printed."
@@ -301,7 +311,7 @@ msgstr ""
 "Нов списък „Всички сторна“, който показва дали фискалният бон на всяко сторно"
 " е отпечатан."
 
-#: STORA/core/whats_new.py:41
+#: STORA/core/whats_new.py:43
 msgid ""
 "A refund whose fiscal receipt did not print now says why, and has a button to"
 " print it."
@@ -309,7 +319,7 @@ msgstr ""
 "Сторно, чийто фискален бон не е излязъл, вече показва причината и има бутон "
 "за отпечатване."
 
-#: STORA/core/whats_new.py:42
+#: STORA/core/whats_new.py:44
 msgid ""
 "X report now sends the fiscal device its own \"report without reset\" "
 "command."
@@ -317,7 +327,7 @@ msgstr ""
 "X отчетът вече праща към фискалния апарат неговата собствена команда „отчет "
 "без нулиране“."
 
-#: STORA/core/whats_new.py:48
+#: STORA/core/whats_new.py:50
 msgid ""
 "Deliveries, write-offs and scrap: up to 3 open at the same time. Switch "
 "between them with the 1/2/3 buttons next to the title."
@@ -325,14 +335,14 @@ msgstr ""
 "Доставка, изписване и брак: до 3 отворени едновременно. Превключвате между "
 "тях с бутоните 1/2/3 до заглавието."
 
-#: STORA/core/whats_new.py:50
+#: STORA/core/whats_new.py:52
 msgid ""
 "Closing a delivery or a sale that still has products in it now asks first."
 msgstr ""
 "Затваряне на доставка или продажба, в която има продукти, вече пита за "
 "потвърждение."
 
-#: STORA/core/whats_new.py:51
+#: STORA/core/whats_new.py:53
 msgid ""
 "Products added from an Excel import stay in the delivery after a failed save "
 "or a page reload."
@@ -340,7 +350,7 @@ msgstr ""
 "Продуктите от импорт от Excel остават в доставката след неуспешен запис или "
 "презареждане на страницата."
 
-#: STORA/core/whats_new.py:57
+#: STORA/core/whats_new.py:59
 msgid ""
 "Products: a \"Clear filters\" button, so a filter on a hidden column cannot "
 "hide products unnoticed."
@@ -348,14 +358,14 @@ msgstr ""
 "Продукти: бутон „Изчисти филтрите“, за да не може филтър на скрита колона "
 "незабелязано да крие продукти."
 
-#: STORA/core/whats_new.py:58
+#: STORA/core/whats_new.py:60
 msgid ""
 "Excel import: new VAT group column. Left empty, the product gets group Б."
 msgstr ""
 "Импорт от Excel: нова колона „ДДС група“. Ако е празна, продуктът получава "
 "група Б."
 
-#: STORA/core/whats_new.py:64
+#: STORA/core/whats_new.py:66
 msgid ""
 "Products: set an attribute (color, size...) for many selected products at "
 "once."
@@ -363,7 +373,7 @@ msgstr ""
 "Продукти: задаване на атрибут (цвят, размер...) на много избрани продукти "
 "наведнъж."
 
-#: STORA/core/whats_new.py:65
+#: STORA/core/whats_new.py:67
 msgid ""
 "Products: the actions for selected products fit on one row, and \"Load into\""
 " is a single menu."
@@ -371,7 +381,7 @@ msgstr ""
 "Продукти: действията за избраните продукти се събират на един ред, а „Зареди "
 "в“ е едно меню."
 
-#: STORA/core/whats_new.py:66
+#: STORA/core/whats_new.py:68
 msgid ""
 "Excel import: two new products with the same name or barcode in one file no "
 "longer stop the whole delivery."
@@ -379,7 +389,7 @@ msgstr ""
 "Импорт от Excel: два нови продукта с еднакво име или баркод в един файл вече "
 "не спират цялата доставка."
 
-#: STORA/core/whats_new.py:73
+#: STORA/core/whats_new.py:75
 msgid ""
 "Product attributes can be filled in from the Excel import and edited directly"
 " in the Products list."
@@ -1066,7 +1076,7 @@ msgstr "Час"
 #: STORA/deliveries/templates/deliveries/deliveries_list.html:23
 #: STORA/deliveries/templates/deliveries/delivery_add.html:4
 #: STORA/deliveries/templates/deliveries/delivery_add.html:16
-#: templates/index.html:28
+#: templates/index.html:32
 msgid "New Delivery"
 msgstr "Нова доставка"
 
@@ -1148,7 +1158,7 @@ msgstr "Нов доставчик"
 #: STORA/products/models.py:260
 #: STORA/reports/templates/reports/dashboard.html:46
 #: STORA/sales/templates/sales/sale_add.html:2029 templates/base.html:78
-#: templates/base.html:268 templates/index.html:42
+#: templates/base.html:268 templates/index.html:46
 msgid "Products"
 msgstr "Продукти"
 
@@ -1347,8 +1357,8 @@ msgstr ""
 "баркодът му вероятно вече се ползват от друг продукт или от друг ред на тази "
 "доставка. Нищо не е запазено: махни или поправи този ред и опитай пак."
 
-#: STORA/deliveries/views.py:419 STORA/products/views.py:829
-#: STORA/products/views.py:916
+#: STORA/deliveries/views.py:419 STORA/products/views.py:831
+#: STORA/products/views.py:918
 msgid ""
 "Saving failed due to an unexpected error. Nothing was lost -- your entered "
 "data is still below. Please try again, or contact the administrator if it "
@@ -1560,6 +1570,7 @@ msgid "Discard"
 msgstr "Отхвърли"
 
 #: STORA/orders/templates/orders/order_details.html:39
+#: STORA/sales/templates/sales/fiscal_reports.html:83
 msgid "Print"
 msgstr "Печат"
 
@@ -2952,7 +2963,7 @@ msgid "Load into..."
 msgstr "Зареди в..."
 
 #: STORA/products/templates/products/products_list.html:75
-#: templates/index.html:35
+#: templates/index.html:39
 msgid "Revision"
 msgstr "Ревизия"
 
@@ -3188,56 +3199,56 @@ msgstr "Добави нова данъчна група"
 msgid "No tax groups found."
 msgstr "Няма намерени данъчни групи."
 
-#: STORA/products/views.py:184 STORA/products/views.py:221
+#: STORA/products/views.py:186 STORA/products/views.py:223
 msgid "That field cannot be edited here."
 msgstr "Това поле не може да се редактира тук."
 
-#: STORA/products/views.py:191 STORA/products/views.py:322
+#: STORA/products/views.py:193 STORA/products/views.py:324
 msgid "Unknown category."
 msgstr "Непозната категория."
 
-#: STORA/products/views.py:225 STORA/products/views.py:348
+#: STORA/products/views.py:227 STORA/products/views.py:350
 msgid "Pick one of the allowed values for this attribute."
 msgstr "Избери една от позволените стойности за този атрибут."
 
-#: STORA/products/views.py:263 STORA/products/views.py:265
+#: STORA/products/views.py:265 STORA/products/views.py:267
 msgid "Invalid barcode slot."
 msgstr "Невалиден баркод слот."
 
-#: STORA/products/views.py:283
+#: STORA/products/views.py:285
 msgid "Fill in the earlier barcode slot first."
 msgstr "Попълни по-ранния баркод слот първо."
 
-#: STORA/products/views.py:310
+#: STORA/products/views.py:312
 msgid "No products selected."
 msgstr "Няма избрани продукти."
 
-#: STORA/products/views.py:316 STORA/products/views.py:328
-#: STORA/products/views.py:341 STORA/products/views.py:374
+#: STORA/products/views.py:318 STORA/products/views.py:330
+#: STORA/products/views.py:343 STORA/products/views.py:376
 msgid "You do not have permission to do this."
 msgstr "Нямаш права за това действие."
 
-#: STORA/products/views.py:333 STORA/sales/templates/sales/sale_add.html:1318
+#: STORA/products/views.py:335 STORA/sales/templates/sales/sale_add.html:1318
 msgid "Enter a valid price."
 msgstr "Въведи валидна цена."
 
-#: STORA/products/views.py:335
+#: STORA/products/views.py:337
 msgid "Price must be at least 0.01."
 msgstr "Цената трябва да е поне 0.01."
 
-#: STORA/products/views.py:345
+#: STORA/products/views.py:347
 msgid "Unknown attribute."
 msgstr "Непознат атрибут."
 
-#: STORA/products/views.py:394
+#: STORA/products/views.py:396
 msgid "Archived instead (has sale/delivery history): "
 msgstr "Архивирани вместо това (имат история на продажби/доставки): "
 
-#: STORA/products/views.py:398
+#: STORA/products/views.py:400
 msgid "Unknown action."
 msgstr "Непознато действие."
 
-#: STORA/products/views.py:943
+#: STORA/products/views.py:945
 msgid ""
 "Cannot delete this product -- it has delivery or sale history linked to it. "
 "Archive it instead to hide it from the Products list without losing that "
@@ -3247,15 +3258,15 @@ msgstr ""
 "продажби. Архивирай го вместо това, за да го скриеш от списъка с продукти, "
 "без да губиш тази история."
 
-#: STORA/products/views.py:1040
+#: STORA/products/views.py:1042
 msgid "No categories selected."
 msgstr "Няма избрани категории."
 
-#: STORA/products/views.py:1180
+#: STORA/products/views.py:1182
 msgid "Free text"
 msgstr "Свободен текст"
 
-#: STORA/products/views.py:1225
+#: STORA/products/views.py:1227
 msgid "No attributes selected."
 msgstr "Няма избрани атрибути."
 
@@ -4216,7 +4227,7 @@ msgstr "Артикул от сторно"
 msgid "Refund Items"
 msgstr "Артикули от сторно"
 
-#: STORA/sales/models.py:375 STORA/sales/templates/sales/fiscal_reports.html:29
+#: STORA/sales/models.py:375 STORA/sales/templates/sales/fiscal_reports.html:48
 #: STORA/sales/templates/sales/refund_find.html:25
 #: STORA/sales/templates/sales/refund_find.html:68
 msgid "Amount"
@@ -4247,20 +4258,20 @@ msgid "Service Cash Movements"
 msgstr "Служебни движения на пари"
 
 #: STORA/sales/templates/sales/fiscal_reports.html:4
-#: STORA/sales/templates/sales/fiscal_reports.html:8
+#: STORA/sales/templates/sales/fiscal_reports.html:10
 #: STORA/sales/templates/sales/sale_add.html:282
 msgid "Fiscal Reports"
 msgstr "Фискални отчети"
 
-#: STORA/sales/templates/sales/fiscal_reports.html:9
-msgid ""
-"Reports print directly on the fiscal device's own paper -- nothing shown here"
-" comes back as data."
-msgstr ""
-"Отчетите се печатат директно на хартията на фискалното устройство -- нищо от "
-"тях не се връща като данни тук."
+#: STORA/sales/templates/sales/fiscal_reports.html:11
+msgid "Reports print on the fiscal device's own paper."
+msgstr "Отчетите се печатат на хартията на фискалния апарат."
 
-#: STORA/sales/templates/sales/fiscal_reports.html:12
+#: STORA/sales/templates/sales/fiscal_reports.html:14
+msgid "Back to the till"
+msgstr "Към касата"
+
+#: STORA/sales/templates/sales/fiscal_reports.html:19
 msgid ""
 "Fiscal printing is disabled on this machine (FISCAL_ENABLED). These buttons "
 "will not work."
@@ -4268,95 +4279,95 @@ msgstr ""
 "Фискалният печат е изключен на тази машина (FISCAL_ENABLED). Тези бутони няма"
 " да работят."
 
-#: STORA/sales/templates/sales/fiscal_reports.html:16
-msgid "Daily"
-msgstr "Дневни"
+#: STORA/sales/templates/sales/fiscal_reports.html:31
+msgid "Daily reports"
+msgstr "Дневни отчети"
 
-#: STORA/sales/templates/sales/fiscal_reports.html:17
-msgid ""
-"X Report is meant to be just a reading. Z Report closes out the day and "
-"resets today's totals on the device -- run it once, at the end of the day."
-msgstr ""
-"X отчетът е предвиден само да е справка. Z отчетът приключва деня и нулира "
-"дневните суми на устройството -- пусни го веднъж, в края на деня."
-
-#: STORA/sales/templates/sales/fiscal_reports.html:18
-msgid ""
-"X Report is not fully verified on this device yet -- it may reset today's "
-"totals like Z Report does. Confirm with a manager before using it."
-msgstr ""
-"X отчетът още не е напълно потвърден на това устройство -- може да нулира "
-"дневните суми, както прави Z отчет. Потвърди с мениджър, преди да го ползваш."
-
-#: STORA/sales/templates/sales/fiscal_reports.html:19
+#: STORA/sales/templates/sales/fiscal_reports.html:33
 msgid "X Report"
 msgstr "X отчет"
 
-#: STORA/sales/templates/sales/fiscal_reports.html:20
-msgid "Z Report (resets today's totals)"
-msgstr "Z отчет (нулира дневните суми)"
-
-#: STORA/sales/templates/sales/fiscal_reports.html:24
-msgid "Service Cash In / Out"
-msgstr "Служебно въвеждане/извеждане"
-
-#: STORA/sales/templates/sales/fiscal_reports.html:25
-msgid ""
-"For money moved into or out of the till outside of a sale -- e.g. topping up "
-"change, or pulling cash for a bank deposit."
-msgstr ""
-"За пари, вкарани или изкарани от касата извън продажба -- напр. зареждане на "
-"дребни пари или изваждане на пари за банков депозит."
-
-#: STORA/sales/templates/sales/fiscal_reports.html:33
-msgid "Comment (optional)"
-msgstr "Коментар (по избор)"
-
-#: STORA/sales/templates/sales/fiscal_reports.html:36
-msgid "Cash In"
-msgstr "Внеси пари"
+#: STORA/sales/templates/sales/fiscal_reports.html:34
+msgid "Today's totals so far, without resetting anything."
+msgstr "Сумите за деня досега, без нулиране."
 
 #: STORA/sales/templates/sales/fiscal_reports.html:37
-msgid "Cash Out"
-msgstr "Изведи пари"
+msgid "Z Report"
+msgstr "Z отчет"
 
-#: STORA/sales/templates/sales/fiscal_reports.html:42
-msgid "Period (monthly / yearly)"
-msgstr "За период (месечен / годишен)"
+#: STORA/sales/templates/sales/fiscal_reports.html:38
+msgid "Closes the day and resets today's totals. Once, at the end of the day."
+msgstr "Приключва деня и нулира дневните суми. Веднъж, в края на деня."
 
-#: STORA/sales/templates/sales/fiscal_reports.html:46
+#: STORA/sales/templates/sales/fiscal_reports.html:44
+msgid "Service cash in / out"
+msgstr "Служебно въвеждане / извеждане"
+
+#: STORA/sales/templates/sales/fiscal_reports.html:45
+msgid ""
+"Money put into or taken out of the till outside a sale, e.g. change for the "
+"day or cash for the bank."
+msgstr ""
+"Пари, сложени в касата или извадени от нея извън продажба, напр. дребни за "
+"деня или пари за банката."
+
+#: STORA/sales/templates/sales/fiscal_reports.html:52
+msgid "Note (optional)"
+msgstr "Бележка (по избор)"
+
+#: STORA/sales/templates/sales/fiscal_reports.html:58
+msgid "Cash in"
+msgstr "Въвеждане"
+
+#: STORA/sales/templates/sales/fiscal_reports.html:61
+msgid "Cash out"
+msgstr "Извеждане"
+
+#: STORA/sales/templates/sales/fiscal_reports.html:68
+msgid "Report for a period"
+msgstr "Отчет за период"
+
+#: STORA/sales/templates/sales/fiscal_reports.html:69
+msgid "Quick periods"
+msgstr "Бързи периоди"
+
+#: STORA/sales/templates/sales/fiscal_reports.html:70
+msgid "This month"
+msgstr "Този месец"
+
+#: STORA/sales/templates/sales/fiscal_reports.html:71
+msgid "Last month"
+msgstr "Миналия месец"
+
+#: STORA/sales/templates/sales/fiscal_reports.html:72
+msgid "This year"
+msgstr "Тази година"
+
+#: STORA/sales/templates/sales/fiscal_reports.html:76
 msgid "From"
 msgstr "От"
 
-#: STORA/sales/templates/sales/fiscal_reports.html:50
+#: STORA/sales/templates/sales/fiscal_reports.html:80
 msgid "To"
 msgstr "До"
 
-#: STORA/sales/templates/sales/fiscal_reports.html:53
-msgid "Print Period Report"
-msgstr "Отпечатай отчет за период"
+#: STORA/sales/templates/sales/fiscal_reports.html:106
+msgid "Printing..."
+msgstr "Печата се..."
 
-#: STORA/sales/templates/sales/fiscal_reports.html:73
+#: STORA/sales/templates/sales/fiscal_reports.html:115
 msgid "Report failed."
 msgstr "Отчетът е неуспешен."
 
-#: STORA/sales/templates/sales/fiscal_reports.html:74
-msgid "Done -- check the printer."
-msgstr "Готово -- провери принтера."
-
-#: STORA/sales/templates/sales/fiscal_reports.html:76
+#: STORA/sales/templates/sales/fiscal_reports.html:121
 msgid "Network error -- check your connection and try again."
 msgstr "Мрежова грешка -- провери връзката и опитай отново."
 
-#: STORA/sales/templates/sales/fiscal_reports.html:81
-msgid ""
-"This has not been fully verified yet and may reset today’s totals like Z "
-"Report does. Continue?"
-msgstr ""
-"Това все още не е напълно потвърдено и може да нулира дневните суми, както "
-"прави Z отчетът. Продължаваш ли?"
+#: STORA/sales/templates/sales/fiscal_reports.html:126
+msgid "Done -- check the printer."
+msgstr "Готово -- провери принтера."
 
-#: STORA/sales/templates/sales/fiscal_reports.html:86
+#: STORA/sales/templates/sales/fiscal_reports.html:133
 msgid ""
 "Print the Z report? This resets the accumulated daily totals on the fiscal "
 "device -- only do this once, at the end of the day."
@@ -4364,11 +4375,23 @@ msgstr ""
 "Да се отпечата ли Z отчет? Това нулира натрупаните дневни суми на фискалното "
 "устройство -- прави го само веднъж, в края на деня."
 
-#: STORA/sales/templates/sales/fiscal_reports.html:92
+#: STORA/sales/templates/sales/fiscal_reports.html:141
 msgid "Enter an amount."
 msgstr "Въведи сума."
 
-#: STORA/sales/templates/sales/fiscal_reports.html:103
+#: STORA/sales/templates/sales/fiscal_reports.html:147
+msgid "Put in"
+msgstr "Въведени"
+
+#: STORA/sales/templates/sales/fiscal_reports.html:147
+msgid "Taken out"
+msgstr "Изведени"
+
+#: STORA/sales/templates/sales/fiscal_reports.html:151
+msgid "In the till now:"
+msgstr "В касата сега:"
+
+#: STORA/sales/templates/sales/fiscal_reports.html:163
 msgid "Take this amount out of the till?"
 msgstr "Да се изведе ли тази сума от касата?"
 
@@ -4508,7 +4531,7 @@ msgid "Select All"
 msgstr "Избери всички"
 
 #: STORA/sales/templates/sales/sale_add.html:4
-#: STORA/sales/templates/sales/sale_add.html:30 templates/index.html:21
+#: STORA/sales/templates/sales/sale_add.html:30 templates/index.html:25
 msgid "New Sale"
 msgstr "Нова продажба"
 
@@ -4888,7 +4911,7 @@ msgstr "Справка за движения на стоки"
 msgid "Revisions history"
 msgstr "История на ревизиите"
 
-#: templates/base.html:127 templates/index.html:48
+#: templates/base.html:127 templates/index.html:52
 msgid "Reports"
 msgstr "Справки"
 
@@ -4929,39 +4952,39 @@ msgstr "Продължи / Изчисти"
 msgid "Open in new tab"
 msgstr "Отвори в нов таб"
 
-#: templates/index.html:7
+#: templates/index.html:9
 #, python-format
 msgid "Hello, %(name)s"
 msgstr "Здравейте, %(name)s"
 
-#: templates/index.html:17
+#: templates/index.html:21
 msgid "Quick access"
 msgstr "Бърз достъп"
 
-#: templates/index.html:22
+#: templates/index.html:26
 msgid "The till"
 msgstr "Касата"
 
-#: templates/index.html:29
+#: templates/index.html:33
 msgid "Goods from a supplier"
 msgstr "Стока от доставчик"
 
-#: templates/index.html:36
+#: templates/index.html:40
 msgid "Count the stock"
 msgstr "Преброяване на наличността"
 
-#: templates/index.html:43
+#: templates/index.html:47
 msgid "Prices, stock, barcodes"
 msgstr "Цени, наличности, баркодове"
 
-#: templates/index.html:49
+#: templates/index.html:53
 msgid "Sales and stock movements"
 msgstr "Продажби и движения на стоки"
 
-#: templates/index.html:60
+#: templates/index.html:64
 msgid "What's new"
 msgstr "Какво ново"
 
-#: templates/index.html:66
+#: templates/index.html:70
 msgid "New"
 msgstr "Ново"

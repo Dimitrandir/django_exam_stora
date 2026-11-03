@@ -20,6 +20,8 @@ WHATS_NEW = [
     {
         'date': date(2026, 11, 4),
         'points': [
+            _('Fiscal reports: a new, clearer screen. The result of each report shows right under it, and the period '
+              'report has quick buttons for this month, last month and this year.'),
             _('Deliveries, write-offs and scrap: scanning a barcode while a quantity box is open now adds 1 to that '
               'product, instead of typing the barcode in as the quantity.'),
             _('After you scan a new product, the cursor waits in its quantity box, so you can type the count '
