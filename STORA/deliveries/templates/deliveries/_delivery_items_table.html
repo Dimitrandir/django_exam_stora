@@ -610,6 +610,15 @@ document.addEventListener('DOMContentLoaded', function () {
         var fastBuffer = '';
         var lastKeyTime = 0;
         input.addEventListener('keydown', function (e) {
+            // The QW2100 (and many scanners) sends Ctrl+B before every code
+            // -- an invisible "start of text" marker (confirmed live via a
+            // keydown log). Modifier keys and Ctrl/Alt/Meta combos are
+            // skipped entirely: not part of the code, and not a reason to
+            // restart the buffer either (Shift can arrive mid-code too).
+            if (e.ctrlKey || e.altKey || e.metaKey ||
+                    ['Control', 'Alt', 'Shift', 'Meta', 'AltGraph'].indexOf(e.key) !== -1) {
+                return;
+            }
             var now = performance.now();
             var gap = now - lastKeyTime;
             lastKeyTime = now;
