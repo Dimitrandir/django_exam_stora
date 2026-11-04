@@ -1637,6 +1637,16 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
     justify-content: space-between;
 }
 
+/* POS "Shortcuts" title -- the global h2 size took too much of the narrow
+   panel, especially the longer Bulgarian "Бързи бутони" (asked for live).
+   Same small section-title size as the report/product form headers. */
+.sale-form__categories .section-header h2 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--primary-color);
+}
+
 .category-edit-btn {
     border: 1px solid #adb5bd;
     border-radius: 0.4rem;
