@@ -91,6 +91,16 @@ main {
 /* Opt-out of the centered "card" look for pages that want to use the full
    browser width -- e.g. data tables, where the card's max-width just wastes
    space on the sides. Set via {% block main_class %}main-wide{% endblock %}. */
+/* A centered <main> is a flex item of <body> (flex column, margin auto),
+   so with no width of its own it shrinks to its content. On a page with a
+   Tabulator table that loops: the table sizes its columns from <main>'s
+   width, and <main>'s width comes from the table -- seen live on Refund a
+   Sale: the table ended up wider than the card, the last column cut off.
+   A fixed width (still capped by max-width above) breaks the loop. */
+main:has(.data-table-card) {
+    width: 100%;
+}
+
 main.main-wide {
     max-width: none;
     width: 100%;
@@ -3663,6 +3673,18 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
 
 .refund-search-form input[name="q"] {
     max-width: 220px;
+}
+
+/* Positioning box for the ⌨ toggle (.sale-keyboard-toggle-btn is
+   position: absolute) -- without it the button flew off to the right edge
+   of the page. Padding keeps typed text clear of the icon. */
+.refund-search-q-wrapper {
+    position: relative;
+    display: inline-flex;
+}
+
+.refund-search-q-wrapper input[name="q"] {
+    padding-right: 2.2rem;
 }
 
 .refund-search-form input[name="date"] {

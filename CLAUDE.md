@@ -1619,7 +1619,18 @@ Apps: accounts, core, products, deliveries, sales, reports.
   → след полунощ показва вчера); (3) българските имена на месеци в Django
   са с главна буква — `|lower` само при `LANGUAGE_CODE == 'bg'`.
 
-**Технически капани (открити наскоро, лесно се повтарят)**  
+**Технически капани (открити наскоро, лесно се повтарят)**
+- **Центриран `<main>` (без `main-wide`) се свива до съдържанието си** —
+  той е flex item на `<body>` (flex column + `margin: auto`) и няма своя
+  ширина. С Tabulator таблица вътре това се зацикля: колоните се смятат
+  от ширината на `<main>`, а тя от таблицата → на "Refund a Sale"
+  таблицата излезе по-широка от картата и последната колона се отряза
+  (2026-11-04, screenshot от потребителя). Фикс в style.css:
+  `main:has(.data-table-card) { width: 100%; }` (max-width 1100px пак
+  важи). Свързано: `.sale-keyboard-toggle-btn` е `position: absolute` —
+  винаги го слагай в обвивка с `position: relative` (иначе отлита до
+  края на страницата).
+  
 - **Product create/edit темплейтите рендират полетата на ProductForms**
   **ръчно, едно по едно (** **{{ form.name }}** **, ** **{{ form.category }}** **, ...), не**
   **** **{{ form }}** ** анблок** -- добавяне на ново поле в `ProductForms.Meta.fields`

@@ -5,7 +5,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: STORA\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-04 16:39+0000\n"
+"POT-Creation-Date: 2026-11-04 16:56+0000\n"
 "PO-Revision-Date: 2026-10-02 00:00+0000\n"
 "Language-Team: Bulgarian\n"
 "Language: bg\n"
@@ -62,7 +62,7 @@ msgstr "Мениджър"
 #: STORA/accounts/models.py:11
 #: STORA/products/templates/products/product_history.html:74
 #: STORA/reports/templates/reports/sales_report.html:87 STORA/sales/forms.py:11
-#: STORA/sales/models.py:20 STORA/sales/templates/sales/refund_find.html:67
+#: STORA/sales/models.py:20 STORA/sales/templates/sales/refund_find.html:70
 #: STORA/sales/templates/sales/refund_list.html:50
 msgid "Cashier"
 msgstr "Касиер"
@@ -273,6 +273,14 @@ msgstr "Бутонът „Цял екран“ в доставката отно�
 
 #: STORA/core/whats_new.py:27
 msgid ""
+"Refund a Sale: the keyboard button sits inside the search box again, and the "
+"table fits the page."
+msgstr ""
+"Сторниране на продажба: бутонът за клавиатура отново е в полето за търсене, а"
+" таблицата се събира в страницата."
+
+#: STORA/core/whats_new.py:28
+msgid ""
 "Fiscal reports: a new, clearer screen. The result of each report shows right "
 "under it, and the period report has quick buttons for this month, last month "
 "and this year."
@@ -281,7 +289,7 @@ msgstr ""
 "точно под него, а отчетът за период има бързи бутони за този месец, миналия "
 "месец и тази година."
 
-#: STORA/core/whats_new.py:29
+#: STORA/core/whats_new.py:30
 msgid ""
 "Deliveries, write-offs and scrap: scanning a barcode while a quantity box is "
 "open now adds 1 to that product, instead of typing the barcode in as the "
@@ -291,7 +299,7 @@ msgstr ""
 "е отворено, вече добавя 1 бройка към продукта, вместо да записва баркода като"
 " количество."
 
-#: STORA/core/whats_new.py:31
+#: STORA/core/whats_new.py:32
 msgid ""
 "After you scan a new product, the cursor waits in its quantity box, so you "
 "can type the count straight away."
@@ -299,14 +307,14 @@ msgstr ""
 "След сканиране на нов продукт курсорът остава в полето за количество и можете"
 " веднага да напишете бройката."
 
-#: STORA/core/whats_new.py:33
+#: STORA/core/whats_new.py:34
 msgid ""
 "Enter on the last box of a row takes you back to the search box for the next "
 "product."
 msgstr ""
 "Enter на последното поле в реда ви връща в търсачката за следващия продукт."
 
-#: STORA/core/whats_new.py:34
+#: STORA/core/whats_new.py:35
 msgid ""
 "The hidden character some barcode scanners send before every code no longer "
 "breaks the scan."
@@ -314,14 +322,14 @@ msgstr ""
 "Скритият символ, който някои баркод четци пращат пред всеки код, вече не "
 "обърква сканирането."
 
-#: STORA/core/whats_new.py:40
+#: STORA/core/whats_new.py:41
 msgid ""
 "The database is backed up to OneDrive automatically every hour, whenever "
 "something has changed."
 msgstr ""
 "Базата се архивира автоматично в OneDrive на всеки час, когато има промени."
 
-#: STORA/core/whats_new.py:46
+#: STORA/core/whats_new.py:47
 msgid ""
 "New \"All refunds\" list, showing whether the fiscal receipt of each refund "
 "was printed."
@@ -329,7 +337,7 @@ msgstr ""
 "Нов списък „Всички сторна“, който показва дали фискалният бон на всяко сторно"
 " е отпечатан."
 
-#: STORA/core/whats_new.py:47
+#: STORA/core/whats_new.py:48
 msgid ""
 "A refund whose fiscal receipt did not print now says why, and has a button to"
 " print it."
@@ -337,7 +345,7 @@ msgstr ""
 "Сторно, чийто фискален бон не е излязъл, вече показва причината и има бутон "
 "за отпечатване."
 
-#: STORA/core/whats_new.py:48
+#: STORA/core/whats_new.py:49
 msgid ""
 "X report now sends the fiscal device its own \"report without reset\" "
 "command."
@@ -345,7 +353,7 @@ msgstr ""
 "X отчетът вече праща към фискалния апарат неговата собствена команда „отчет "
 "без нулиране“."
 
-#: STORA/core/whats_new.py:54
+#: STORA/core/whats_new.py:55
 msgid ""
 "Deliveries, write-offs and scrap: up to 3 open at the same time. Switch "
 "between them with the 1/2/3 buttons next to the title."
@@ -353,14 +361,14 @@ msgstr ""
 "Доставка, изписване и брак: до 3 отворени едновременно. Превключвате между "
 "тях с бутоните 1/2/3 до заглавието."
 
-#: STORA/core/whats_new.py:56
+#: STORA/core/whats_new.py:57
 msgid ""
 "Closing a delivery or a sale that still has products in it now asks first."
 msgstr ""
 "Затваряне на доставка или продажба, в която има продукти, вече пита за "
 "потвърждение."
 
-#: STORA/core/whats_new.py:57
+#: STORA/core/whats_new.py:58
 msgid ""
 "Products added from an Excel import stay in the delivery after a failed save "
 "or a page reload."
@@ -368,7 +376,7 @@ msgstr ""
 "Продуктите от импорт от Excel остават в доставката след неуспешен запис или "
 "презареждане на страницата."
 
-#: STORA/core/whats_new.py:63
+#: STORA/core/whats_new.py:64
 msgid ""
 "Products: a \"Clear filters\" button, so a filter on a hidden column cannot "
 "hide products unnoticed."
@@ -376,14 +384,14 @@ msgstr ""
 "Продукти: бутон „Изчисти филтрите“, за да не може филтър на скрита колона "
 "незабелязано да крие продукти."
 
-#: STORA/core/whats_new.py:64
+#: STORA/core/whats_new.py:65
 msgid ""
 "Excel import: new VAT group column. Left empty, the product gets group Б."
 msgstr ""
 "Импорт от Excel: нова колона „ДДС група“. Ако е празна, продуктът получава "
 "група Б."
 
-#: STORA/core/whats_new.py:70
+#: STORA/core/whats_new.py:71
 msgid ""
 "Products: set an attribute (color, size...) for many selected products at "
 "once."
@@ -391,7 +399,7 @@ msgstr ""
 "Продукти: задаване на атрибут (цвят, размер...) на много избрани продукти "
 "наведнъж."
 
-#: STORA/core/whats_new.py:71
+#: STORA/core/whats_new.py:72
 msgid ""
 "Products: the actions for selected products fit on one row, and \"Load into\""
 " is a single menu."
@@ -399,7 +407,7 @@ msgstr ""
 "Продукти: действията за избраните продукти се събират на един ред, а „Зареди "
 "в“ е едно меню."
 
-#: STORA/core/whats_new.py:72
+#: STORA/core/whats_new.py:73
 msgid ""
 "Excel import: two new products with the same name or barcode in one file no "
 "longer stop the whole delivery."
@@ -407,7 +415,7 @@ msgstr ""
 "Импорт от Excel: два нови продукта с еднакво име или баркод в един файл вече "
 "не спират цялата доставка."
 
-#: STORA/core/whats_new.py:79
+#: STORA/core/whats_new.py:80
 msgid ""
 "Product attributes can be filled in from the Excel import and edited directly"
 " in the Products list."
@@ -1086,7 +1094,7 @@ msgstr "Преглед на всички получени доставки."
 
 #: STORA/deliveries/templates/deliveries/deliveries_list.html:19
 #: STORA/reports/templates/reports/sales_report.html:86
-#: STORA/sales/templates/sales/refund_find.html:66
+#: STORA/sales/templates/sales/refund_find.html:69
 #: STORA/sales/templates/sales/refund_list.html:48
 msgid "Time"
 msgstr "Час"
@@ -1654,7 +1662,7 @@ msgstr "AI не намери нищо за поръчване в момента 
 #: STORA/products/templates/products/product_history.html:80
 #: STORA/reports/templates/reports/deliveries_report.html:91
 #: STORA/reports/templates/reports/sales_report.html:85
-#: STORA/sales/models.py:381 STORA/sales/templates/sales/refund_find.html:65
+#: STORA/sales/models.py:381 STORA/sales/templates/sales/refund_find.html:68
 #: STORA/sales/templates/sales/refund_list.html:47
 msgid "Date"
 msgstr "Дата"
@@ -3061,7 +3069,7 @@ msgid "Enable Edit"
 msgstr "Включи редакция"
 
 #: STORA/products/templates/products/products_list.html:530
-#: STORA/sales/templates/sales/refund_find.html:33
+#: STORA/sales/templates/sales/refund_find.html:36
 msgid "Explanation"
 msgstr "Обяснение"
 
@@ -3477,7 +3485,7 @@ msgid "Expiring products"
 msgstr "Изтичащи продукти"
 
 #: STORA/reports/templates/reports/dashboard.html:55 STORA/sales/models.py:73
-#: STORA/sales/templates/sales/refund_find.html:81 templates/base.html:97
+#: STORA/sales/templates/sales/refund_find.html:84 templates/base.html:97
 msgid "Sales"
 msgstr "Продажби"
 
@@ -3619,7 +3627,7 @@ msgstr "Нетно к-во"
 #: STORA/reports/templates/reports/sales_quantity_report.html:89
 #: STORA/reports/templates/reports/sales_report.html:95
 #: STORA/reports/templates/reports/stock_balance_report.html:110
-#: STORA/sales/templates/sales/refund_find.html:69
+#: STORA/sales/templates/sales/refund_find.html:72
 msgid "Refunded"
 msgstr "Сторнирано"
 
@@ -3654,7 +3662,7 @@ msgid "Click a row to open that sale."
 msgstr "Цъкни ред, за да отвориш продажбата."
 
 #: STORA/reports/templates/reports/sales_report.html:84
-#: STORA/sales/templates/sales/refund_find.html:64
+#: STORA/sales/templates/sales/refund_find.html:67
 #: STORA/sales/templates/sales/refund_list.html:46
 msgid "ID"
 msgstr "№"
@@ -4246,8 +4254,8 @@ msgid "Refund Items"
 msgstr "Артикули от сторно"
 
 #: STORA/sales/models.py:375 STORA/sales/templates/sales/fiscal_reports.html:48
-#: STORA/sales/templates/sales/refund_find.html:25
-#: STORA/sales/templates/sales/refund_find.html:68
+#: STORA/sales/templates/sales/refund_find.html:28
+#: STORA/sales/templates/sales/refund_find.html:71
 msgid "Amount"
 msgstr "Сума"
 
@@ -4468,24 +4476,24 @@ msgstr "Сторниране на продажба"
 msgid "Back to Sales"
 msgstr "Обратно към продажбите"
 
-#: STORA/sales/templates/sales/refund_find.html:21
+#: STORA/sales/templates/sales/refund_find.html:23
 msgid "Sale ID or cashier"
 msgstr "Номер на продажба или касиер"
 
-#: STORA/sales/templates/sales/refund_find.html:23
+#: STORA/sales/templates/sales/refund_find.html:25
 #: STORA/sales/templates/sales/sale_add.html:154
 msgid "Show keyboard"
 msgstr "Покажи клавиатурата"
 
-#: STORA/sales/templates/sales/refund_find.html:29
+#: STORA/sales/templates/sales/refund_find.html:32
 msgid "Search"
 msgstr "Търси"
 
-#: STORA/sales/templates/sales/refund_find.html:31 templates/base.html:43
+#: STORA/sales/templates/sales/refund_find.html:34 templates/base.html:43
 msgid "Clear"
 msgstr "Изчисти"
 
-#: STORA/sales/templates/sales/refund_find.html:34
+#: STORA/sales/templates/sales/refund_find.html:37
 msgid ""
 "Pick from the recent receipts below, or narrow the search by sale ID/cashier,"
 " date, or amount -- scanning a sale's own receipt barcode also works here (it"
@@ -4495,7 +4503,7 @@ msgstr ""
 "продажба/касиер, дата или сума -- сканирането на баркода от самата бележка "
 "също работи тук (просто въвежда номера на продажбата в търсачката)."
 
-#: STORA/sales/templates/sales/refund_find.html:70
+#: STORA/sales/templates/sales/refund_find.html:73
 msgid "No sales found."
 msgstr "Няма намерени продажби."
 

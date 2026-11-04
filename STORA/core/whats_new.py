@@ -24,6 +24,7 @@ WHATS_NEW = [
               'scroll, and remembers the columns you chose.'),
             _('After a scan, the table scrolls to that product and it lights up for a moment.'),
             _('The Full Screen button of a delivery works again.'),
+            _('Refund a Sale: the keyboard button sits inside the search box again, and the table fits the page.'),
             _('Fiscal reports: a new, clearer screen. The result of each report shows right under it, and the period '
               'report has quick buttons for this month, last month and this year.'),
             _('Deliveries, write-offs and scrap: scanning a barcode while a quantity box is open now adds 1 to that '
