@@ -1648,6 +1648,10 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
 }
 
 .category-edit-btn {
+    /* A touch higher than centered on the title -- centered, it sat too
+       close to the dashed shortcut bar right under it (asked for live). */
+    position: relative;
+    top: -4px;
     border: 1px solid #adb5bd;
     border-radius: 0.4rem;
     padding: 0.3rem 0.7rem;
