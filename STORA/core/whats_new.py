@@ -20,6 +20,8 @@ WHATS_NEW = [
     {
         'date': date(2026, 11, 4),
         'points': [
+            _('Tables: shorter price headers ("Del. price", "Sell price"); the hint under the delivery table is now '
+              'behind a "?" button.'),
             _('Deliveries, write-offs and scrap: the products table looks like the Products list, keeps its own '
               'scroll, and remembers the columns you chose.'),
             _('After a scan, the table scrolls to that product and it lights up for a moment.'),

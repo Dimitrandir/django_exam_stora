@@ -111,11 +111,11 @@ document.addEventListener('DOMContentLoaded', function () {
         {title: '{% translate "Name" %}', field: 'name', width: 220},
         {title: '{% translate "Qty" %}', field: 'delivery_quantity', width: 90, hozAlign: 'right', formatter: quantityFormatter, bottomCalc: 'sum', bottomCalcFormatter: quantityFormatter},
         {
-            title: '{% translate "Unit Price" %}', field: 'price_at_delivery', width: 120, hozAlign: 'right',
+            title: '{% translate "Delivery Price" %}', field: 'price_at_delivery', width: 120, hozAlign: 'right',
             formatter: moneyFormatter,
         },
         {
-            title: '{% translate "Unit Price (no VAT)" %}', field: 'price_without_vat', width: 150, hozAlign: 'right',
+            title: '{% translate "Delivery Price (no VAT)" %}', field: 'price_without_vat', width: 150, hozAlign: 'right',
             formatter: moneyFormatter, visible: false,
         },
         {

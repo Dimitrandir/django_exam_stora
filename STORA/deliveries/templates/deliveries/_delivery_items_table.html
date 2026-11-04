@@ -185,8 +185,11 @@ uses, independent of whether this delivery gets submitted at all.
 <div class="d-flex align-items-center gap-2 mt-2 flex-wrap">
     <button type="button" id="delivery-delete-line-btn" class="pill-btn button-delete-line">{% translate "Delete Line(s)" %}</button>
     <button type="button" id="delivery-discount-btn" class="pill-btn pill-btn--outline">{% translate "Discount" %}</button>
+    <span class="popup-tip">
+        <button type="button" class="popup-tip__trigger" aria-label="{% translate "Explanation" %}">?</button>
+        <span class="popup-tip__bubble">{% translate "Tap rows to select them (tap again to deselect), then Delete Line(s) to remove them, or Discount to discount just those lines." %}</span>
+    </span>
 </div>
-<p class="text-muted small mt-1 mb-0">{% translate "Tap rows to select them (tap again to deselect), then Delete Line(s) to remove them, or Discount to discount just those lines." %}</p>
 
 <script src="{% static 'vendor/sheetjs/xlsx.full.min.js' %}"></script>
 <script src="{% static 'vendor/tabulator/tabulator.min.js' %}"></script>
@@ -939,11 +942,11 @@ document.addEventListener('DOMContentLoaded', function () {
             bottomCalcFormatter: quantityFormatter,
         },
         {
-            title: '{% translate "Unit Price" %}', field: 'price_at_delivery', width: 130, hozAlign: 'right',
+            title: '{% translate "Delivery Price" %}', field: 'price_at_delivery', width: 130, hozAlign: 'right',
             editor: numberEditor, editorParams: {min: 0, step: 0.01}, formatter: deliveryPriceFormatter,
         },
         {
-            title: '{% translate "Unit Price (no VAT)" %}', field: 'price_without_vat', width: 150, hozAlign: 'right',
+            title: '{% translate "Delivery Price (no VAT)" %}', field: 'price_without_vat', width: 150, hozAlign: 'right',
             editor: numberEditor, editorParams: {min: 0, step: 0.01}, formatter: moneyFormatter, visible: false,
         },
         {
