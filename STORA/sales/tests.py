@@ -1,6 +1,7 @@
 import json
 from datetime import timedelta, timezone as dt_timezone
 from decimal import Decimal
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from django.contrib.auth import get_user_model
@@ -12,7 +13,10 @@ from django.utils import timezone
 from STORA.products.models import Category, Product, RecipeIngredient, TaxGroup
 from STORA.pricelists.models import PriceList, PriceListRule
 from STORA.sales import fiscal
-from STORA.sales.models import SaleAttributes, SaleItems, PosPin, SaleItemVoidLog, RefundAttributes, RefundItems, FiscalCounter
+from STORA.sales.models import (
+    SaleAttributes, SaleItems, PosPin, SaleItemVoidLog, RefundAttributes, RefundItems, FiscalCounter,
+    ServiceCashMovement,
+)
 from STORA.sales.forms import SaleItemForm
 from STORA.sales.tasks import backfill_recipe_ingredient_stock
 
@@ -1082,6 +1086,7 @@ FISCAL_SETTINGS = dict(
     FISCAL_COM_PORT='COM4',
     FISCAL_API_URL='http://127.0.0.1:7000/Api',
     FISCAL_DEVICE_SERIAL='DY000001',
+    FISCAL_DEVICE_FM_NUMBER='36656108',
     FISCAL_OPERATOR_NUM='1',
     FISCAL_OPERATOR_PASSWORD='1',
 )
@@ -1346,10 +1351,10 @@ class FiscalDailyReportTests(TestCase):
     @patch('STORA.sales.fiscal._post_command')
     @patch('STORA.sales.fiscal._start_ecrcommapp')
     @patch('STORA.sales.fiscal._stop_ecrcommapp')
-    def test_x_report_uses_item_1_and_stops_app(self, mock_stop, mock_start, mock_post):
+    def test_x_report_uses_item_2_and_stops_app(self, mock_stop, mock_start, mock_post):
         mock_start.return_value = MagicMock()
         fiscal.print_x_report()
-        mock_post.assert_called_once_with('FDDailyRpt', {'Item': 1, 'Option': ''})
+        mock_post.assert_called_once_with('FDDailyRpt', {'Item': 2, 'Option': ''})
         mock_stop.assert_called_once()
 
     @override_settings(**FISCAL_SETTINGS)
@@ -1372,6 +1377,76 @@ class FiscalDailyReportTests(TestCase):
         with self.assertRaises(fiscal.FiscalPrintError):
             fiscal.print_x_report()
         mock_stop.assert_called_once()
+
+
+class FiscalServiceCashMoveTests(TestCase):
+    """service_cash_move/record_service_cash_move -- same mocked boundary as
+    FiscalDailyReportTests."""
+
+    def setUp(self):
+        self.cashier = User.objects.create_user(username='fiscal-svc-cashier', password='pass12345', role=User.CASHIER)
+
+    def test_disabled_raises(self):
+        with self.assertRaises(fiscal.FiscalPrintError):
+            fiscal.service_cash_move(Decimal('10'))
+
+    @override_settings(**FISCAL_SETTINGS)
+    @patch('STORA.sales.fiscal._post_command')
+    @patch('STORA.sales.fiscal._start_ecrcommapp')
+    @patch('STORA.sales.fiscal._stop_ecrcommapp')
+    def test_positive_amount_sent_as_is(self, mock_stop, mock_start, mock_post):
+        mock_start.return_value = MagicMock()
+        mock_post.return_value = {'Code': 'P', 'CashSum': 42, 'ServInput': 10, 'ServOutput': 0}
+        result = fiscal.service_cash_move(Decimal('10.00'), 'float top-up')
+        mock_post.assert_called_once_with('FDServiceSum', {'Amount': 10.0, 'Text1': 'float top-up', 'Text2': ''})
+        self.assertEqual(result['CashSum'], 42)
+        mock_stop.assert_called_once()
+
+    @override_settings(**FISCAL_SETTINGS)
+    @patch('STORA.sales.fiscal._post_command')
+    @patch('STORA.sales.fiscal._start_ecrcommapp')
+    @patch('STORA.sales.fiscal._stop_ecrcommapp')
+    def test_negative_amount_for_cash_out(self, mock_stop, mock_start, mock_post):
+        mock_start.return_value = MagicMock()
+        mock_post.return_value = {'Code': 'P', 'CashSum': 0, 'ServInput': 0, 'ServOutput': 10}
+        fiscal.service_cash_move(Decimal('-10.00'))
+        mock_post.assert_called_once_with('FDServiceSum', {'Amount': -10.0, 'Text1': '', 'Text2': ''})
+
+    @override_settings(**FISCAL_SETTINGS)
+    @patch('STORA.sales.fiscal._post_command')
+    @patch('STORA.sales.fiscal._start_ecrcommapp')
+    @patch('STORA.sales.fiscal._stop_ecrcommapp')
+    def test_device_code_f_raises(self, mock_stop, mock_start, mock_post):
+        mock_start.return_value = MagicMock()
+        mock_post.return_value = {'Code': 'F'}
+        with self.assertRaises(fiscal.FiscalPrintError):
+            fiscal.service_cash_move(Decimal('999999.00'))
+
+    @override_settings(**FISCAL_SETTINGS)
+    @patch('STORA.sales.fiscal._post_command')
+    @patch('STORA.sales.fiscal._start_ecrcommapp')
+    @patch('STORA.sales.fiscal._stop_ecrcommapp')
+    def test_record_logs_success(self, mock_stop, mock_start, mock_post):
+        mock_start.return_value = MagicMock()
+        mock_post.return_value = {'Code': 'P', 'CashSum': 42, 'ServInput': 10, 'ServOutput': 0}
+        movement = fiscal.record_service_cash_move(Decimal('10.00'), 'top-up', self.cashier)
+        self.assertEqual(movement.fiscal_status, SaleAttributes.FISCAL_PRINTED)
+        self.assertEqual(movement.cash_sum_after, 42)
+        self.assertEqual(movement.performed_by, self.cashier)
+        self.assertTrue(ServiceCashMovement.objects.filter(pk=movement.pk).exists())
+
+    @override_settings(**FISCAL_SETTINGS)
+    @patch('STORA.sales.fiscal._post_command')
+    @patch('STORA.sales.fiscal._start_ecrcommapp')
+    @patch('STORA.sales.fiscal._stop_ecrcommapp')
+    def test_record_logs_failure_and_still_raises(self, mock_stop, mock_start, mock_post):
+        mock_start.return_value = MagicMock()
+        mock_post.side_effect = fiscal.FiscalPrintError('receipt still open')
+        with self.assertRaises(fiscal.FiscalPrintError):
+            fiscal.record_service_cash_move(Decimal('10.00'), '', self.cashier)
+        movement = ServiceCashMovement.objects.get()
+        self.assertEqual(movement.fiscal_status, SaleAttributes.FISCAL_FAILED)
+        self.assertIn('receipt still open', movement.fiscal_error)
 
 
 class FiscalPeriodReportTests(TestCase):
@@ -1450,6 +1525,52 @@ class FiscalReportsViewTests(TestCase):
         })
         self.assertEqual(response.status_code, 400)
 
+    def test_warehouse_has_no_access_to_service_cash(self):
+        self.client.force_login(self.warehouse)
+        response = self.client.post(reverse('fiscal_service_cash'), {'amount': '10', 'direction': 'in'})
+        self.assertEqual(response.status_code, 403)
+
+    @patch('STORA.sales.views.fiscal.record_service_cash_move')
+    def test_service_cash_in_sends_positive_amount(self, mock_record):
+        mock_record.return_value = SimpleNamespace(cash_sum_after=Decimal('52.00'))
+        self.client.force_login(self.cashier)
+        response = self.client.post(reverse('fiscal_service_cash'), {
+            'amount': '10.00', 'direction': 'in', 'comment': 'float top-up',
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()['ok'])
+        args, _kwargs = mock_record.call_args
+        self.assertEqual(args[0], Decimal('10.00'))
+
+    @patch('STORA.sales.views.fiscal.record_service_cash_move')
+    def test_service_cash_out_sends_negative_amount(self, mock_record):
+        mock_record.return_value = SimpleNamespace(cash_sum_after=Decimal('32.00'))
+        self.client.force_login(self.cashier)
+        response = self.client.post(reverse('fiscal_service_cash'), {
+            'amount': '10.00', 'direction': 'out',
+        })
+        self.assertEqual(response.status_code, 200)
+        args, _kwargs = mock_record.call_args
+        self.assertEqual(args[0], Decimal('-10.00'))
+
+    def test_service_cash_rejects_zero_or_negative_typed_amount(self):
+        self.client.force_login(self.cashier)
+        response = self.client.post(reverse('fiscal_service_cash'), {'amount': '0', 'direction': 'in'})
+        self.assertEqual(response.status_code, 400)
+
+    def test_service_cash_rejects_garbage_amount(self):
+        self.client.force_login(self.cashier)
+        response = self.client.post(reverse('fiscal_service_cash'), {'amount': 'abc', 'direction': 'in'})
+        self.assertEqual(response.status_code, 400)
+
+    @patch('STORA.sales.views.fiscal.record_service_cash_move')
+    def test_service_cash_device_failure_returns_502(self, mock_record):
+        mock_record.side_effect = fiscal.FiscalPrintError('till not enough cash')
+        self.client.force_login(self.cashier)
+        response = self.client.post(reverse('fiscal_service_cash'), {'amount': '10', 'direction': 'out'})
+        self.assertEqual(response.status_code, 502)
+        self.assertIn('till not enough cash', response.json()['error'])
+
 
 class FiscalRefundTests(TestCase):
     """print_fiscal_refund orchestration -- same mocked boundary as
@@ -1513,6 +1634,7 @@ class FiscalRefundTests(TestCase):
         self.assertEqual(start_data['Reason'], '0')  # RETURN_COMPLAINT -> "0" (string, not int)
         self.assertEqual(start_data['DocLink'], 3)
         self.assertEqual(start_data['DocLinkDT'], '14-03-26 14:30:00')
+        self.assertEqual(start_data['FiskMem'], '36656108')
 
         item_call = mock_post.call_args_list[1]
         item_data = item_call.args[1]
@@ -1555,6 +1677,52 @@ class FiscalRefundTests(TestCase):
 
         sent_commands = [call.args[0] for call in mock_post.call_args_list]
         self.assertEqual(sent_commands, ['FDStartFiscRcp', 'FDSaleItem', 'FDCancelRcp'])
+
+
+class FiscalRefundMissingFmNumberTests(TestCase):
+    """A machine whose .env never got FISCAL_DEVICE_FM_NUMBER used to send
+    FiskMem='' and get the cryptic "service error -- 21" from the device."""
+
+    setUp = FiscalRefundTests.setUp  # same fixture (fiscalized sale + refund), without re-running its tests
+
+    def _assert_rejected_before_touching_the_device(self):
+        with patch('STORA.sales.fiscal._start_ecrcommapp') as mock_start:
+            with self.assertRaises(fiscal.FiscalPrintError) as ctx:
+                fiscal.print_fiscal_refund(self.refund)
+            mock_start.assert_not_called()
+        self.assertIn('FISCAL_DEVICE_FM_NUMBER', str(ctx.exception))
+
+    @override_settings(**{**FISCAL_SETTINGS, 'FISCAL_DEVICE_FM_NUMBER': ''})
+    def test_empty_fm_number_is_caught_with_a_clear_message(self):
+        self._assert_rejected_before_touching_the_device()
+
+    @override_settings(**{**FISCAL_SETTINGS, 'FISCAL_DEVICE_FM_NUMBER': '1234'})
+    def test_fm_number_must_be_eight_digits(self):
+        self._assert_rejected_before_touching_the_device()
+
+
+class FiscalDeviceErrorHintTests(TestCase):
+    def test_known_code_gets_a_plain_english_hint(self):
+        self.assertIn('outside the allowed limits', fiscal._describe_device_error('21'))
+        self.assertTrue(fiscal._describe_device_error(21).startswith('21 ('))
+
+    def test_unknown_code_is_still_shown(self):
+        self.assertEqual(fiscal._describe_device_error('199'), '199')
+
+
+class FiscalSentSummaryTests(TestCase):
+    def test_start_receipt_error_shows_sent_fields_with_password_masked(self):
+        summary = fiscal._sent_summary('FDStartFiscRcp', {
+            'Operator': 20, 'Password': 9999, 'Refund': 'R', 'Invoice': '', 'DocLink': 47, 'FiskMem': '36752531',
+        })
+        self.assertIn("'DocLink': 47", summary)
+        self.assertIn("'FiskMem': '36752531'", summary)
+        self.assertIn("'Password': '***'", summary)
+        self.assertNotIn('9999', summary)
+        self.assertNotIn('Invoice', summary)  # blanks left out
+
+    def test_other_commands_add_nothing(self):
+        self.assertEqual(fiscal._sent_summary('FDSaleItem', {'Text1': 'x'}), '')
 
 
 class FiscalAttemptPrintRefundTests(TestCase):
@@ -1796,8 +1964,45 @@ class FiscalBridgeModeTests(TestCase):
         response = self.client.post(reverse('fiscal_report_x'))
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
-            response.json()['bridge_commands'], [{'cmd': 'FDDailyRpt', 'data': {'Item': 1, 'Option': ''}}],
+            response.json()['bridge_commands'], [{'cmd': 'FDDailyRpt', 'data': {'Item': 2, 'Option': ''}}],
         )
+
+    @patch('STORA.sales.fiscal._start_ecrcommapp')
+    def test_service_cash_logs_pending_and_returns_job(self, mock_start):
+        response = self.client.post(reverse('fiscal_service_cash'), {'amount': '50', 'direction': 'out', 'comment': 'bank'})
+        self.assertEqual(response.status_code, 200)
+        mock_start.assert_not_called()
+        job = response.json()['bridge_job']
+        movement = ServiceCashMovement.objects.get()
+        self.assertEqual(job['kind'], 'service_cash')
+        self.assertEqual(job['id'], movement.pk)
+        self.assertEqual(job['commands'], [{'cmd': 'FDServiceSum', 'data': {'Amount': -50.0, 'Text1': 'bank', 'Text2': ''}}])
+        self.assertEqual(movement.fiscal_status, SaleAttributes.FISCAL_PENDING)
+        self.assertEqual(movement.amount, Decimal('-50'))
+
+    def _service_cash_result(self, results, ok=True):
+        movement = ServiceCashMovement.objects.create(
+            amount=Decimal('20'), performed_by=self.cashier, fiscal_status=SaleAttributes.FISCAL_PENDING,
+        )
+        response = self.client.post(
+            reverse('fiscal_bridge_result'),
+            data=json.dumps({'kind': 'service_cash', 'id': movement.pk, 'ok': ok, 'results': results}),
+            content_type='application/json',
+        )
+        movement.refresh_from_db()
+        return response, movement
+
+    def test_service_cash_result_records_till_total(self):
+        response, movement = self._service_cash_result([{'Code': 'P', 'CashSum': '120.50'}])
+        self.assertEqual(response.json()['cash_sum_after'], '120.50')
+        self.assertEqual(movement.fiscal_status, SaleAttributes.FISCAL_PRINTED)
+        self.assertEqual(movement.cash_sum_after, Decimal('120.50'))
+
+    def test_service_cash_result_code_f_is_a_failure(self):
+        response, movement = self._service_cash_result([{'Code': 'F'}])
+        self.assertEqual(response.json()['status'], SaleAttributes.FISCAL_FAILED)
+        self.assertEqual(movement.fiscal_status, SaleAttributes.FISCAL_FAILED)
+        self.assertIn('Code F', movement.fiscal_error)
 
 
 class FiscalLocalModeUnchangedTests(TestCase):
@@ -1818,3 +2023,101 @@ class FiscalLocalModeUnchangedTests(TestCase):
             content_type='application/json',
         )
         self.assertEqual(response.status_code, 404)
+
+
+class RefundFiscalVisibilityTests(TestCase):
+    """"The storno was made but no receipt came out and nobody could see why
+    or print it again" -- the details page now always explains a missing
+    fiscal receipt, offers to print it when that can work, and there is a
+    list of refunds to find it from."""
+
+    def setUp(self):
+        self.cashier = User.objects.create_user(username='refund-vis-cashier', password='pass12345', role=User.CASHIER)
+        self.client.force_login(self.cashier)
+
+    def _refund(self, payment_method=SaleAttributes.CASH, fiscal_status=SaleAttributes.FISCAL_NONE, **sale_extra):
+        sale = SaleAttributes.objects.create(
+            cashier=self.cashier, payment_method=payment_method, amount_paid=Decimal('1.00'),
+            fiscal_status=SaleAttributes.FISCAL_PRINTED, fiscal_receipt_number=1, fiscal_printed_at=timezone.now(),
+            **sale_extra,
+        )
+        return RefundAttributes.objects.create(
+            original_sale=sale, cashier=self.cashier, reason=RefundAttributes.RETURN_COMPLAINT,
+            fiscal_status=fiscal_status,
+        )
+
+    def _details(self, refund):
+        return self.client.get(reverse('refund_details', kwargs={'pk': refund.pk}), HTTP_ACCEPT_LANGUAGE='en')
+
+    @override_settings(FISCAL_ENABLED=True)
+    def test_card_sale_refund_explains_why_and_offers_no_print(self):
+        response = self._details(self._refund(payment_method=SaleAttributes.CARD))
+        self.assertIn('paid by', response.context['fiscal_note'])
+        self.assertFalse(response.context['can_fiscal_print'])
+
+    @override_settings(FISCAL_ENABLED=False)
+    def test_disabled_fiscal_explains_why(self):
+        response = self._details(self._refund())
+        self.assertIn('switched off', response.context['fiscal_note'])
+        self.assertFalse(response.context['can_fiscal_print'])
+
+    @override_settings(FISCAL_ENABLED=True)
+    def test_not_attempted_cash_refund_offers_print_button(self):
+        response = self._details(self._refund())
+        self.assertTrue(response.context['fiscal_note'])
+        self.assertTrue(response.context['can_fiscal_print'])
+        self.assertContains(response, 'Print Fiscal Receipt')
+
+    @override_settings(FISCAL_ENABLED=True)
+    def test_failed_refund_offers_retry_even_for_non_cash(self):
+        refund = self._refund(payment_method=SaleAttributes.CARD, fiscal_status=SaleAttributes.FISCAL_FAILED)
+        refund.fiscal_error = 'device unreachable'
+        refund.save()
+        response = self._details(refund)
+        self.assertTrue(response.context['can_fiscal_print'])
+        self.assertContains(response, 'Retry Fiscal Print')
+        self.assertContains(response, 'device unreachable')
+
+    @override_settings(FISCAL_ENABLED=True)
+    def test_printed_refund_has_no_note_and_no_button(self):
+        response = self._details(self._refund(fiscal_status=SaleAttributes.FISCAL_PRINTED))
+        self.assertEqual(response.context['fiscal_note'], '')
+        self.assertFalse(response.context['can_fiscal_print'])
+
+    @override_settings(FISCAL_ENABLED=True)
+    @patch('STORA.sales.views.fiscal.attempt_print_refund')
+    def test_retry_never_prints_a_second_receipt(self, mock_attempt):
+        refund = self._refund(fiscal_status=SaleAttributes.FISCAL_PRINTED)
+        self.client.post(reverse('refund_fiscal_retry', kwargs={'pk': refund.pk}))
+        mock_attempt.assert_not_called()
+
+    @override_settings(FISCAL_ENABLED=True)
+    @patch('STORA.sales.views.fiscal.attempt_print_refund')
+    def test_print_button_works_for_a_refund_that_was_never_attempted(self, mock_attempt):
+        refund = self._refund()
+        self.client.post(reverse('refund_fiscal_retry', kwargs={'pk': refund.pk}))
+        mock_attempt.assert_called_once()
+
+    @patch('STORA.sales.fiscal.print_fiscal_refund')
+    def test_unexpected_error_is_recorded_not_raised(self, mock_print):
+        mock_print.side_effect = KeyError('Europe/Sofia')  # e.g. missing tz data -- not a FiscalPrintError
+        refund = self._refund()
+        fiscal.attempt_print_refund(refund)  # must not raise
+        refund.refresh_from_db()
+        self.assertEqual(refund.fiscal_status, SaleAttributes.FISCAL_FAILED)
+        self.assertIn('Unexpected error', refund.fiscal_error)
+
+    def test_refund_list_shows_refunds_with_fiscal_status(self):
+        failed = self._refund(fiscal_status=SaleAttributes.FISCAL_FAILED)
+        response = self.client.get(reverse('refund_list'), HTTP_ACCEPT_LANGUAGE='en')
+        self.assertEqual(response.status_code, 200)
+        rows = response.context['refunds_data']
+        self.assertEqual([r['id'] for r in rows], [failed.pk])
+        self.assertEqual(rows[0]['fiscal_status'], SaleAttributes.FISCAL_FAILED)
+        self.assertEqual(rows[0]['view_url'], reverse('refund_details', args=[failed.pk]))
+
+    def test_refund_list_requires_login(self):
+        self.client.logout()
+        response = self.client.get(reverse('refund_list'))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn('/accounts/login/', response.url)

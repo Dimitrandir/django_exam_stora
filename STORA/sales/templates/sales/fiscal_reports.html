@@ -4,37 +4,86 @@
 {% block title %}STORA - {% translate "Fiscal Reports" %}{% endblock %}
 
 {% block content %}
-
-<h1 class="h2 mb-1">{% translate "Fiscal Reports" %}</h1>
-<p class="text-muted">{% translate "Reports print directly on the fiscal device's own paper -- nothing shown here comes back as data." %}</p>
-
-{% if not fiscal_enabled %}
-<div class="form-errors">{% translate "Fiscal printing is disabled on this machine (FISCAL_ENABLED). These buttons will not work." %}</div>
-{% endif %}
-
-<div class="mb-4">
-    <h2 class="h4">{% translate "Daily" %}</h2>
-    <p class="text-muted small">{% translate "X Report is just a reading -- run it as many times as you like. Z Report closes out the day and resets today's totals on the device -- run it once, at the end of the day." %}</p>
-    <button type="button" id="fiscal-x-btn" class="btn button-save">{% translate "X Report" %}</button>
-    <button type="button" id="fiscal-z-btn" class="btn btn-outline-danger">{% translate "Z Report (resets today's totals)" %}</button>
-</div>
-
-<div class="mb-4">
-    <h2 class="h4">{% translate "Period (monthly / yearly)" %}</h2>
-    <form id="fiscal-period-form" class="d-flex align-items-end gap-2 flex-wrap">
-        {% csrf_token %}
+<div class="fiscal-page">
+    <header class="fiscal-page__header">
         <div>
-            <label for="fiscal-period-start" class="form-label">{% translate "From" %}</label>
-            <input type="date" id="fiscal-period-start" name="start_date" class="form-control" required>
+            <h1>{% translate "Fiscal Reports" %}</h1>
+            <p class="fiscal-page__intro">{% translate "Reports print on the fiscal device's own paper." %}</p>
         </div>
-        <div>
-            <label for="fiscal-period-end" class="form-label">{% translate "To" %}</label>
-            <input type="date" id="fiscal-period-end" name="end_date" class="form-control" required>
-        </div>
-        <button type="submit" class="btn button-save">{% translate "Print Period Report" %}</button>
-    </form>
-</div>
+        <a href="{% url 'sale_add' %}" class="fiscal-btn fiscal-btn--quiet">
+            <i class="bi bi-arrow-left" aria-hidden="true"></i> {% translate "Back to the till" %}
+        </a>
+    </header>
 
+    {% if not fiscal_enabled %}
+    <div class="fiscal-status is-error" role="alert">{% translate "Fiscal printing is disabled on this machine (FISCAL_ENABLED). These buttons will not work." %}</div>
+    {% endif %}
+
+    {% csrf_token %}
+
+    {% comment %}
+    Each card shows its own result in a status line underneath (data-status
+    target), instead of an alert() popup -- the cashier sees what happened
+    right where they pressed, and it stays on screen.
+    {% endcomment %}
+    <section class="fiscal-card" aria-labelledby="fiscal-daily-title">
+        <h2 id="fiscal-daily-title">{% translate "Daily reports" %}</h2>
+        <div class="fiscal-action-row">
+            <button type="button" id="fiscal-x-btn" class="fiscal-btn fiscal-btn--primary">{% translate "X Report" %}</button>
+            <p>{% translate "Today's totals so far, without resetting anything." %}</p>
+        </div>
+        <div class="fiscal-action-row">
+            <button type="button" id="fiscal-z-btn" class="fiscal-btn fiscal-btn--danger">{% translate "Z Report" %}</button>
+            <p>{% translate "Closes the day and resets today's totals. Once, at the end of the day." %}</p>
+        </div>
+        <p class="fiscal-status" id="fiscal-daily-status" aria-live="polite" hidden></p>
+    </section>
+
+    <section class="fiscal-card" aria-labelledby="fiscal-cash-title">
+        <h2 id="fiscal-cash-title">{% translate "Service cash in / out" %}</h2>
+        <p class="fiscal-card__hint">{% translate "Money put into or taken out of the till outside a sale, e.g. change for the day or cash for the bank." %}</p>
+        <div class="fiscal-fields">
+            <label class="fiscal-field">
+                <span>{% translate "Amount" %}</span>
+                <input type="text" inputmode="decimal" id="fiscal-service-amount" autocomplete="off">
+            </label>
+            <label class="fiscal-field fiscal-field--wide">
+                <span>{% translate "Note (optional)" %}</span>
+                <input type="text" id="fiscal-service-comment" maxlength="28" autocomplete="off">
+            </label>
+        </div>
+        <div class="fiscal-buttons">
+            <button type="button" id="fiscal-service-in-btn" class="fiscal-btn fiscal-btn--primary">
+                <i class="bi bi-plus-lg" aria-hidden="true"></i> {% translate "Cash in" %}
+            </button>
+            <button type="button" id="fiscal-service-out-btn" class="fiscal-btn fiscal-btn--danger">
+                <i class="bi bi-dash-lg" aria-hidden="true"></i> {% translate "Cash out" %}
+            </button>
+        </div>
+        <p class="fiscal-status" id="fiscal-cash-status" aria-live="polite" hidden></p>
+    </section>
+
+    <section class="fiscal-card" aria-labelledby="fiscal-period-title">
+        <h2 id="fiscal-period-title">{% translate "Report for a period" %}</h2>
+        <div class="fiscal-presets" role="group" aria-label="{% translate 'Quick periods' %}">
+            <button type="button" class="fiscal-chip" data-preset="this-month">{% translate "This month" %}</button>
+            <button type="button" class="fiscal-chip" data-preset="last-month">{% translate "Last month" %}</button>
+            <button type="button" class="fiscal-chip" data-preset="this-year">{% translate "This year" %}</button>
+        </div>
+        <form id="fiscal-period-form" class="fiscal-fields">
+            <label class="fiscal-field">
+                <span>{% translate "From" %}</span>
+                <input type="date" id="fiscal-period-start" required>
+            </label>
+            <label class="fiscal-field">
+                <span>{% translate "To" %}</span>
+                <input type="date" id="fiscal-period-end" required>
+            </label>
+            <button type="submit" class="fiscal-btn fiscal-btn--primary">{% translate "Print" %}</button>
+        </form>
+        <p class="fiscal-status" id="fiscal-period-status" aria-live="polite" hidden></p>
+    </section>
+</div>
 {% endblock content %}
 
 {% block extra_js %}
@@ -42,8 +91,18 @@
 document.addEventListener('DOMContentLoaded', function () {
     var csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
 
-    function runReport(url, body, button) {
+    function showStatus(id, ok, text) {
+        var el = document.getElementById(id);
+        el.hidden = false;
+        el.classList.toggle('is-ok', ok);
+        el.classList.toggle('is-error', !ok);
+        el.textContent = (ok ? '✓ ' : '') + text;
+    }
+
+    // Same requests as before -- only where the result is shown changed.
+    function runReport(url, body, button, statusId, okText) {
         button.disabled = true;
+        showStatus(statusId, true, '{% translate "Printing..." %}');
         return fetch(url, {
             method: 'POST',
             headers: {'X-CSRFToken': csrfToken, 'Content-Type': 'application/x-www-form-urlencoded'},
@@ -51,27 +110,111 @@ document.addEventListener('DOMContentLoaded', function () {
         })
             .then(function (r) { return r.json().then(function (data) { return {ok: r.ok, data: data}; }); })
             .then(function (result) {
-                if (!result.ok) { alert(result.data.error || '{% translate "Report failed." %}'); return; }
-                // Cloud install: the server only sends the report back,
-                // the bridge on this computer prints it (fiscal-bridge.js).
-                if (result.data.bridge_commands && window.StoraFiscalBridge) {
-                    return window.StoraFiscalBridge.runCommands(result.data.bridge_commands).then(function (outcome) {
-                        alert(outcome.ok ? '{% translate "Done -- check the printer." %}' : (outcome.error || '{% translate "Report failed." %}'));
+                if (!result.ok) {
+                    showStatus(statusId, false, result.data.error || '{% translate "Report failed." %}');
+                    return;
+                }
+                // Cloud install: the server only sends the commands back,
+                // the bridge on this computer runs them (fiscal-bridge.js).
+                var bridge = window.StoraFiscalBridge;
+                if (result.data.bridge_commands && bridge) {
+                    return bridge.runCommands(result.data.bridge_commands).then(function (outcome) {
+                        if (!outcome.ok) {
+                            showStatus(statusId, false, outcome.error || '{% translate "Report failed." %}');
+                            return;
+                        }
+                        showStatus(statusId, true, typeof okText === 'function' ? okText(result.data) : okText);
                     });
                 }
-                alert('{% translate "Done -- check the printer." %}');
+                if (result.data.bridge_job && bridge) {
+                    // Service cash in/out: the cloud logged it as waiting, so
+                    // the outcome goes back there too (with the till total).
+                    var job = result.data.bridge_job;
+                    return bridge.runCommands(job.commands).then(function (outcome) {
+                        return bridge.reportResult(job, outcome).then(function (settled) {
+                            if (!outcome.ok || (settled && settled.status === 'FAILED')) {
+                                showStatus(statusId, false, outcome.error || (settled && settled.error) || '{% translate "Report failed." %}');
+                                return;
+                            }
+                            var data = {cash_sum_after: settled ? settled.cash_sum_after : null};
+                            showStatus(statusId, true, typeof okText === 'function' ? okText(data) : okText);
+                        });
+                    });
+                }
+                showStatus(statusId, true, typeof okText === 'function' ? okText(result.data) : okText);
             })
-            .catch(function () { alert('{% translate "Network error -- check your connection and try again." %}'); })
+            .catch(function () {
+                showStatus(statusId, false, '{% translate "Network error -- check your connection and try again." %}');
+            })
             .finally(function () { button.disabled = false; });
     }
 
+    var doneText = '{% translate "Done -- check the printer." %}';
+
     document.getElementById('fiscal-x-btn').addEventListener('click', function () {
-        runReport('{% url "fiscal_report_x" %}', '', this);
+        runReport('{% url "fiscal_report_x" %}', '', this, 'fiscal-daily-status', doneText);
     });
 
     document.getElementById('fiscal-z-btn').addEventListener('click', function () {
         if (!confirm('{% translate "Print the Z report? This resets the accumulated daily totals on the fiscal device -- only do this once, at the end of the day." %}')) return;
-        runReport('{% url "fiscal_report_z" %}', '', this);
+        runReport('{% url "fiscal_report_z" %}', '', this, 'fiscal-daily-status', doneText);
+    });
+
+    function runServiceCash(direction, button) {
+        var amountInput = document.getElementById('fiscal-service-amount');
+        var amount = amountInput.value.trim().replace(',', '.');
+        if (!amount) {
+            showStatus('fiscal-cash-status', false, '{% translate "Enter an amount." %}');
+            amountInput.focus();
+            return;
+        }
+        var comment = document.getElementById('fiscal-service-comment').value;
+        var body = new URLSearchParams({amount: amount, direction: direction, comment: comment});
+        var doneLabel = direction === 'in' ? '{% translate "Put in" %}' : '{% translate "Taken out" %}';
+        runReport('{% url "fiscal_service_cash" %}', body, button, 'fiscal-cash-status', function (data) {
+            var text = doneLabel + ': ' + Number(amount).toFixed(2) + ' eur.';
+            if (data.cash_sum_after && data.cash_sum_after !== 'None') {
+                text += ' {% translate "In the till now:" %} ' + Number(data.cash_sum_after).toFixed(2) + ' eur.';
+            }
+            amountInput.value = '';
+            return text;
+        });
+    }
+
+    document.getElementById('fiscal-service-in-btn').addEventListener('click', function () {
+        runServiceCash('in', this);
+    });
+
+    document.getElementById('fiscal-service-out-btn').addEventListener('click', function () {
+        if (!confirm('{% translate "Take this amount out of the till?" %}')) return;
+        runServiceCash('out', this);
+    });
+
+    // Quick periods -- fill in From/To, the clerk still presses Print.
+    function isoDate(d) {
+        var month = String(d.getMonth() + 1).padStart(2, '0');
+        var day = String(d.getDate()).padStart(2, '0');
+        return d.getFullYear() + '-' + month + '-' + day;
+    }
+
+    document.querySelectorAll('.fiscal-chip').forEach(function (chip) {
+        chip.addEventListener('click', function () {
+            var today = new Date();
+            var start, end;
+            if (chip.dataset.preset === 'this-month') {
+                start = new Date(today.getFullYear(), today.getMonth(), 1);
+                end = today;
+            } else if (chip.dataset.preset === 'last-month') {
+                start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+                end = new Date(today.getFullYear(), today.getMonth(), 0);
+            } else {
+                start = new Date(today.getFullYear(), 0, 1);
+                end = today;
+            }
+            document.getElementById('fiscal-period-start').value = isoDate(start);
+            document.getElementById('fiscal-period-end').value = isoDate(end);
+            document.querySelectorAll('.fiscal-chip').forEach(function (c) { c.classList.toggle('is-active', c === chip); });
+        });
     });
 
     document.getElementById('fiscal-period-form').addEventListener('submit', function (e) {
@@ -80,7 +223,8 @@ document.addEventListener('DOMContentLoaded', function () {
         var end = document.getElementById('fiscal-period-end').value;
         if (!start || !end) return;
         var body = new URLSearchParams({start_date: start, end_date: end});
-        runReport('{% url "fiscal_report_period" %}', body, e.submitter || this.querySelector('button[type=submit]'));
+        runReport('{% url "fiscal_report_period" %}', body, e.submitter || this.querySelector('button[type=submit]'),
+            'fiscal-period-status', doneText);
     });
 });
 </script>

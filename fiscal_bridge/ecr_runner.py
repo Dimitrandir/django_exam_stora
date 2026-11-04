@@ -40,6 +40,49 @@ class FiscalPrintError(Exception):
     in SaleAttributes.fiscal_error and show to a cashier/manager."""
 
 
+# Plain-English meaning of the device error numbers a receipt can realistically
+# hit (Приложение I, Таблица 1 of kasov_aparat_ECRCommApp_Guide.pdf) -- appended
+# to the bare number so a cashier/manager sees more than "error -- 21". Only the
+# ones that matter here; any other number is still shown, just without a hint.
+DEVICE_ERROR_HINTS = {
+    '1': 'overflow -- run the reports with reset',
+    '3': 'too many sales in this receipt',
+    '4': 'too many payments in this receipt',
+    '5': 'zero-value transaction',
+    '6': 'sale after payment has started',
+    '7': 'operation not allowed (check the operator rights on the device, e.g. storno rights)',
+    '8': 'tax group not allowed for sales',
+    '14': 'invalid character in a numeric field',
+    '15': 'too many decimal places',
+    '16': 'too many characters',
+    '19': 'a receipt is already open on the device',
+    '21': 'wrong value -- a field is outside the allowed limits',
+    '22': 'operation not allowed (see the device system parameters)',
+    '25': 'payment without any sales',
+    '30': 'fiscal memory is full -- call service',
+    '108': 'wrong operator password',
+    '118': 'operation not allowed',
+    '120': 'a required field is not programmed on the device',
+}
+
+
+def _describe_device_error(code):
+    hint = DEVICE_ERROR_HINTS.get(str(code))
+    return f'{code} ({hint})' if hint else f'{code}'
+
+
+def _sent_summary(cmd, cmd_data):
+    """The " [sent: ...]" suffix for a device error on FDStartFiscRcp -- the
+    fields that command opened the receipt with (operator password masked),
+    so a failure like "error 21: a field is outside the allowed limits" on
+    screen already says WHICH values were sent, without having to switch
+    FISCAL_DEBUG on and dig through logs/stora.log first."""
+    if cmd != 'FDStartFiscRcp' or not isinstance(cmd_data, dict):
+        return ''
+    shown = {k: ('***' if k == 'Password' else v) for k, v in cmd_data.items() if v not in ('', None)}
+    return f' [sent: {shown}]'
+
+
 @dataclass
 class DeviceConfig:
     api_url: str
@@ -81,18 +124,18 @@ def post_command(config, cmd, cmd_data, timeout=15):
 
     web_srv_cmd = result.get('WebSrvCmd', {})
     if web_srv_cmd.get('HasErr'):
-        raise FiscalPrintError(f'{cmd} on {port}: fiscal device service error -- {web_srv_cmd.get("Res")}')
+        raise FiscalPrintError(f'{cmd} on {port}: fiscal device service error -- {_describe_device_error(web_srv_cmd.get("Res"))}{_sent_summary(cmd, cmd_data)}')
 
     msg_list = web_srv_cmd.get('Cmd', {}).get('COMPortMsgList') or []
     if not msg_list:
         raise FiscalPrintError(f'{cmd} on {port}: fiscal device service returned an empty response.')
     msg = msg_list[0]
     if msg.get('HasErr'):
-        raise FiscalPrintError(f'{cmd} on {port}: fiscal device COM error -- {msg.get("Res")}')
+        raise FiscalPrintError(f'{cmd} on {port}: fiscal device COM error -- {_describe_device_error(msg.get("Res"))}{_sent_summary(cmd, cmd_data)}')
 
     res_command = msg.get('ResCommand', {})
     if not res_command.get('IsValid') or res_command.get('ErrorCode', 0) != 0:
-        raise FiscalPrintError(f'{cmd} on {port}: device error code {res_command.get("ErrorCode")}')
+        raise FiscalPrintError(f'{cmd} on {port}: device error code {_describe_device_error(res_command.get("ErrorCode"))}{_sent_summary(cmd, cmd_data)}')
     if config.debug:
         logger.info('Fiscal: %s on %s succeeded -- %s', cmd, port, res_command.get('CmdData', {}))
     return res_command.get('CmdData', {})

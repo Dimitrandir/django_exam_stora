@@ -16,6 +16,10 @@
 <div class="form-errors">
     {% translate "Fiscal storno receipt was NOT printed:" %} {{ refund.fiscal_error }}
 </div>
+{% elif fiscal_note %}
+<div class="form-errors">
+    {% translate "Fiscal storno receipt was NOT printed:" %} {{ fiscal_note }}
+</div>
 {% elif refund.fiscal_status == 'PRINTED' %}
 <p class="text-muted">{% blocktranslate with time=refund.fiscal_printed_at|date:"d.m.Y H:i" unp=refund.fiscal_unic_sale_num %}Fiscal storno receipt printed at {{ time }} (УНП {{ unp }}).{% endblocktranslate %}</p>
 {% elif refund.fiscal_status == 'PENDING' %}
@@ -31,10 +35,12 @@
 
 <a href="{% url 'sale_details' refund.original_sale_id %}">{% translate "View Original Sale" %}</a>
 
-{% if refund.fiscal_status == 'FAILED' and perms.sales.change_saleattributes or refund.fiscal_status == 'PENDING' and perms.sales.change_saleattributes %}
+<a href="{% url 'refund_list' %}">{% translate "All refunds" %}</a>
+
+{% if can_fiscal_print and perms.sales.change_saleattributes %}
 <form method="post" action="{% url 'refund_fiscal_retry' refund.pk %}" class="fiscal-retry-form" style="display:inline;">
     {% csrf_token %}
-    <button type="submit" class="btn button-save">{% translate "Retry Fiscal Print" %}</button>
+    <button type="submit" class="btn button-save">{% if refund.fiscal_status == 'FAILED' or refund.fiscal_status == 'PENDING' %}{% translate "Retry Fiscal Print" %}{% else %}{% translate "Print Fiscal Receipt" %}{% endif %}</button>
 </form>
 {% endif %}
 

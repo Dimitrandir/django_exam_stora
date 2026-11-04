@@ -34,7 +34,7 @@
 <div id="bulk-actions-bar" class="bulk-actions-bar d-none align-items-center gap-2 flex-wrap mb-2">
     <strong><span id="bulk-selected-count">0</span> {% translate "selected" %}</strong>
     {% if perms.products.change_product %}
-    <div class="pill-search-wrapper pill-search-wrapper--with-browse" style="max-width: 340px; flex: 1 1 260px;">
+    <div class="pill-search-wrapper pill-search-wrapper--with-browse" style="max-width: 190px; flex: 0 1 165px;">
         <span class="pill-search-wrapper__icon"></span>
         <input type="text" id="bulk-category-search-input" class="pill-input" placeholder="{% translate 'Category...' %}" autocomplete="off">
         <button type="button" id="bulk-category-tree-btn" class="pill-search-wrapper__browse-btn" title="{% translate 'Browse categories as a tree' %}">{% translate "Browse" %}</button>
@@ -45,27 +45,48 @@
         <span class="icon-btn__label">{% translate "Pick a category" %}</span>
     </button>
 
-    <input type="number" id="bulk-price-input" class="pill-input" style="width: 110px;" step="0.01" min="0.01" placeholder="{% translate 'Sell price' %}">
+    <input type="number" id="bulk-price-input" class="pill-input" style="width: 125px;" step="0.01" min="0.01" placeholder="{% translate 'Sell price' %}">
     <button type="button" id="bulk-price-apply-btn" class="icon-btn icon-btn--apply icon-btn--sm">
         <span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--check"></span></span>
         <span class="icon-btn__label">{% translate "Apply price" %}</span>
     </button>
+
+    {% if product_attributes %}
+    {# One attribute at a time: pick which, then its value (a dropdown for a choices attribute, a text box otherwise) -- see the bulk-attribute JS below. #}
+    <select id="bulk-attribute-select" class="pill-input" style="width: 120px;">
+        <option value="">{% translate "Attribute..." %}</option>
+        {% for attribute in product_attributes %}
+        <option value="{{ attribute.pk }}">{{ attribute.name }}</option>
+        {% endfor %}
+    </select>
+    <select id="bulk-attribute-value-select" class="pill-input d-none" style="width: 125px;"></select>
+    <input type="text" id="bulk-attribute-value-input" class="pill-input d-none" style="width: 125px;" placeholder="{% translate 'Value (blank clears)' %}" autocomplete="off">
+    <button type="button" id="bulk-attribute-apply-btn" class="icon-btn icon-btn--apply icon-btn--sm" disabled>
+        <span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--check"></span></span>
+        <span class="icon-btn__label">{% translate "Apply attribute" %}</span>
+    </button>
+    {% endif %}
     {% endif %}
     {% if perms.revisions.add_revisionattributes or perms.deliveries.add_deliveryattributes or perms.orders.add_orderattributes %}
-    <div class="d-flex align-items-center gap-1">
-        <span class="text-muted small">{% translate "Load into:" %}</span>
+    {# One dropdown + a go button instead of five buttons in a row (asked for live -- the bar was too wide); the button, not the dropdown's own change event, does the navigation so arrowing through a closed <select> can't fling the clerk to another screen. #}
+    <select id="bulk-load-select" class="pill-input" style="width: 125px;">
+        <option value="">{% translate "Load into..." %}</option>
         {% if perms.revisions.add_revisionattributes %}
-        <button type="button" id="bulk-load-revision-btn" class="btn btn-sm btn-outline-secondary">{% translate "Revision" %}</button>
+        <option value="{% url 'revision_home' %}">{% translate "Revision" %}</option>
         {% endif %}
         {% if perms.deliveries.add_deliveryattributes %}
-        <button type="button" id="bulk-load-delivery-btn" class="btn btn-sm btn-outline-secondary">{% translate "Delivery" %}</button>
-        <button type="button" id="bulk-load-writeoff-btn" class="btn btn-sm btn-outline-secondary">{% translate "Write-off" %}</button>
-        <button type="button" id="bulk-load-scrap-btn" class="btn btn-sm btn-outline-secondary">{% translate "Scrap" %}</button>
+        <option value="{% url 'delivery_add' %}">{% translate "Delivery" %}</option>
+        <option value="{% url 'writeoff_add' %}">{% translate "Write-off" %}</option>
+        <option value="{% url 'scrap_add' %}">{% translate "Scrap" %}</option>
         {% endif %}
         {% if perms.orders.add_orderattributes %}
-        <button type="button" id="bulk-load-order-btn" class="btn btn-sm btn-outline-secondary">{% translate "Order" %}</button>
+        <option value="{% url 'order_new' %}">{% translate "Order" %}</option>
         {% endif %}
-    </div>
+    </select>
+    <button type="button" id="bulk-load-apply-btn" class="icon-btn icon-btn--apply icon-btn--sm" disabled>
+        <span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--check"></span></span>
+        <span class="icon-btn__label">{% translate "Load" %}</span>
+    </button>
     {% endif %}
     {% if perms.products.delete_product %}
     <button type="button" id="bulk-delete-btn" class="icon-btn icon-btn--delete icon-btn--sm ms-auto">
@@ -76,6 +97,7 @@
 </div>
 
 {{ products_data|json_script:"products-table-data" }}
+{{ attribute_defs|json_script:"products-attribute-defs" }}
 <div class="data-table-card tabulator-classic">
     <div id="products-table" class="tabulator-classic"></div>
 </div>
@@ -191,7 +213,27 @@ document.addEventListener('DOMContentLoaded', function () {
         // not invalid, same as the product create/edit forms' own markup
         // field.
         markup_percent: {editor: 'number', editorParams: {step: 0.1}},
+        // Plain text editors -- the actual add/edit/delete logic (and the
+        // "can't skip a slot" guard) lives server-side in
+        // ProductBarcodeInlineUpdateView, posted from the cellEdited
+        // branch below instead of the generic postInlineUpdate() path
+        // (these aren't Product fields, Barcode is a separate model).
+        barcode_1: {editor: 'input'},
+        barcode_2: {editor: 'input'},
+        barcode_3: {editor: 'input'},
     };
+
+    // One editable column per shop-defined attribute (Brand/Color/...) --
+    // a dropdown for an attribute with a predefined choices list (clearable,
+    // since every attribute is optional), a plain text box otherwise. Saved
+    // through the same inline-update endpoint as name/price (ProductInline
+    // UpdateView._update_attribute -- the value lives in Product.attributes,
+    // not a real Product field).
+    JSON.parse(document.getElementById('products-attribute-defs').textContent).forEach(function (attribute) {
+        editorConfig['attribute_' + attribute.id] = attribute.choices.length
+            ? {editor: 'list', editorParams: {values: attribute.choices, clearable: true}}
+            : {editor: 'input'};
+    });
 
     // show_on_pos isn't part of editorConfig/"Enable Edit" -- it's a quick,
     // low-stakes toggle meant to be flipped often while curating what shows
@@ -345,9 +387,12 @@ document.addEventListener('DOMContentLoaded', function () {
                 return isNaN(v) ? '' : v.toFixed(2);
             },
         },
-        // Read-only: a product can have several barcodes/suppliers, but a
-        // grid needs a fixed number of columns. Editing them still happens
-        // on the product's own page, where the full list is managed.
+        // Barcode 1/2/3 are editable in Edit mode (add/change/clear one
+        // slot -- see the cellEdited branch below); Supplier columns stay
+        // read-only, managed only on the product's own page. A product can
+        // have more than GRID_SLOT_COUNT of either, but a grid needs a
+        // fixed number of columns -- anything past these three barcodes
+        // still only shows/edits on the full product page.
         {title: '{% translate "Barcode 1" %}', field: 'barcode_1', width: 140},
         {title: '{% translate "Barcode 2" %}', field: 'barcode_2', width: 140, visible: false},
         {title: '{% translate "Barcode 3" %}', field: 'barcode_3', width: 140, visible: false},
@@ -524,6 +569,32 @@ document.addEventListener('DOMContentLoaded', function () {
         leftGroup.appendChild(columnsWidget);
         leftGroup.appendChild(focusBtn);
 
+        // "Clear filters" -- only shown while at least one Excel-style column
+        // filter is on, and its tooltip names the filtered columns. Needed
+        // because filters are remembered between visits AND a filter on a
+        // column hidden via Columns ▾ still hides rows while showing no
+        // highlighted ▾ anywhere (confirmed live: a list that suddenly
+        // showed only 90 of the products, "no active filters" in sight).
+        var clearFiltersBtn = document.createElement('button');
+        clearFiltersBtn.type = 'button';
+        clearFiltersBtn.className = 'icon-btn icon-btn--outline icon-btn--sm is-active d-none';
+        clearFiltersBtn.innerHTML =
+            '<span class="icon-btn__icon"><span class="icon-btn__glyph icon-btn__glyph--filter-off"></span></span>' +
+            '<span class="icon-btn__label">{% translate "Clear filters" %}</span>';
+        leftGroup.appendChild(clearFiltersBtn);
+
+        function refreshClearFiltersBtn() {
+            var fields = table.activeExcelFilterFields();
+            clearFiltersBtn.classList.toggle('d-none', !fields.length);
+            clearFiltersBtn.title = fields.map(function (field) {
+                var column = table.getColumn(field);
+                return column ? column.getDefinition().title : field;
+            }).join(', ');
+        }
+        document.getElementById('products-table').addEventListener('excelfilterchange', refreshClearFiltersBtn);
+        clearFiltersBtn.addEventListener('click', function () { table.clearExcelFilters(); });
+        refreshClearFiltersBtn();
+
         focusBtn.addEventListener('click', function () {
             var on = document.body.classList.toggle('products-table-focus');
             focusBtn.classList.toggle('is-active', on);
@@ -683,6 +754,40 @@ document.addEventListener('DOMContentLoaded', function () {
                 return;
             }
 
+            if (field.indexOf('barcode_') === 0) {
+                var barcodeRevertTo = cell.getOldValue();
+                var slot = field.slice('barcode_'.length);
+                var body = new URLSearchParams();
+                body.set('slot', slot);
+                body.set('value', cell.getValue());
+                fetch('/products/' + row.getData().id + '/inline-barcode-update/', {
+                    method: 'POST',
+                    headers: {'X-CSRFToken': getCookie('csrftoken')},
+                    body: body,
+                })
+                    .then(function (response) {
+                        return response.json().then(function (resData) { return {ok: response.ok, data: resData}; });
+                    })
+                    .then(function (result) {
+                        if (!result.ok) {
+                            alert(result.data.error || '{% translate "Could not save the change." %}');
+                            cell.setValue(barcodeRevertTo);
+                            return;
+                        }
+                        // All three slots, not just this one -- clearing a
+                        // middle barcode shifts the rest up by one, same as
+                        // ProductListView's own list-index-based columns
+                        // would show after a reload (see the view's own
+                        // docstring).
+                        row.update(result.data);
+                    })
+                    .catch(function () {
+                        alert('{% translate "Network error -- change was not saved." %}');
+                        cell.setValue(barcodeRevertTo);
+                    });
+                return;
+            }
+
             postInlineUpdate(row.getData().id, field, cell.getValue())
                 .then(function (result) {
                     if (!result.ok) {
@@ -709,13 +814,14 @@ document.addEventListener('DOMContentLoaded', function () {
         bulkBar.classList.toggle('d-flex', data.length > 0);
     });
 
-    function bulkPost(action, value) {
+    function bulkPost(action, value, extra) {
         var selected = table.getSelectedData();
         if (!selected.length) return;
 
         var body = new URLSearchParams();
         body.set('action', action);
         if (value !== undefined) body.set('value', value);
+        if (extra) Object.keys(extra).forEach(function (key) { body.set(key, extra[key]); });
         selected.forEach(function (row) { body.append('ids', row.id); });
 
         return fetch('{% url "product_bulk_action" %}', {
@@ -840,6 +946,77 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    // Bulk "set attribute" -- the attribute picker decides which value
+    // control shows: a dropdown (with a blank "clear" entry) for an
+    // attribute that has a predefined choices list, a free text box
+    // otherwise. A blank value clears that attribute on every selected
+    // product (asked to confirm first, since it's destructive), same
+    // "blank = key removed" rule as the product form/inline edit.
+    var attributeSelect = document.getElementById('bulk-attribute-select');
+    if (attributeSelect) {
+        var attributeDefs = JSON.parse(document.getElementById('products-attribute-defs').textContent);
+        var attributeValueSelect = document.getElementById('bulk-attribute-value-select');
+        var attributeValueInput = document.getElementById('bulk-attribute-value-input');
+        var attributeApplyBtn = document.getElementById('bulk-attribute-apply-btn');
+
+        function currentAttributeDef() {
+            return attributeDefs.find(function (a) { return String(a.id) === attributeSelect.value; });
+        }
+
+        function currentAttributeValue() {
+            var def = currentAttributeDef();
+            return def && def.choices.length ? attributeValueSelect.value : attributeValueInput.value.trim();
+        }
+
+        function resetAttributeControls() {
+            attributeSelect.value = '';
+            attributeValueSelect.classList.add('d-none');
+            attributeValueInput.classList.add('d-none');
+            attributeValueInput.value = '';
+            attributeApplyBtn.disabled = true;
+        }
+
+        attributeSelect.addEventListener('change', function () {
+            var def = currentAttributeDef();
+            attributeValueSelect.classList.add('d-none');
+            attributeValueInput.classList.add('d-none');
+            attributeValueInput.value = '';
+            attributeApplyBtn.disabled = !def;
+            if (!def) return;
+            if (def.choices.length) {
+                attributeValueSelect.innerHTML = '';
+                var blank = document.createElement('option');
+                blank.value = '';
+                blank.textContent = '{% translate "(clear value)" %}';
+                attributeValueSelect.appendChild(blank);
+                def.choices.forEach(function (choice) {
+                    var option = document.createElement('option');
+                    option.value = choice;
+                    option.textContent = choice;
+                    attributeValueSelect.appendChild(option);
+                });
+                attributeValueSelect.classList.remove('d-none');
+            } else {
+                attributeValueInput.classList.remove('d-none');
+            }
+        });
+
+        attributeApplyBtn.addEventListener('click', function () {
+            var def = currentAttributeDef();
+            if (!def) return;
+            var value = currentAttributeValue();
+            if (!value && !confirm('{% translate "Clear this attribute on all selected products?" %}')) return;
+            bulkPost('set_attribute', value, {attribute: def.id}).then(function (result) {
+                if (!result.ok) { alert(result.data.error || '{% translate "Could not apply attribute." %}'); return; }
+                location.reload();
+            });
+        });
+
+        table.on('rowSelectionChanged', function (data) {
+            if (!data.length) resetAttributeControls();
+        });
+    }
+
     var deleteBtn = document.getElementById('bulk-delete-btn');
     if (deleteBtn) {
         deleteBtn.addEventListener('click', function () {
@@ -871,25 +1048,14 @@ document.addEventListener('DOMContentLoaded', function () {
         window.location = url + '?preload=' + ids.join(',');
     }
 
-    var loadRevisionBtn = document.getElementById('bulk-load-revision-btn');
-    if (loadRevisionBtn) {
-        loadRevisionBtn.addEventListener('click', function () { loadInto('{% url "revision_home" %}'); });
-    }
-    var loadDeliveryBtn = document.getElementById('bulk-load-delivery-btn');
-    if (loadDeliveryBtn) {
-        loadDeliveryBtn.addEventListener('click', function () { loadInto('{% url "delivery_add" %}'); });
-    }
-    var loadWriteoffBtn = document.getElementById('bulk-load-writeoff-btn');
-    if (loadWriteoffBtn) {
-        loadWriteoffBtn.addEventListener('click', function () { loadInto('{% url "writeoff_add" %}'); });
-    }
-    var loadScrapBtn = document.getElementById('bulk-load-scrap-btn');
-    if (loadScrapBtn) {
-        loadScrapBtn.addEventListener('click', function () { loadInto('{% url "scrap_add" %}'); });
-    }
-    var loadOrderBtn = document.getElementById('bulk-load-order-btn');
-    if (loadOrderBtn) {
-        loadOrderBtn.addEventListener('click', function () { loadInto('{% url "order_new" %}'); });
+    var loadSelect = document.getElementById('bulk-load-select');
+    if (loadSelect) {
+        var loadApplyBtn = document.getElementById('bulk-load-apply-btn');
+        loadSelect.addEventListener('change', function () { loadApplyBtn.disabled = !loadSelect.value; });
+        loadApplyBtn.addEventListener('click', function () { if (loadSelect.value) loadInto(loadSelect.value); });
+        table.on('rowSelectionChanged', function (data) {
+            if (!data.length) { loadSelect.value = ''; loadApplyBtn.disabled = true; }
+        });
     }
 });
 </script>

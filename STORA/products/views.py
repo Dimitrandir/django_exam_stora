@@ -2,14 +2,18 @@ from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 
 import logging
+from zoneinfo import ZoneInfo
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.contrib.postgres.fields import ArrayField
 from django.contrib.postgres.search import TrigramSimilarity
+from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import F, ProtectedError, Sum
-from django.db.models.functions import Coalesce
+from django.db.models import F, Func, JSONField, ProtectedError, Sum, TextField, Value
+from django.db.models.functions import Cast, Coalesce
 from django.forms.models import model_to_dict
 from django.http import HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -24,6 +28,7 @@ from django.views.generic import CreateView, ListView, DetailView, UpdateView, D
 from STORA.core.mixins import StaffPermissionRequiredMixin
 from STORA.core.session_service import get_cashier_operation_state
 from STORA.core.utils import dispatch_task, multi_token_icontains_q
+from STORA.core.whats_new import whats_new_for_display
 from STORA.deliveries.models import DeliveryAttributes, DeliveryItems, DeliveryItemRemoval
 from STORA.revisions.models import RevisionAttributes, RevisionItems
 from STORA.products.forms import (
@@ -149,6 +154,12 @@ class ProductListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListView
 
         context['products_data'] = products_data
         context['product_attributes'] = product_attributes
+        # What the grid's "Enable Edit" mode needs per attribute column
+        # (see products_list.html): a dropdown for a choices-restricted
+        # one, a plain text editor otherwise.
+        context['attribute_defs'] = [
+            {'id': a.pk, 'name': a.name, 'choices': a.choices} for a in product_attributes
+        ]
         return context
 
 
@@ -163,6 +174,13 @@ class ProductInlineUpdateView(LoginRequiredMixin, StaffPermissionRequiredMixin, 
         product = get_object_or_404(Product, pk=pk)
         field = request.POST.get('field')
         value = request.POST.get('value', '')
+
+        # attribute_<id> columns (one per shop-defined ProductAttribute, see
+        # ProductListView) aren't real Product fields -- the value lives
+        # inside the Product.attributes JSON blob, so it can't go through
+        # ProductInlineEditForm at all.
+        if field and field.startswith('attribute_'):
+            return self._update_attribute(request, product, field, value)
 
         if field not in ProductInlineEditForm.base_fields:
             return JsonResponse({'error': _('That field cannot be edited here.')}, status=400)
@@ -192,6 +210,92 @@ class ProductInlineUpdateView(LoginRequiredMixin, StaffPermissionRequiredMixin, 
             'sell_price': float(product.sell_price) if product.sell_price is not None else None,
             'delivery_price': float(product.delivery_price) if product.delivery_price is not None else None,
         })
+
+
+    def _update_attribute(self, request, product, field, value):
+        """Sets/clears one attribute in Product.attributes -- same rules as
+        the product form's own attribute fields (ProductForms): a blank
+        value removes the key entirely (not stored as ''), and an attribute
+        with a predefined choices list only accepts one of them."""
+        try:
+            attribute = ProductAttribute.objects.get(pk=int(field[len('attribute_'):]))
+        except (ValueError, ProductAttribute.DoesNotExist):
+            return JsonResponse({'error': _('That field cannot be edited here.')}, status=400)
+
+        value = value.strip()
+        if value and attribute.choices and value not in attribute.choices:
+            return JsonResponse({'error': _('Pick one of the allowed values for this attribute.')}, status=400)
+
+        attributes = dict(product.attributes)
+        if value:
+            attributes[str(attribute.pk)] = value
+        else:
+            attributes.pop(str(attribute.pk), None)
+        product.attributes = attributes
+        product.save(update_fields=['attributes'])
+        return JsonResponse({'value': value})
+
+
+class ProductBarcodeInlineUpdateView(LoginRequiredMixin, StaffPermissionRequiredMixin, View):
+    """Adds, edits, or clears one of a product's first GRID_SLOT_COUNT
+    barcodes directly from the "Enable Edit" grid -- `slot` is the 1-based
+    grid column position (Barcode 1/2/3), matched against the list of
+    Barcode rows ordered the same way ProductListView already builds
+    barcode_1/2/3 (by position, id), not against Barcode.position's raw
+    value. A brand-new barcode can only be added in the next free slot
+    (can't skip "Barcode 1" and type straight into "Barcode 2") -- otherwise
+    it would land at a lower position than the empty slot before it, and
+    the NEXT page load would show it under the wrong column entirely (the
+    grid's columns are just list-index based, same as ProductListView).
+    Clearing a slot's value deletes that Barcode outright, same as removing
+    a row in the full product-edit page's own formset. Returns the
+    product's full current barcode_1/2/3 set (not just the one slot
+    touched) so the grid can re-sync every slot in one go -- deleting the
+    middle one of three shifts the rest up by one, same as a reload would
+    show, and trying to track that shift purely client-side would just be
+    re-deriving what the server already knows."""
+
+    permission_required = 'products.change_product'
+
+    def post(self, request, pk):
+        product = get_object_or_404(Product, pk=pk)
+        try:
+            slot = int(request.POST.get('slot', ''))
+        except (TypeError, ValueError):
+            return JsonResponse({'error': _('Invalid barcode slot.')}, status=400)
+        if slot < 1 or slot > ProductListView.GRID_SLOT_COUNT:
+            return JsonResponse({'error': _('Invalid barcode slot.')}, status=400)
+
+        value = request.POST.get('value', '').strip()
+        barcodes = list(product.barcode.all())
+
+        if slot <= len(barcodes):
+            barcode = barcodes[slot - 1]
+            if not value:
+                barcode.delete()
+            else:
+                barcode.code = value
+                try:
+                    barcode.full_clean()
+                except ValidationError as exc:
+                    return JsonResponse({'error': ' '.join(exc.messages)}, status=400)
+                barcode.save()
+        elif value:
+            if slot != len(barcodes) + 1:
+                return JsonResponse({'error': _('Fill in the earlier barcode slot first.')}, status=400)
+            barcode = Barcode(product=product, position=slot, code=value)
+            try:
+                barcode.full_clean()
+            except ValidationError as exc:
+                return JsonResponse({'error': ' '.join(exc.messages)}, status=400)
+            barcode.save()
+        # else: slot was already empty and the submitted value is blank too -- nothing to do.
+
+        barcodes = list(product.barcode.all())
+        result = {}
+        for i in range(ProductListView.GRID_SLOT_COUNT):
+            result[f'barcode_{i + 1}'] = barcodes[i].code if i < len(barcodes) else ''
+        return JsonResponse(result)
 
 
 class ProductBulkActionView(LoginRequiredMixin, View):
@@ -232,6 +336,39 @@ class ProductBulkActionView(LoginRequiredMixin, View):
             if price < Decimal('0.01'):
                 return JsonResponse({'error': _('Price must be at least 0.01.')}, status=400)
             updated = products.update(sell_price=price)
+            return JsonResponse({'updated': updated})
+
+        if action == 'set_attribute':
+            if not request.user.has_perm('products.change_product'):
+                return JsonResponse({'error': _('You do not have permission to do this.')}, status=403)
+            try:
+                attribute = ProductAttribute.objects.get(pk=int(request.POST.get('attribute', '')))
+            except (ValueError, ProductAttribute.DoesNotExist):
+                return JsonResponse({'error': _('Unknown attribute.')}, status=400)
+            value = request.POST.get('value', '').strip()
+            if value and attribute.choices and value not in attribute.choices:
+                return JsonResponse({'error': _('Pick one of the allowed values for this attribute.')}, status=400)
+            key = str(attribute.pk)
+            # One UPDATE for the whole batch, touching ONLY this attribute's
+            # key inside the Product.attributes JSON blob (every other
+            # attribute on each product is left exactly as it was) --
+            # jsonb_set to write it, the jsonb "-" operator to remove it
+            # (a blank value clears it, same as the product form/inline
+            # edit: the key is dropped, not stored as ''). Like the other
+            # bulk actions this bypasses model signals; attributes aren't in
+            # ProductChangeLog's tracked fields anyway.
+            if value:
+                new_attributes = Func(
+                    F('attributes'), Value([key], output_field=ArrayField(TextField())),
+                    Value(value, output_field=JSONField()), function='jsonb_set',
+                    output_field=JSONField(),
+                )
+            else:
+                new_attributes = Func(
+                    F('attributes'), Cast(Value(key), TextField()),
+                    arg_joiner=' - ', template='(%(expressions)s)', output_field=JSONField(),
+                )
+            updated = products.update(attributes=new_attributes)
             return JsonResponse({'updated': updated})
 
         if action == 'delete':
@@ -1152,6 +1289,7 @@ def index(request):
 
     recent_sales = SaleAttributes.objects.order_by('-time_of_sale')[:5]
     last_operation = get_cashier_operation_state(request)
+    shop_today = timezone.now().astimezone(ZoneInfo(settings.FISCAL_DEVICE_TIME_ZONE)).date()
 
     context = {
         'total_products': total_products,
@@ -1159,6 +1297,10 @@ def index(request):
         'total_revenue': total_revenue,
         'recent_sales': recent_sales,
         'last_operation': last_operation if last_operation and last_operation.get('active') else None,
+        # The shop's own calendar day -- TIME_ZONE is UTC, which after
+        # midnight in Sofia would still say "yesterday" for 2-3 hours.
+        'today': shop_today,
+        'whats_new': whats_new_for_display(shop_today),
     }
     return render(request, 'index.html', context)
 

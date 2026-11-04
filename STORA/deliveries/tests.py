@@ -1,4 +1,5 @@
 import io
+import json
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -7,13 +8,14 @@ import openpyxl
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
+from django.utils import translation
 from django.urls import reverse
 
 from STORA.deliveries.excel_import import parse_delivery_import
 from STORA.deliveries.models import (
     DeliveryAttributes, DeliveryItems, DeliveryItemRemoval, DocumentType, ScrapReason, Suppliers,
 )
-from STORA.products.models import Barcode, Category, Product, ProductSupplier, TaxGroup
+from STORA.products.models import Barcode, Category, Product, ProductAttribute, ProductSupplier, TaxGroup
 
 
 User = get_user_model()
@@ -1187,12 +1189,13 @@ class ScrapViewTests(TestCase):
         self.assertEqual(self.product.quantity, Decimal('8.000'))
 
 
-def _build_import_xlsx(rows):
-    """rows: list of tuples matching excel_import.COLUMN_HEADERS order."""
+def _build_import_xlsx(rows, extra_headers=()):
+    """rows: list of tuples matching excel_import.COLUMN_HEADERS order
+    (followed by one cell per `extra_headers` entry, e.g. attribute columns)."""
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.append(['Code', 'Name', 'Unit Type', 'Quantity', 'Category', 'Subcategory', 'Delivery Price',
-               'Sell Price', 'Main Supplier', 'Barcode 1', 'Barcode 2', 'Barcode 3'])
+               'Sell Price', 'Main Supplier', 'Barcode 1', 'Barcode 2', 'Barcode 3'] + list(extra_headers))
     for row in rows:
         ws.append(row)
     buf = io.BytesIO()
@@ -1368,6 +1371,174 @@ class ExcelImportParsingTests(TestCase):
         self.assertIsNone(row['duplicate_candidate'])
 
 
+class ExcelImportAttributeTests(TestCase):
+    """Attribute columns (one per shop-defined ProductAttribute, after the
+    fixed 12) -- matched by header text, only ever applied to NEW products."""
+
+    def setUp(self):
+        self.brand = ProductAttribute.objects.create(name='Brand')
+        self.color = ProductAttribute.objects.create(name='Color', choices=['Red', 'Blue'])
+        self.size = ProductAttribute.objects.create(name='Size')
+        self.existing = Product.objects.create(
+            internal_code='ATTREX1', name='Attribute Existing Product',
+            delivery_price=Decimal('1.00'), sell_price=Decimal('2.00'), quantity=Decimal('1.000'),
+        )
+
+    def _row(self, name, *extra, code=''):
+        return (code, name, '', 1, '', '', '', '', '', '', '', '') + extra
+
+    def test_new_product_reads_attribute_columns_by_header(self):
+        buf = _build_import_xlsx([self._row('Attr Item One', 'Nike', 'blue', 42.0)],
+                                 extra_headers=['brand', 'COLOR', 'Size'])
+        result = parse_delivery_import(buf)
+        self.assertEqual(result['errors'], [])
+        # case-insensitive header match, choice stored in its canonical
+        # spelling, whole-number float written without the ".0"
+        self.assertEqual(result['rows'][0]['attributes'], {
+            str(self.brand.pk): 'Nike', str(self.color.pk): 'Blue', str(self.size.pk): '42',
+        })
+
+    def test_blank_attribute_cells_are_omitted(self):
+        buf = _build_import_xlsx([self._row('Attr Item Two', 'Nike', None, '')],
+                                 extra_headers=['Brand', 'Color', 'Size'])
+        result = parse_delivery_import(buf)
+        self.assertEqual(result['rows'][0]['attributes'], {str(self.brand.pk): 'Nike'})
+
+    def test_value_outside_choices_is_dropped_with_a_warning(self):
+        buf = _build_import_xlsx([self._row('Attr Item Three', 'Green')], extra_headers=['Color'])
+        result = parse_delivery_import(buf)
+        self.assertEqual(result['rows'][0]['attributes'], {})
+        self.assertEqual(len(result['errors']), 1)
+        self.assertIn('Green', result['errors'][0])
+        self.assertIn('Color', result['errors'][0])
+
+    def test_unknown_extra_header_is_ignored(self):
+        buf = _build_import_xlsx([self._row('Attr Item Four', 'whatever', 'Nike')],
+                                 extra_headers=['Not An Attribute', 'Brand'])
+        result = parse_delivery_import(buf)
+        self.assertEqual(result['errors'], [])
+        self.assertEqual(result['rows'][0]['attributes'], {str(self.brand.pk): 'Nike'})
+
+    def test_existing_product_match_never_gets_attributes(self):
+        buf = _build_import_xlsx([self._row(self.existing.name, 'Nike', code='ATTREX1')], extra_headers=['Brand'])
+        result = parse_delivery_import(buf)
+        row = result['rows'][0]
+        self.assertFalse(row['is_new'])
+        self.assertNotIn('attributes', row)
+
+
+class ExcelImportDuplicateWithinFileTests(TestCase):
+    """Name and barcode are UNIQUE on the catalog -- two NEW rows in one
+    file sharing either are caught at parse time (per row), not left to
+    blow up the whole delivery at Save."""
+
+    def _row(self, name, barcode='', qty=1):
+        return ('', name, '', qty, '', '', '', '', '', barcode, '', '')
+
+    def test_second_row_with_same_name_is_skipped_with_a_warning(self):
+        buf = _build_import_xlsx([
+            self._row('Twin Product', '1110000000001'),
+            self._row('Other Product', '1110000000002'),
+            self._row('twin product ', '1110000000003'),  # case/space-insensitive
+        ])
+        with translation.override('en'):
+            result = parse_delivery_import(buf)
+        self.assertEqual([r['name'] for r in result['rows']], ['Twin Product', 'Other Product'])
+        self.assertEqual(len(result['errors']), 1)
+        self.assertIn('Row 4', result['errors'][0])
+        self.assertIn('row 2', result['errors'][0])
+
+    def test_second_row_with_same_barcode_is_skipped_with_a_warning(self):
+        buf = _build_import_xlsx([
+            self._row('First Barcode Product', '2220000000001'),
+            self._row('Second Barcode Product', '2220000000001'),
+        ])
+        result = parse_delivery_import(buf)
+        self.assertEqual([r['name'] for r in result['rows']], ['First Barcode Product'])
+        self.assertEqual(len(result['errors']), 1)
+        self.assertIn('2220000000001', result['errors'][0])
+
+    def test_same_existing_product_twice_is_not_treated_as_a_clash(self):
+        # Two rows that both MATCH an existing product just add up -- the
+        # uniqueness guard is only about NEW products.
+        existing = Product.objects.create(
+            internal_code='DUPEX001', name='Existing For Dup', delivery_price=Decimal('1.00'),
+            sell_price=Decimal('2.00'), quantity=Decimal('1.000'),
+        )
+        buf = _build_import_xlsx([
+            ('DUPEX001', existing.name, '', 1, '', '', '', '', '', '', '', ''),
+            ('DUPEX001', existing.name, '', 2, '', '', '', '', '', '', '', ''),
+        ])
+        result = parse_delivery_import(buf)
+        self.assertEqual(result['errors'], [])
+        self.assertEqual(len(result['rows']), 2)
+
+
+class ExcelImportVatGroupTests(TestCase):
+    """VAT Group column (found by header text, after the fixed 12) -- blank
+    or unknown falls back to the shop default "Б", only for NEW products."""
+
+    def setUp(self):
+        self.default_group, _created = TaxGroup.objects.get_or_create(name='Б', defaults={'rate': Decimal('20.00')})
+        self.reduced_group = TaxGroup.objects.create(name='Г', rate=Decimal('9.00'))
+        self.existing = Product.objects.create(
+            internal_code='VATEX001', name='Vat Existing Product', delivery_price=Decimal('1.00'),
+            sell_price=Decimal('2.00'), quantity=Decimal('1.000'),
+        )
+
+    def _row(self, name, vat='', code=''):
+        return (code, name, '', 1, '', '', '', '', '', '', '', '', vat)
+
+    def _parse(self, rows, headers=('VAT Group',)):
+        return parse_delivery_import(_build_import_xlsx(rows, extra_headers=headers))
+
+    def test_group_matched_by_name_case_insensitively(self):
+        result = self._parse([self._row('Vat Item One', 'г')])
+        self.assertEqual(result['errors'], [])
+        self.assertEqual(result['rows'][0]['tax_group_id'], self.reduced_group.pk)
+        self.assertEqual(result['rows'][0]['tax_rate'], 9.0)
+
+    def test_group_matched_by_rate(self):
+        for text in ('9', '9%', '9,0'):
+            result = self._parse([self._row('Vat Item Rate', text)])
+            self.assertEqual(result['rows'][0]['tax_group_id'], self.reduced_group.pk, text)
+
+    def test_blank_cell_gets_the_default_group(self):
+        result = self._parse([self._row('Vat Item Blank', '')])
+        self.assertEqual(result['errors'], [])
+        self.assertEqual(result['rows'][0]['tax_group_id'], self.default_group.pk)
+        self.assertEqual(result['rows'][0]['tax_rate'], 20.0)
+
+    def test_unknown_value_falls_back_to_default_with_a_warning(self):
+        result = self._parse([self._row('Vat Item Unknown', 'Zzz')])
+        self.assertEqual(result['rows'][0]['tax_group_id'], self.default_group.pk)
+        self.assertEqual(len(result['errors']), 1)
+        self.assertIn('Zzz', result['errors'][0])
+
+    def test_file_without_the_column_still_gets_the_default(self):
+        buf = _build_import_xlsx([('', 'Vat Item No Column', '', 1, '', '', '', '', '', '', '', '')])
+        result = parse_delivery_import(buf)
+        self.assertEqual(result['errors'], [])
+        self.assertEqual(result['rows'][0]['tax_group_id'], self.default_group.pk)
+
+    def test_column_found_by_header_even_after_attribute_columns(self):
+        # An older file: attribute columns right after the fixed 12, VAT
+        # Group somewhere later -- found by its header, not its position.
+        ProductAttribute.objects.create(name='Brand')
+        buf = _build_import_xlsx(
+            [('', 'Vat Item Moved', '', 1, '', '', '', '', '', '', '', '', 'Nike', 'Г')],
+            extra_headers=['Brand', 'ДДС група'],
+        )
+        result = parse_delivery_import(buf)
+        self.assertEqual(result['rows'][0]['tax_group_id'], self.reduced_group.pk)
+
+    def test_existing_product_row_is_untouched(self):
+        result = self._parse([self._row(self.existing.name, 'Г', code='VATEX001')])
+        row = result['rows'][0]
+        self.assertFalse(row['is_new'])
+        self.assertNotIn('tax_group_id', row)
+
+
 class ExcelImportViewTests(TestCase):
     def setUp(self):
         self.warehouse = User.objects.create_user(username='wh_import', password='pass12345', role=User.WAREHOUSE)
@@ -1390,7 +1561,16 @@ class ExcelImportViewTests(TestCase):
         headers = [c.value for c in wb.active[1]]
         self.assertEqual(headers, ['Code', 'Name', 'Unit Type', 'Quantity', 'Category', 'Subcategory',
                                     'Delivery Price', 'Sell Price', 'Main Supplier',
-                                    'Barcode 1', 'Barcode 2', 'Barcode 3'])
+                                    'Barcode 1', 'Barcode 2', 'Barcode 3', 'VAT Group'])
+
+    def test_template_download_has_one_column_per_attribute(self):
+        ProductAttribute.objects.create(name='Brand')
+        ProductAttribute.objects.create(name='Color')
+        self.client.force_login(self.warehouse)
+        response = self.client.get(reverse('delivery_import_template'))
+        wb = openpyxl.load_workbook(io.BytesIO(response.content))
+        headers = [c.value for c in wb.active[1]]
+        self.assertEqual(headers[13:], ['Brand', 'Color'])  # after the 12 fixed ones + VAT Group
 
     def test_import_endpoint_requires_permission(self):
         self.client.force_login(self.cashier)
@@ -1482,6 +1662,163 @@ class DeliveryAddWithNewProductRowsTests(TestCase):
 
         delivery = DeliveryAttributes.objects.get(document_number='IMP-101')
         self.assertEqual(delivery.items.get().delivery_item, product)
+
+    def _single_new_product_post(self, document_number, attributes_json):
+        data = self._general_info(document_number=document_number)
+        data.update({
+            'items-TOTAL_FORMS': '1', 'items-INITIAL_FORMS': '0',
+            'items-MIN_NUM_FORMS': '0', 'items-MAX_NUM_FORMS': '1000',
+            'items-0-id': '', 'items-0-delivery_item': '',
+            'items-0-delivery_quantity': '2.000', 'items-0-price_at_delivery': '3.00',
+            'items-0-total_price_row': '6.00', 'items-0-DELETE': '',
+            'items-0-new_product': '1', 'items-0-new_product_name': 'Imported With Attributes',
+            'items-0-new_product_code': '', 'items-0-new_product_delivery_price': '3.00',
+            'items-0-new_product_sell_price': '5.00', 'items-0-new_product_category': '',
+            'items-0-new_product_supplier': '', 'items-0-new_product_barcode_1': '',
+            'items-0-new_product_barcode_2': '', 'items-0-new_product_barcode_3': '',
+            'items-0-new_product_attributes': attributes_json,
+        })
+        return self.client.post(reverse('delivery_add'), data)
+
+    def test_attributes_are_saved_on_the_created_product(self):
+        brand = ProductAttribute.objects.create(name='Brand')
+        color = ProductAttribute.objects.create(name='Color', choices=['Red', 'Blue'])
+        response = self._single_new_product_post(
+            'IMP-103', json.dumps({str(brand.pk): 'Nike', str(color.pk): 'Red'}))
+        self.assertRedirects(response, reverse('delivery_add'))
+        product = Product.objects.get(name='Imported With Attributes')
+        self.assertEqual(product.attributes, {str(brand.pk): 'Nike', str(color.pk): 'Red'})
+
+    def _post_with_tax_group(self, document_number, tax_group_value, name='Imported With Vat'):
+        data = self._general_info(document_number=document_number)
+        data.update(self._pending_row_fields(0, name))
+        data.update({
+            'items-TOTAL_FORMS': '1', 'items-INITIAL_FORMS': '0',
+            'items-MIN_NUM_FORMS': '0', 'items-MAX_NUM_FORMS': '1000',
+        })
+        if tax_group_value is not None:
+            data['items-0-new_product_tax_group'] = tax_group_value
+        return self.client.post(reverse('delivery_add'), data)
+
+    def test_posted_tax_group_is_saved_on_the_new_product(self):
+        TaxGroup.objects.get_or_create(name='Б', defaults={'rate': Decimal('20.00')})
+        reduced = TaxGroup.objects.create(name='Г', rate=Decimal('9.00'))
+        self.assertRedirects(self._post_with_tax_group('IMP-300', str(reduced.pk)), reverse('delivery_add'))
+        self.assertEqual(Product.objects.get(name='Imported With Vat').tax_group, reduced)
+
+    def test_blank_or_bogus_tax_group_falls_back_to_the_default(self):
+        default, _created = TaxGroup.objects.get_or_create(name='Б', defaults={'rate': Decimal('20.00')})
+        for number, value in (('IMP-301', ''), ('IMP-302', '99999'), ('IMP-303', 'abc'), ('IMP-304', None)):
+            name = f'Imported With Vat {number}'
+            self.assertRedirects(self._post_with_tax_group(number, value, name=name), reverse('delivery_add'))
+            self.assertEqual(Product.objects.get(name=name).tax_group, default, value)
+
+    def test_unusable_attribute_values_are_dropped_not_fatal(self):
+        # Posted data is re-checked server-side: an id that isn't a real
+        # attribute, a value outside a choices list, a non-string, and a
+        # blank are all discarded -- the delivery itself still saves.
+        brand = ProductAttribute.objects.create(name='Brand')
+        color = ProductAttribute.objects.create(name='Color', choices=['Red', 'Blue'])
+        response = self._single_new_product_post('IMP-104', json.dumps({
+            str(brand.pk): 'Nike', str(color.pk): 'Green', '99999': 'ghost', str(brand.pk + 1000): 5,
+        }))
+        self.assertRedirects(response, reverse('delivery_add'))
+        product = Product.objects.get(name='Imported With Attributes')
+        self.assertEqual(product.attributes, {str(brand.pk): 'Nike'})
+
+    def test_malformed_attributes_blob_is_ignored(self):
+        response = self._single_new_product_post('IMP-105', '{not json')
+        self.assertRedirects(response, reverse('delivery_add'))
+        self.assertEqual(Product.objects.get(name='Imported With Attributes').attributes, {})
+
+    def _pending_row_fields(self, index, name, quantity='1.000', barcode=''):
+        prefix = f'items-{index}-'
+        return {
+            prefix + 'id': '', prefix + 'delivery_item': '', prefix + 'delivery_quantity': quantity,
+            prefix + 'price_at_delivery': '2.00', prefix + 'total_price_row': '2.00', prefix + 'DELETE': '',
+            prefix + 'new_product': '1', prefix + 'new_product_name': name, prefix + 'new_product_code': '',
+            prefix + 'new_product_delivery_price': '2.00', prefix + 'new_product_sell_price': '3.00',
+            prefix + 'new_product_category': '', prefix + 'new_product_supplier': '',
+            prefix + 'new_product_barcode_1': barcode, prefix + 'new_product_barcode_2': '',
+            prefix + 'new_product_barcode_3': '',
+        }
+
+    def _post_pending(self, rows, document_number='IMP-200', **general):
+        data = self._general_info(document_number=document_number, **general)
+        data.update({
+            'items-TOTAL_FORMS': str(len(rows)), 'items-INITIAL_FORMS': '0',
+            'items-MIN_NUM_FORMS': '0', 'items-MAX_NUM_FORMS': '1000',
+        })
+        for index, (name, barcode) in enumerate(rows):
+            data.update(self._pending_row_fields(index, name, barcode=barcode))
+        return self.client.post(reverse('delivery_add'), data, HTTP_ACCEPT_LANGUAGE='en')
+
+    def test_two_pending_rows_with_the_same_name_fail_with_a_clear_message(self):
+        response = self._post_pending([('Twin Name', '3330000000001'), ('Twin Name', '3330000000002')])
+        self.assertEqual(response.status_code, 200)  # redisplayed, not saved
+        self.assertFalse(Product.objects.filter(name='Twin Name').exists())  # rolled back
+        self.assertFalse(DeliveryAttributes.objects.filter(document_number='IMP-200').exists())
+        message = ' '.join(str(m) for m in response.context['messages'])
+        self.assertIn('Could not create the new product "Twin Name"', message)
+
+    def test_pending_row_with_an_existing_catalog_name_fails_with_a_clear_message(self):
+        Product.objects.create(
+            internal_code='TAKEN001', name='Already In Catalog', delivery_price=Decimal('1.00'),
+            sell_price=Decimal('2.00'), quantity=Decimal('0.000'),
+        )
+        response = self._post_pending([('Already In Catalog', '')], document_number='IMP-201')
+        message = ' '.join(str(m) for m in response.context['messages'])
+        self.assertIn('Could not create the new product "Already In Catalog"', message)
+        self.assertEqual(Product.objects.filter(name='Already In Catalog').count(), 1)
+
+    def test_failed_save_does_not_print_delivery_item_required_for_pending_rows(self):
+        # A header problem (no document date) rolls everything back; the
+        # pending rows have no delivery_item id by then and used to each
+        # show a meaningless "delivery_item: This field is required".
+        response = self._post_pending(
+            [('Fine Name One', '4440000000001'), ('Fine Name Two', '4440000000002')],
+            document_number='IMP-202', document_date='',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context['form'].errors)
+        self.assertEqual(response.context['formset'].errors, [])
+        self.assertEqual(response.context['formset'].non_form_errors(), [])
+        # the per-row error box the template prints for each errored form
+        self.assertNotIn('Product row 1:', response.content.decode())
+        self.assertFalse(Product.objects.filter(name='Fine Name One').exists())
+
+    def test_failed_save_keeps_pending_rows_in_the_grid(self):
+        # Used to drop them (no delivery_item) -- the clerk had to re-import.
+        response = self._post_pending(
+            [('Keep Me One', '5550000000001'), ('Keep Me Two', '5550000000002')],
+            document_number='IMP-203', document_date='',
+        )
+        initial = response.context['delivery_items_initial']
+        self.assertEqual([r['new_product_name'] for r in initial], ['Keep Me One', 'Keep Me Two'])
+        self.assertEqual(initial[0]['new_product'], '1')
+        self.assertEqual(initial[0]['new_product_barcode_1'], '5550000000001')
+        self.assertEqual(initial[0]['delivery_quantity'], '1.000')
+
+    def test_pending_rows_survive_a_reload_from_the_session_draft(self):
+        row = {
+            'delivery_item': '', 'delivery_quantity': '4', 'price_at_delivery': '2.5',
+            'total_price_row': '10', 'new_product': '1', 'new_product_name': 'Drafted Pending',
+            'new_product_code': '', 'new_product_unit_type': 'piece', 'new_product_delivery_price': '2.5',
+            'new_product_sell_price': '4', 'new_product_attributes': '{}', 'new_product_tax_rate': 20,
+        }
+        self.client.post(reverse('delivery_draft_save'), data=json.dumps({
+            'path': '/deliveries/add/', 'form_data': {},
+            'formset_data': {'TOTAL_FORMS': 1, 'forms': [row]},
+        }), content_type='application/json')
+        response = self.client.get(reverse('delivery_add'))
+        initial = response.context['delivery_items_initial']
+        self.assertEqual([r['new_product_name'] for r in initial], ['Drafted Pending'])
+        self.assertEqual(initial[0]['new_product_tax_rate'], 20)
+        self.assertEqual(response.context['formset'].errors, [])  # no fake "delivery_item required"
+        self.assertEqual(response.context['formset'].non_form_errors(), [])  # nor "at least one item"
+        # ...and a tab holding only pending rows counts as in use.
+        by_tab = {t['tab']: t for t in response.context['delivery_tabs_summary']}
+        self.assertTrue(by_tab['1']['has_items'])
 
     def test_zero_quantity_creates_product_only_no_delivery_item(self):
         # Paired with a normal qty>0 row -- a delivery consisting of ONLY a
@@ -1675,3 +2012,125 @@ class DeliverySaveCrashSafetyTests(TestCase):
 
         messages = [str(m) for m in response.context['messages']]
         self.assertTrue(messages, 'expected an error message to be flashed')
+
+class DeliveryTabsTests(TestCase):
+    """The 3 parallel open operations (deliveries/tab_state.py): each tab
+    keeps its own independent draft, and a tab remembers whether it holds a
+    delivery, write-off or scrap."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username='tabs-clerk', password='pass12345', role=User.WAREHOUSE)
+        self.client.login(username='tabs-clerk', password='pass12345')
+        self.product = Product.objects.create(
+            internal_code='TAB0001', name='Tabs Product', delivery_price=Decimal('1.00'), sell_price=Decimal('2.00'),
+        )
+
+    def _save_draft(self, path='/deliveries/add/', tab=None, with_item=True, comment=''):
+        payload = {
+            'path': path,
+            'form_data': {'comment': comment},
+            'formset_data': {
+                'TOTAL_FORMS': 1 if with_item else 0,
+                'forms': [{'delivery_item': str(self.product.pk), 'delivery_quantity': '1'}] if with_item else [],
+            },
+        }
+        if tab:
+            payload['tab'] = tab
+        return self.client.post(reverse('delivery_draft_save'), data=json.dumps(payload), content_type='application/json')
+
+    def _switch(self, tab, path='/deliveries/add/'):
+        return self.client.post(
+            reverse('switch_delivery_tab'), data=json.dumps({'tab': tab, 'path': path}), content_type='application/json',
+        )
+
+    def test_drafts_on_different_tabs_stay_independent(self):
+        self._save_draft(tab='1', comment='first')
+        self._save_draft(tab='2', comment='second')
+        self._switch('1')
+        response = self.client.get(reverse('delivery_add'))
+        self.assertEqual(response.context['form'].initial['comment'], 'first')
+        self._switch('2')
+        response = self.client.get(reverse('delivery_add'))
+        self.assertEqual(response.context['form'].initial['comment'], 'second')
+
+    def test_switch_returns_the_page_of_the_target_tabs_draft(self):
+        self._save_draft(path='/deliveries/write-off/add/', tab='2')
+        result = self._switch('2', path='/deliveries/add/').json()
+        self.assertEqual(result['path'], '/deliveries/write-off/add/')
+
+    def test_switch_to_empty_tab_stays_on_current_page(self):
+        result = self._switch('3', path='/deliveries/scrap/add/').json()
+        self.assertEqual(result['path'], '/deliveries/scrap/add/')
+
+    def test_invalid_tab_rejected(self):
+        self.assertEqual(self._switch('9').status_code, 400)
+
+    def test_opening_other_operation_does_not_overwrite_a_filled_tab(self):
+        self._save_draft(path='/deliveries/add/', tab='1', comment='keep me')
+        response = self.client.get(reverse('writeoff_add'))
+        # tab 1 holds a delivery, so the write-off page moves to a free tab.
+        self.assertEqual(response.context['delivery_tab'], '2')
+        self._save_draft(path='/deliveries/write-off/add/', tab='2')
+        self._switch('1')
+        response = self.client.get(reverse('delivery_add'))
+        self.assertEqual(response.context['form'].initial['comment'], 'keep me')
+
+    def test_header_only_draft_shows_no_validation_errors_on_load(self):
+        # Autosave now fires on any field change, so a draft with the
+        # supplier/number filled in and an EMPTY grid is common -- it used to
+        # reload with "at least one item" + "Row 1: delivery_item required".
+        self._save_draft(tab='1', with_item=False, comment='header only')
+        response = self.client.get(reverse('delivery_add'))
+        self.assertEqual(response.context['form'].initial['comment'], 'header only')
+        self.assertEqual(response.context['formset'].errors, [])
+        self.assertEqual(response.context['formset'].non_form_errors(), [])
+        self.assertNotIn('form-errors', response.content.decode())
+
+    def test_tabs_summary_marks_filled_tabs(self):
+        self._save_draft(tab='2')
+        self._save_draft(tab='3', with_item=False)  # header-only draft doesn't count
+        response = self.client.get(reverse('delivery_add'))
+        by_tab = {t['tab']: t for t in response.context['delivery_tabs_summary']}
+        self.assertFalse(by_tab['1']['has_items'])
+        self.assertTrue(by_tab['2']['has_items'])
+        self.assertFalse(by_tab['3']['has_items'])
+
+    def test_cancel_clears_only_that_tab(self):
+        self._save_draft(tab='1', comment='one')
+        self._save_draft(tab='2', comment='two')
+        response = self.client.get(reverse('cancel_delivery_tab') + '?tab=1&type=DELIVERY')
+        self.assertRedirects(response, reverse('delivery_add'), fetch_redirect_response=False)
+        self._switch('2')
+        response = self.client.get(reverse('delivery_add'))
+        self.assertEqual(response.context['form'].initial['comment'], 'two')
+        self._switch('1')
+        response = self.client.get(reverse('delivery_add'))
+        self.assertFalse(response.context['form'].initial.get('comment'))
+
+    def test_completing_a_delivery_clears_only_its_tab(self):
+        self._save_draft(tab='2', comment='other')
+        supplier = Suppliers.objects.create(name='Tabs Supplier')
+        doc_type = DocumentType.objects.get_or_create(name='Invoice')[0]
+        self._switch('1')
+        response = self.client.post(reverse('delivery_add'), {
+            'draft_tab': '1',
+            'receiver': self.user.pk,
+            'supplier': supplier.pk,
+            'time_of_delivery': '2026-10-01T10:00',
+            'document_type': doc_type.pk,
+            'document_number': 'TAB-1',
+            'document_date': '2026-10-01',
+            'items-TOTAL_FORMS': '1',
+            'items-INITIAL_FORMS': '0',
+            'items-MIN_NUM_FORMS': '0',
+            'items-MAX_NUM_FORMS': '1000',
+            'items-0-delivery_item': str(self.product.pk),
+            'items-0-delivery_quantity': '3',
+            'items-0-price_at_delivery': '1.00',
+            'items-0-total_price_row': '3.00',
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(DeliveryAttributes.objects.filter(document_number='TAB-1').exists())
+        self._switch('2')
+        response = self.client.get(reverse('delivery_add'))
+        self.assertEqual(response.context['form'].initial['comment'], 'other')

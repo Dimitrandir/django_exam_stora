@@ -13,7 +13,7 @@ from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 from django.utils.translation import gettext as _
-from django.views.generic import DetailView, DeleteView
+from django.views.generic import DetailView, DeleteView, TemplateView
 from django.views.decorators.http import require_POST
 from STORA.sales.tasks import log_sale_completed
 
@@ -28,7 +28,7 @@ from STORA.products.models import Product, Barcode, Category
 from STORA.pricelists.services import resolve_prices
 from STORA.sales import fiscal
 from STORA.sales.forms import SaleForms, SaleItemFormSet
-from STORA.sales.models import SaleAttributes, SaleItems, PosPin, SaleItemVoidLog, RefundAttributes, RefundItems
+from STORA.sales.models import SaleAttributes, SaleItems, PosPin, SaleItemVoidLog, RefundAttributes, RefundItems, ServiceCashMovement
 from STORA.sales.tab_state import (
     TAB_IDS,
     clear_last_change,
@@ -324,7 +324,9 @@ def sale_fiscal_retry(request, pk):
     the original attempt at checkout: whoever clicks this is standing next
     to the printer waiting to see if it works this time."""
     sale = get_object_or_404(SaleAttributes, pk=pk)
-    if settings.FISCAL_ENABLED:
+    if sale.fiscal_status == SaleAttributes.FISCAL_PRINTED:
+        messages.warning(request, _('A fiscal receipt was already printed for this sale.'))
+    elif settings.FISCAL_ENABLED:
         if fiscal.bridge_mode():
             _queue_bridge_job_for_details(request, fiscal.prepare_sale_for_bridge(sale))
         else:
@@ -353,7 +355,9 @@ def fiscal_bridge_result(request):
         return JsonResponse({'error': 'Fiscal bridge mode is off.'}, status=404)
     try:
         payload = json.loads(request.body)
-        model = {'sale': SaleAttributes, 'refund': RefundAttributes}[payload['kind']]
+        model = {
+            'sale': SaleAttributes, 'refund': RefundAttributes, 'service_cash': ServiceCashMovement,
+        }[payload['kind']]
         record_id = int(payload['id'])
         ok = payload['ok']
         if not isinstance(ok, bool):
@@ -367,7 +371,11 @@ def fiscal_bridge_result(request):
     record = get_object_or_404(model, pk=record_id)
     if not fiscal.record_bridge_result(record, ok, error, results):
         return JsonResponse({'error': 'This receipt is not waiting to be printed.'}, status=409)
-    return JsonResponse({'ok': True, 'status': record.fiscal_status})
+    response = {'ok': True, 'status': record.fiscal_status}
+    if isinstance(record, ServiceCashMovement):
+        response['error'] = record.fiscal_error
+        response['cash_sum_after'] = str(record.cash_sum_after) if record.cash_sum_after is not None else None
+    return JsonResponse(response)
 
 
 @login_required
@@ -433,6 +441,42 @@ def fiscal_report_period(request):
     except fiscal.FiscalPrintError as exc:
         return JsonResponse({'error': str(exc)}, status=502)
     return JsonResponse({'ok': True})
+
+
+@login_required
+@permission_required('sales.add_saleattributes', raise_exception=True)
+@require_POST
+def fiscal_service_cash(request):
+    """Служебно въвеждане/извеждане (FDServiceSum) -- same permission as
+    ringing up a sale or running X/Z, since putting change into the till or
+    pulling cash out of it is a normal till operation, not Manager-only.
+    `direction` picks the sign; the amount typed in is always positive."""
+    try:
+        amount = Decimal(request.POST.get('amount', ''))
+    except InvalidOperation:
+        return JsonResponse({'error': _('Enter a valid amount.')}, status=400)
+    if amount <= 0:
+        return JsonResponse({'error': _('Enter an amount greater than zero.')}, status=400)
+    direction = request.POST.get('direction')
+    if direction == 'out':
+        amount = -amount
+    elif direction != 'in':
+        return JsonResponse({'error': _('Unknown direction.')}, status=400)
+    comment = request.POST.get('comment', '').strip()
+
+    if fiscal.bridge_mode():
+        # Run on the till PC by the page's JS, which then reports the result
+        # back to fiscal_bridge_result (that's where the movement is settled).
+        try:
+            job = fiscal.prepare_service_cash_for_bridge(amount, comment, request.user)
+        except fiscal.FiscalPrintError as exc:
+            return JsonResponse({'error': str(exc)}, status=502)
+        return JsonResponse({'ok': True, 'bridge_job': job})
+    try:
+        movement = fiscal.record_service_cash_move(amount, comment, request.user)
+    except fiscal.FiscalPrintError as exc:
+        return JsonResponse({'error': str(exc)}, status=502)
+    return JsonResponse({'ok': True, 'cash_sum_after': str(movement.cash_sum_after)})
 
 
 class SalesDeleteView(LoginRequiredMixin, StaffPermissionRequiredMixin, DeleteView):
@@ -780,6 +824,23 @@ def refund_new(request, pk):
     })
 
 
+def _refund_fiscal_note(refund):
+    """Why a refund with fiscal_status NONE has no fiscal receipt -- shown on
+    its details page, so "no receipt and no idea why" always has an answer.
+    '' once a print was attempted (PRINTED/FAILED show their own message)."""
+    if refund.fiscal_status != SaleAttributes.FISCAL_NONE:
+        return ''
+    if not settings.FISCAL_ENABLED:
+        return _('Fiscal printing is switched off on this computer, so nothing was sent to the fiscal device.')
+    original = refund.original_sale
+    if original.payment_method != SaleAttributes.CASH:
+        return _(
+            'The original sale was paid by "%(method)s". For now only cash sales are printed on the '
+            'fiscal device, so no fiscal storno receipt was attempted for this refund.'
+        ) % {'method': original.get_payment_method_display() or '-'}
+    return _('A fiscal storno receipt was not attempted for this refund (no result was recorded).')
+
+
 class RefundDetailView(LoginRequiredMixin, StaffPermissionRequiredMixin, DetailView):
     permission_required = 'sales.view_saleattributes'
     model = RefundAttributes
@@ -788,6 +849,7 @@ class RefundDetailView(LoginRequiredMixin, StaffPermissionRequiredMixin, DetailV
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        refund = self.object
         context['refund_items_data'] = [
             {
                 'product_name': item.original_item.sale_item.name,
@@ -795,7 +857,46 @@ class RefundDetailView(LoginRequiredMixin, StaffPermissionRequiredMixin, DetailV
                 'price_at_refund': float(item.price_at_refund),
                 'total_price_row': float(item.total_price_row or 0),
             }
-            for item in self.object.items.select_related('original_item__sale_item').all()
+            for item in refund.items.select_related('original_item__sale_item').all()
+        ]
+        context['fiscal_note'] = _refund_fiscal_note(refund)
+        # Offered whenever a fiscal storno could actually work: fiscal
+        # printing is on, nothing printed yet, and the original sale was a
+        # cash one (the only kind that has a fiscal receipt to storno).
+        # A FAILED refund always gets the button, whatever the cause.
+        context['can_fiscal_print'] = (
+            settings.FISCAL_ENABLED
+            and refund.fiscal_status != SaleAttributes.FISCAL_PRINTED
+            and (refund.fiscal_status == SaleAttributes.FISCAL_FAILED
+                 or refund.original_sale.payment_method == SaleAttributes.CASH)
+        )
+        return context
+
+
+class RefundListView(LoginRequiredMixin, StaffPermissionRequiredMixin, TemplateView):
+    """All refunds, newest first, with their fiscal status -- the place to
+    find a storno whose receipt didn't come out and print it again (the
+    details page is otherwise only reachable right after creating it)."""
+    permission_required = 'sales.view_saleattributes'
+    template_name = 'sales/refund_list.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        refunds = RefundAttributes.objects.select_related('cashier').order_by('-time_of_refund')
+        context['refunds_data'] = [
+            {
+                'id': refund.pk,
+                'date': timezone.localtime(refund.time_of_refund).strftime('%d.%m.%Y'),
+                'time': timezone.localtime(refund.time_of_refund).strftime('%H:%M'),
+                'sale_id': refund.original_sale_id,
+                'cashier': str(refund.cashier),
+                'reason': refund.get_reason_display(),
+                'total': float(refund.total_amount),
+                'fiscal_status': refund.fiscal_status,
+                'fiscal': refund.get_fiscal_status_display(),
+                'view_url': reverse('refund_details', args=[refund.pk]),
+            }
+            for refund in refunds
         ]
         return context
 
@@ -807,7 +908,11 @@ def refund_fiscal_retry(request, pk):
     """Re-attempts fiscal storno printing for a refund whose first attempt
     failed -- same pattern as sale_fiscal_retry."""
     refund = get_object_or_404(RefundAttributes, pk=pk)
-    if settings.FISCAL_ENABLED:
+    if refund.fiscal_status == SaleAttributes.FISCAL_PRINTED:
+        # Never a second receipt for the same storno -- a double click, or a
+        # stale page opened before the first attempt actually succeeded.
+        messages.warning(request, _('A fiscal storno receipt was already printed for this refund.'))
+    elif settings.FISCAL_ENABLED:
         if fiscal.bridge_mode():
             _queue_bridge_job_for_details(request, fiscal.prepare_refund_for_bridge(refund))
         else:

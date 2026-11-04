@@ -117,7 +117,7 @@
     // open -- explains the "closes only sometimes" report. Keyed per-table
     // (see initExcelStyleTable) so two tables on one page can't collide on
     // a shared field name.
-    function makeExcelStyleFilterEditor(widgetCache) {
+    function makeExcelStyleFilterEditor(widgetCache, onFilterChange) {
         return function excelStyleFilterEditor(cell, onRendered, success) {
             var column = cell.getColumn();
             var field = column.getField();
@@ -152,6 +152,7 @@
                     widget.selectedValues = checked.length === unique.length ? null : checked;
                     widget.toggle.classList.toggle('is-filtered', widget.selectedValues !== null);
                     success(widget.selectedValues === null ? '' : widget.selectedValues);
+                    if (onFilterChange) onFilterChange(field, widget.selectedValues);
                 }
 
                 var search = document.createElement('input');
@@ -227,6 +228,18 @@
             }
             widget.buildPanel = buildPanel;
             widget.wrapper.addEventListener('panelopen', buildPanel);
+            // Programmatic "reset this column's filter" -- same path as
+            // ticking (All) in the panel (success('') + onFilterChange), used
+            // by table.clearExcelFilters(). Re-assigned on every editor call
+            // for the same reason as buildPanel above: `success` belongs to
+            // THIS call.
+            widget.clearFilter = function () {
+                if (widget.selectedValues === null) return;
+                widget.selectedValues = null;
+                widget.toggle.classList.remove('is-filtered');
+                success('');
+                if (onFilterChange) onFilterChange(field, null);
+            };
             onRendered(function () {});
             return widget.wrapper;
         };
@@ -287,7 +300,65 @@
     global.initExcelStyleTable = function (elementSelector, dataScriptId, columns, options) {
         options = options || {};
         var data = JSON.parse(document.getElementById(dataScriptId).textContent);
-        var excelStyleFilterEditor = makeExcelStyleFilterEditor({});
+
+        // Opt-in via the same `options.persist` flag as column width/
+        // visibility below (not a separate option) -- this is a bespoke
+        // Excel-style filter widget, not Tabulator's own headerFilter
+        // state, so its built-in `persistence: {headerFilter: true}` has
+        // nothing to hook: our widget never exposes a plain <input> for it
+        // to read/write, and restoring through it would re-invoke this
+        // editor without any way to carry the checked values along. Rolled
+        // by hand instead, same storage key family as Tabulator's own
+        // ('tabulator-filters-<persistenceID>' vs. its own
+        // 'tabulator-<persistenceID>') so the two don't collide.
+        var filterPersistKey = null;
+        var savedFilters = {};
+        if (options.persist) {
+            var persistId = typeof options.persist === 'string' ? options.persist : elementSelector.replace(/^#/, '');
+            filterPersistKey = 'tabulator-filters-' + persistId;
+            try {
+                savedFilters = JSON.parse(window.localStorage.getItem(filterPersistKey) || '{}');
+            } catch (e) {
+                savedFilters = {};
+            }
+        }
+
+        // One entry per field currently filtered by the RESTORE mechanism
+        // below (table.addFilter, not Tabulator's own headerFilter value) --
+        // removed the moment the user actually opens that column's own
+        // filter panel, so the restored filter doesn't linger stacked on
+        // top of whatever they just picked there.
+        var restoreFilterFns = {};
+
+        var filterWidgetCache = {};
+        // Tells the page (a CustomEvent on the table element) that the set of
+        // active column filters changed -- products_list.html uses it to show
+        // a "Clear filters" button. A filter on a HIDDEN column (Columns ▾)
+        // is invisible in the headers but still filters the rows, and with
+        // persistence it survives reloads, so the page needs another way to
+        // know and to undo it.
+        function notifyFiltersChanged() {
+            var el = document.querySelector(elementSelector);
+            if (el) el.dispatchEvent(new CustomEvent('excelfilterchange'));
+        }
+
+        var excelStyleFilterEditor = makeExcelStyleFilterEditor(filterWidgetCache, function (field, selectedValues) {
+            if (restoreFilterFns[field]) {
+                table.removeFilter(restoreFilterFns[field]);
+                delete restoreFilterFns[field];
+            }
+            if (filterPersistKey) {
+                if (selectedValues === null) {
+                    delete savedFilters[field];
+                } else {
+                    savedFilters[field] = selectedValues;
+                }
+                try {
+                    window.localStorage.setItem(filterPersistKey, JSON.stringify(savedFilters));
+                } catch (e) {}
+            }
+            notifyFiltersChanged();
+        });
 
         columns.forEach(function (col) {
             if (col.headerFilter === false) return;
@@ -437,6 +508,54 @@
         if (options.columnChooser !== false) {
             table.on('tableBuilt', function () {
                 addColumnChooser(document.querySelector(elementSelector), table, columns);
+            });
+        }
+
+        // Restores last visit's active filters -- deliberately NOT via
+        // Tabulator's own table.setHeaderFilterValue()/reloadHeaderFilter(),
+        // even though that looks like the obvious built-in way to do this.
+        // Confirmed live: both internally call generateHeaderFilterElement()
+        // to rebuild the header's DOM element before reapplying the value,
+        // and that rebuild throws ("e.contentElement.removeChild is not a
+        // function") against this custom floating-toggle widget, which
+        // doesn't have the plain-input structure Tabulator expects there --
+        // not every time, but reliably enough (hit via clearHeaderFilter(),
+        // which goes through the exact same rebuild path) that it can't be
+        // trusted here. table.addFilter() (Tabulator's OTHER, simpler filter
+        // stack -- already used for hideArchivedFilter above) sidesteps that
+        // rebuild entirely: it just calls a plain function with each row's
+        // data, no DOM involved. widget.selectedValues/the toggle's
+        // 'is-filtered' class are still set directly so the checkbox panel
+        // and ▾ indicator look right if the user opens it later -- those
+        // are plain property/class assignments, not Tabulator API calls,
+        // so none of this can throw the way the built-in restore path did.
+        // Field names whose column currently has an Excel-style filter on
+        // (hidden columns included), and a reset for all of them at once.
+        table.activeExcelFilterFields = function () {
+            return Object.keys(filterWidgetCache).filter(function (field) {
+                return filterWidgetCache[field].selectedValues !== null;
+            });
+        };
+        table.clearExcelFilters = function () {
+            Object.keys(filterWidgetCache).forEach(function (field) {
+                var widget = filterWidgetCache[field];
+                if (widget.clearFilter) widget.clearFilter();
+            });
+        };
+
+        if (filterPersistKey) {
+            table.on('tableBuilt', function () {
+                Object.keys(savedFilters).forEach(function (field) {
+                    var widget = filterWidgetCache[field];
+                    if (!widget) return;
+                    var value = savedFilters[field];
+                    widget.selectedValues = value;
+                    widget.toggle.classList.add('is-filtered');
+                    var filterFn = function (data) { return excelStyleFilterFunc(value, data[field]); };
+                    restoreFilterFns[field] = filterFn;
+                    table.addFilter(filterFn);
+                });
+                notifyFiltersChanged();
             });
         }
 

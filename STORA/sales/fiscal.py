@@ -11,6 +11,7 @@ view -- it never raises, so a fiscal failure can never block a sale that's
 already been saved to the DB.
 """
 import logging
+from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
 
 from django.conf import settings
@@ -26,6 +27,9 @@ logger = logging.getLogger(__name__)
 # receipt/report from STORA's own records, then runs it locally through
 # the wrappers below.
 FiscalPrintError = ecr_runner.FiscalPrintError
+DEVICE_ERROR_HINTS = ecr_runner.DEVICE_ERROR_HINTS
+_describe_device_error = ecr_runner._describe_device_error
+_sent_summary = ecr_runner._sent_summary
 
 
 def _device_config():
@@ -206,11 +210,14 @@ def attempt_print(sale):
         logger.info('Fiscal: attempting print for Sale #%s on %s', sale.pk, settings.FISCAL_COM_PORT)
     try:
         result = print_fiscal_receipt(sale)
-    except FiscalPrintError as exc:
+    except Exception as exc:
+        # See attempt_print_refund -- same "never raises" guarantee.
+        if not isinstance(exc, FiscalPrintError):
+            logger.exception('Unexpected error printing fiscal receipt for Sale #%s', sale.pk)
         sale.fiscal_status = SaleAttributes.FISCAL_FAILED
-        sale.fiscal_error = str(exc)
+        sale.fiscal_error = str(exc) if isinstance(exc, FiscalPrintError) else f'Unexpected error: {exc!r}'
         sale.save(update_fields=['fiscal_status', 'fiscal_error'])
-        logger.warning('Fiscal print failed for Sale #%s: %s', sale.pk, exc)
+        logger.warning('Fiscal print failed for Sale #%s: %s', sale.pk, sale.fiscal_error)
     else:
         sale.fiscal_status = SaleAttributes.FISCAL_PRINTED
         sale.fiscal_error = ''
@@ -264,6 +271,18 @@ def _refund_receipt_commands(refund):
     if refund.reason not in reason_map:
         raise FiscalPrintError(f'Unknown refund reason "{refund.reason}".')
 
+    # FiskMem must be the fiscal MEMORY number (8 digits, Daisy Manager ->
+    # Настройки -> "Номер на ФП"). Left unset on a machine that never got the
+    # setting, it went to the device as '' and came back as the unhelpful
+    # "service error -- 21" (value out of limits) -- caught here instead,
+    # before a receipt is opened, with the actual fix in the message.
+    fm_number = str(settings.FISCAL_DEVICE_FM_NUMBER or '').strip()
+    if not (fm_number.isdigit() and len(fm_number) == 8):
+        raise FiscalPrintError(
+            'FISCAL_DEVICE_FM_NUMBER is missing or not 8 digits (currently "%s"). Set the fiscal memory '
+            'number ("Номер на ФП" in Daisy Manager) in .env and restart STORA.' % fm_number
+        )
+
     refund_items = _validate_refund_items(refund)
     unic_sale_num = _next_unic_sale_num()
     items = [
@@ -287,7 +306,7 @@ def _refund_receipt_commands(refund):
         'DocLinkDT': original_sale.fiscal_printed_at.astimezone(
             ZoneInfo(settings.FISCAL_DEVICE_TIME_ZONE)
         ).strftime('%d-%m-%y %H:%M:%S'),
-        'FiskMem': settings.FISCAL_DEVICE_FM_NUMBER,
+        'FiskMem': fm_number,
         # Credit/InvLink deliberately NOT sent at all -- they're for a
         # credit-note document, a different operation from a plain storno
         # (see the guide's separate Credit-only field table). The guide's
@@ -324,11 +343,17 @@ def attempt_print_refund(refund):
         logger.info('Fiscal: attempting storno print for Refund #%s on %s', refund.pk, settings.FISCAL_COM_PORT)
     try:
         unic_sale_num = print_fiscal_refund(refund)
-    except FiscalPrintError as exc:
+    except Exception as exc:
+        # Not just FiscalPrintError -- "never raises" has to hold for a bug
+        # or a missing setting too, otherwise the refund (already saved)
+        # ends in a 500 page with status NONE and no recorded reason, the
+        # exact "no receipt and no idea why" situation reported live.
+        if not isinstance(exc, FiscalPrintError):
+            logger.exception('Unexpected error printing fiscal storno for Refund #%s', refund.pk)
         refund.fiscal_status = SaleAttributes.FISCAL_FAILED
-        refund.fiscal_error = str(exc)
+        refund.fiscal_error = str(exc) if isinstance(exc, FiscalPrintError) else f'Unexpected error: {exc!r}'
         refund.save(update_fields=['fiscal_status', 'fiscal_error'])
-        logger.warning('Fiscal storno failed for Refund #%s: %s', refund.pk, exc)
+        logger.warning('Fiscal storno failed for Refund #%s: %s', refund.pk, refund.fiscal_error)
     else:
         refund.fiscal_status = SaleAttributes.FISCAL_PRINTED
         refund.fiscal_error = ''
@@ -375,7 +400,12 @@ def _prepare_bridge_job(record, kind, build):
         if not settings.FISCAL_ENABLED:
             raise FiscalPrintError('Fiscal printing is disabled (FISCAL_ENABLED).')
         commands, unic_sale_num = build(record)
-    except FiscalPrintError as exc:
+    except Exception as exc:
+        # Same "never raises" guarantee as attempt_print -- a bug or a
+        # missing setting still ends as FAILED with a reason, not a 500.
+        if not isinstance(exc, FiscalPrintError):
+            logger.exception('Unexpected error building a fiscal receipt for %s #%s', type(record).__name__, record.pk)
+            exc = f'Unexpected error: {exc!r}'
         _mark_failed(record, exc)
         return None
     # The device's operator password stays on the till PC -- the bridge
@@ -404,6 +434,22 @@ def prepare_refund_for_bridge(refund):
     return _prepare_bridge_job(refund, 'refund', _refund_receipt_commands)
 
 
+def prepare_service_cash_for_bridge(amount, comment, performed_by):
+    """Bridge-mode counterpart of record_service_cash_move: logs the
+    movement as PENDING and returns the job for the browser to run on the
+    till-PC bridge right away (fiscal_reports.html); the browser reports
+    the outcome back like a receipt's (record_bridge_result)."""
+    from .models import SaleAttributes, ServiceCashMovement
+
+    if not settings.FISCAL_ENABLED:
+        raise FiscalPrintError('Fiscal printing is disabled (FISCAL_ENABLED).')
+    movement = ServiceCashMovement.objects.create(
+        amount=amount, comment=comment, performed_by=performed_by,
+        fiscal_status=SaleAttributes.FISCAL_PENDING,
+    )
+    return {'kind': 'service_cash', 'id': movement.pk, 'commands': service_cash_commands(amount, comment)}
+
+
 def queue_bridge_job(request, job):
     """Parks `job` in the session; the next full page the cashier sees picks
     it up (context_processors.fiscal_bridge) and the browser runs it.
@@ -416,12 +462,28 @@ def record_bridge_result(record, ok, error='', results=None):
     """Stores what the bridge answered for a PENDING sale/refund. Returns
     False (and changes nothing) if the record isn't PENDING -- a result
     can't overwrite one that's already settled."""
-    from .models import SaleAttributes
+    from .models import SaleAttributes, ServiceCashMovement
 
     if record.fiscal_status != SaleAttributes.FISCAL_PENDING:
         return False
     if not ok:
         _mark_failed(record, error or 'The fiscal bridge reported a failure without details.')
+        return True
+    if isinstance(record, ServiceCashMovement):
+        result = (results or [{}])[-1]
+        try:
+            _check_service_cash_result(result)
+        except FiscalPrintError as exc:
+            _mark_failed(record, exc)
+            return True
+        record.fiscal_status = SaleAttributes.FISCAL_PRINTED
+        record.fiscal_error = ''
+        cash_sum = result.get('CashSum') if isinstance(result, dict) else None
+        try:
+            record.cash_sum_after = Decimal(str(cash_sum)) if cash_sum not in (None, '') else None
+        except InvalidOperation:
+            record.cash_sum_after = None
+        record.save(update_fields=['fiscal_status', 'fiscal_error', 'cash_sum_after'])
         return True
     record.fiscal_status = SaleAttributes.FISCAL_PRINTED
     record.fiscal_error = ''
@@ -441,12 +503,14 @@ def record_bridge_result(record, ok, error='', results=None):
     return True
 
 
-# Daily report Item values, straight from the FDDailyRpt table in
-# kasov_aparat_ECRCommApp_Guide.pdf (order they're listed in, 0-indexed --
-# confirmed by the worked example there, which used Item=0 for the Z report
-# it showed a real response for).
+# Daily report Item values. Z=0 is the guide's own worked example. X=2 is
+# what the device's own ECRWebApp sends for "Дневен отчет без нулиране
+# (X Отчет)" (read off its Request panel, 2026-10-31) -- NOT 1, which is what
+# was first guessed from the order the guide lists the options in (the
+# guide's table loses the numeric codes in text extraction) and which, on the
+# real device, closed the day like Z did.
 _DAILY_RPT_ITEM_Z = 0
-_DAILY_RPT_ITEM_X = 1
+_DAILY_RPT_ITEM_X = 2
 
 
 def daily_report_commands(item):
@@ -496,6 +560,67 @@ def print_z_report():
     reports the same day without a sale in between just reprint an empty
     one, per the guide)."""
     _print_daily_report(_DAILY_RPT_ITEM_Z)
+
+
+def service_cash_move(amount, comment=''):
+    """Служебно въвеждане (amount > 0) / служебно извеждане (amount < 0) --
+    FDServiceSum [70 (46h)]. Unlike print_x_report/print_z_report this DOES
+    return structured data (CashSum/ServInput/ServOutput), straight from the
+    guide's own worked example -- Amount is sent as a number there, not a
+    string like FDSaleItem's Price/Qty, so kept as a number here too rather
+    than assuming every numeric field in this API needs str(). The device
+    itself refuses to run this with an open receipt, and refuses a cash-out
+    bigger than what's actually in the till -- both surface as a normal
+    FiscalPrintError via _post_command's generic HasErr/ErrorCode handling,
+    nothing extra to check for those two cases specifically. 'Code' in the
+    response ('P'=success, 'F'=failed) is this command's OWN result flag,
+    separate from the generic ErrorCode/IsValid checked in _post_command --
+    worth checking explicitly since the guide doesn't say ErrorCode is
+    guaranteed non-zero when Code is 'F'."""
+    if not settings.FISCAL_ENABLED:
+        raise FiscalPrintError('Fiscal printing is disabled (FISCAL_ENABLED).')
+    result = _run_commands(service_cash_commands(amount, comment))[-1]
+    _check_service_cash_result(result)
+    return result
+
+
+def service_cash_commands(amount, comment=''):
+    return [{'cmd': 'FDServiceSum', 'data': {
+        'Amount': float(amount),
+        'Text1': comment[:28],
+        'Text2': '',
+    }}]
+
+
+def _check_service_cash_result(result):
+    if isinstance(result, dict) and result.get('Code') == 'F':
+        raise FiscalPrintError('Fiscal device refused the service cash movement (Code F).')
+
+
+def record_service_cash_move(amount, comment, performed_by):
+    """Unlike attempt_print/attempt_print_refund, this DOES re-raise
+    FiscalPrintError after logging -- there's no pre-existing STORA record
+    to flag as failed and retry later (this action IS the record, and a
+    failed attempt moved no real money, so there's nothing to retry either),
+    so the caller (the view) needs the exception to tell the operator it
+    didn't go through. Still logs a row either way, successful or not, for
+    an honest audit trail of what was attempted."""
+    from .models import SaleAttributes, ServiceCashMovement
+
+    movement = ServiceCashMovement(amount=amount, comment=comment, performed_by=performed_by)
+    try:
+        result = service_cash_move(amount, comment)
+    except FiscalPrintError as exc:
+        movement.fiscal_status = SaleAttributes.FISCAL_FAILED
+        movement.fiscal_error = str(exc)
+        movement.save()
+        logger.warning('Fiscal service cash movement failed: %s', exc)
+        raise
+    else:
+        movement.fiscal_status = SaleAttributes.FISCAL_PRINTED
+        movement.cash_sum_after = result.get('CashSum')
+        movement.save()
+        return movement
 
 
 def print_period_report(start_date, end_date):

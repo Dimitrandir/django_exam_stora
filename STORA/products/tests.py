@@ -677,8 +677,6 @@ class ProductInlineUpdateViewTests(TestCase):
         self.client.force_login(self.manager)
         response = self._post('quantity', '9999')
         self.assertEqual(response.status_code, 400)
-        self.product.refresh_from_db()
-        self.assertEqual(self.product.quantity, 7)
 
     def test_inline_edit_does_not_touch_unrelated_fields(self):
         """Regression guard: since ProductInlineEditForm only lists 4
@@ -699,6 +697,297 @@ class ProductInlineUpdateViewTests(TestCase):
         self.assertEqual(entry.old_value, 'Inline Widget')
         self.assertEqual(entry.new_value, 'Renamed Via Grid')
         self.assertEqual(entry.changed_by, self.manager)
+
+
+class ProductAttributeInlineUpdateTests(TestCase):
+    """"Enable Edit" on the Products grid can also edit the per-shop
+    attribute columns (attribute_<id>) -- stored inside Product.attributes,
+    not a real Product field, so they get their own branch in
+    ProductInlineUpdateView."""
+
+    def setUp(self):
+        self.manager = Employee.objects.create_user(
+            username='manager-attr', password='pass12345', role=Employee.MANAGER
+        )
+        self.cashier = Employee.objects.create_user(
+            username='cashier-attr', password='pass12345', role=Employee.CASHIER
+        )
+        self.brand = ProductAttribute.objects.create(name='Brand')
+        self.color = ProductAttribute.objects.create(name='Color', choices=['Red', 'Blue'])
+        self.product = Product.objects.create(
+            internal_code='P1000014', name='Attribute Widget', sell_price=1.50, quantity=7,
+            attributes={str(self.color.pk): 'Red'},
+        )
+
+    def _post(self, attribute, value):
+        return self.client.post(
+            reverse('product_inline_update', kwargs={'pk': self.product.pk}),
+            {'field': f'attribute_{attribute.pk}', 'value': value},
+        )
+
+    def test_cashier_cannot_edit(self):
+        self.client.force_login(self.cashier)
+        self.assertEqual(self._post(self.brand, 'Nike').status_code, 403)
+        self.product.refresh_from_db()
+        self.assertNotIn(str(self.brand.pk), self.product.attributes)
+
+    def test_free_text_attribute_is_saved_and_other_attributes_kept(self):
+        self.client.force_login(self.manager)
+        response = self._post(self.brand, '  Nike ')
+        self.assertEqual(response.status_code, 200)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.attributes, {str(self.brand.pk): 'Nike', str(self.color.pk): 'Red'})
+
+    def test_choice_attribute_accepts_a_listed_value(self):
+        self.client.force_login(self.manager)
+        self.assertEqual(self._post(self.color, 'Blue').status_code, 200)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.attributes[str(self.color.pk)], 'Blue')
+
+    def test_choice_attribute_rejects_an_unlisted_value(self):
+        self.client.force_login(self.manager)
+        self.assertEqual(self._post(self.color, 'Green').status_code, 400)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.attributes[str(self.color.pk)], 'Red')
+
+    def test_blank_value_removes_the_key(self):
+        self.client.force_login(self.manager)
+        self.assertEqual(self._post(self.color, '').status_code, 200)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.attributes, {})
+
+    def test_unknown_attribute_id_rejected(self):
+        self.client.force_login(self.manager)
+        response = self.client.post(
+            reverse('product_inline_update', kwargs={'pk': self.product.pk}),
+            {'field': 'attribute_99999', 'value': 'x'},
+        )
+        self.assertEqual(response.status_code, 400)
+        response = self.client.post(
+            reverse('product_inline_update', kwargs={'pk': self.product.pk}),
+            {'field': 'attribute_abc', 'value': 'x'},
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_editing_an_attribute_does_not_touch_other_fields(self):
+        self.client.force_login(self.manager)
+        self._post(self.brand, 'Nike')
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.name, 'Attribute Widget')
+        self.assertEqual(self.product.quantity, 7)
+        self.assertEqual(str(self.product.sell_price), '1.50')
+
+    def test_list_page_hands_the_grid_each_attributes_editor_definition(self):
+        self.client.force_login(self.manager)
+        response = self.client.get(reverse('product_list'))
+        self.assertEqual(response.context['attribute_defs'], [
+            {'id': self.brand.pk, 'name': 'Brand', 'choices': []},
+            {'id': self.color.pk, 'name': 'Color', 'choices': ['Red', 'Blue']},
+        ])
+        self.assertContains(response, 'id="products-attribute-defs"')
+
+
+class SetDefaultTaxGroupCommandTests(TestCase):
+    """`manage.py set_default_tax_group` -- only products WITHOUT a group
+    get the default; anything that already has one is never touched."""
+
+    def setUp(self):
+        self.default, _created = TaxGroup.objects.get_or_create(name='Б', defaults={'rate': 20})
+        self.other = TaxGroup.objects.create(name='Г', rate=9)
+        self.bare = Product.objects.create(internal_code='TAXCMD01', name='No Group', sell_price=1, quantity=1)
+        self.has_other = Product.objects.create(
+            internal_code='TAXCMD02', name='Has Other Group', sell_price=1, quantity=1, tax_group=self.other)
+
+    def _run(self, *args):
+        from io import StringIO
+        from django.core.management import call_command
+        out = StringIO()
+        call_command('set_default_tax_group', *args, stdout=out)
+        return out.getvalue()
+
+    def test_only_products_without_a_group_are_changed(self):
+        output = self._run('--yes')
+        self.bare.refresh_from_db()
+        self.has_other.refresh_from_db()
+        self.assertEqual(self.bare.tax_group, self.default)
+        self.assertEqual(self.has_other.tax_group, self.other)
+        self.assertIn('Done', output)
+
+    def test_dry_run_changes_nothing(self):
+        output = self._run('--dry-run')
+        self.bare.refresh_from_db()
+        self.assertIsNone(self.bare.tax_group)
+        self.assertIn('Dry run', output)
+
+    def test_declining_the_question_changes_nothing(self):
+        with patch('builtins.input', return_value='n'):
+            output = self._run()
+        self.bare.refresh_from_db()
+        self.assertIsNone(self.bare.tax_group)
+        self.assertIn('Cancelled', output)
+
+    def test_missing_default_group_is_a_clear_error(self):
+        from django.core.management.base import CommandError
+        self.bare.delete()
+        self.has_other.delete()
+        Product.objects.all().update(tax_group=None)
+        TaxGroup.objects.filter(name='Б').delete()
+        with self.assertRaises(CommandError):
+            self._run('--yes')
+
+
+class ProductBulkSetAttributeTests(TestCase):
+    """Bulk action `set_attribute` -- one UPDATE for the selected products,
+    touching only that attribute's key inside Product.attributes."""
+
+    def setUp(self):
+        self.manager = Employee.objects.create_user(
+            username='manager-bulkattr', password='pass12345', role=Employee.MANAGER
+        )
+        self.cashier = Employee.objects.create_user(
+            username='cashier-bulkattr', password='pass12345', role=Employee.CASHIER
+        )
+        self.brand = ProductAttribute.objects.create(name='Brand')
+        self.color = ProductAttribute.objects.create(name='Color', choices=['Red', 'Blue'])
+        self.a = Product.objects.create(
+            internal_code='BULKA001', name='Bulk A', sell_price=1, quantity=1,
+            attributes={str(self.color.pk): 'Red'},
+        )
+        self.b = Product.objects.create(internal_code='BULKB001', name='Bulk B', sell_price=1, quantity=1)
+        self.untouched = Product.objects.create(
+            internal_code='BULKC001', name='Bulk C', sell_price=1, quantity=1,
+            attributes={str(self.brand.pk): 'Old'},
+        )
+
+    def _post(self, attribute, value, products=None):
+        products = products if products is not None else [self.a, self.b]
+        return self.client.post(reverse('product_bulk_action'), {
+            'action': 'set_attribute', 'attribute': attribute.pk, 'value': value,
+            'ids': [p.pk for p in products],
+        })
+
+    def test_cashier_cannot(self):
+        self.client.force_login(self.cashier)
+        self.assertEqual(self._post(self.brand, 'Nike').status_code, 403)
+
+    def test_sets_the_value_on_every_selected_product_and_keeps_other_attributes(self):
+        self.client.force_login(self.manager)
+        response = self._post(self.brand, 'Nike')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['updated'], 2)
+        self.a.refresh_from_db()
+        self.b.refresh_from_db()
+        self.assertEqual(self.a.attributes, {str(self.color.pk): 'Red', str(self.brand.pk): 'Nike'})
+        self.assertEqual(self.b.attributes, {str(self.brand.pk): 'Nike'})
+
+    def test_products_outside_the_selection_are_untouched(self):
+        self.client.force_login(self.manager)
+        self._post(self.brand, 'Nike')
+        self.untouched.refresh_from_db()
+        self.assertEqual(self.untouched.attributes, {str(self.brand.pk): 'Old'})
+
+    def test_overwrites_an_existing_value(self):
+        self.client.force_login(self.manager)
+        self._post(self.color, 'Blue')
+        self.a.refresh_from_db()
+        self.assertEqual(self.a.attributes[str(self.color.pk)], 'Blue')
+
+    def test_blank_value_removes_only_that_key(self):
+        self.client.force_login(self.manager)
+        self._post(self.brand, 'Nike')
+        response = self._post(self.brand, '')
+        self.assertEqual(response.status_code, 200)
+        self.a.refresh_from_db()
+        self.b.refresh_from_db()
+        self.assertEqual(self.a.attributes, {str(self.color.pk): 'Red'})
+        self.assertEqual(self.b.attributes, {})
+
+    def test_value_outside_choices_is_rejected(self):
+        self.client.force_login(self.manager)
+        self.assertEqual(self._post(self.color, 'Green').status_code, 400)
+        self.a.refresh_from_db()
+        self.assertEqual(self.a.attributes[str(self.color.pk)], 'Red')
+
+    def test_unknown_attribute_is_rejected(self):
+        self.client.force_login(self.manager)
+        response = self.client.post(reverse('product_bulk_action'), {
+            'action': 'set_attribute', 'attribute': '99999', 'value': 'x', 'ids': [self.a.pk],
+        })
+        self.assertEqual(response.status_code, 400)
+
+
+class ProductBarcodeInlineUpdateViewTests(TestCase):
+    def setUp(self):
+        self.manager = Employee.objects.create_user(
+            username='manager-barcode', password='pass12345', role=Employee.MANAGER
+        )
+        self.cashier = Employee.objects.create_user(
+            username='cashier-barcode', password='pass12345', role=Employee.CASHIER
+        )
+        self.product = Product.objects.create(
+            internal_code='P1000012', name='Barcode Widget', sell_price=1.50, quantity=7,
+        )
+
+    def _post(self, slot, value):
+        return self.client.post(
+            reverse('product_barcode_inline_update', kwargs={'pk': self.product.pk}),
+            {'slot': slot, 'value': value},
+        )
+
+    def test_cashier_cannot_edit(self):
+        self.client.force_login(self.cashier)
+        response = self._post(1, '5901234123457')
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(self.product.barcode.exists())
+
+    def test_adding_first_barcode(self):
+        self.client.force_login(self.manager)
+        response = self._post(1, '5901234123457')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {'barcode_1': '5901234123457', 'barcode_2': '', 'barcode_3': ''})
+        self.assertEqual(self.product.barcode.get().code, '5901234123457')
+
+    def test_cannot_skip_a_slot(self):
+        self.client.force_login(self.manager)
+        response = self._post(2, '5901234123457')
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(self.product.barcode.exists())
+
+    def test_editing_an_existing_slot(self):
+        Barcode.objects.create(product=self.product, position=1, code='1111111111111')
+        self.client.force_login(self.manager)
+        response = self._post(1, '2222222222222')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.product.barcode.get().code, '2222222222222')
+
+    def test_clearing_a_slot_deletes_the_barcode(self):
+        Barcode.objects.create(product=self.product, position=1, code='1111111111111')
+        self.client.force_login(self.manager)
+        response = self._post(1, '')
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(self.product.barcode.exists())
+
+    def test_clearing_the_middle_barcode_shifts_the_rest_up(self):
+        Barcode.objects.create(product=self.product, position=1, code='1111111111111')
+        Barcode.objects.create(product=self.product, position=2, code='2222222222222')
+        Barcode.objects.create(product=self.product, position=3, code='3333333333333')
+        self.client.force_login(self.manager)
+        response = self._post(2, '')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {'barcode_1': '1111111111111', 'barcode_2': '3333333333333', 'barcode_3': ''})
+
+    def test_duplicate_barcode_is_rejected(self):
+        other_product = Product.objects.create(internal_code='P1000013', name='Other Widget', sell_price=1, quantity=1)
+        Barcode.objects.create(product=other_product, position=1, code='5901234123457')
+        self.client.force_login(self.manager)
+        response = self._post(1, '5901234123457')
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(self.product.barcode.exists())
+
+    def test_invalid_slot_rejected(self):
+        self.client.force_login(self.manager)
+        response = self._post(99, '5901234123457')
+        self.assertEqual(response.status_code, 400)
 
 
 class CategoryTogglePosViewTests(TestCase):

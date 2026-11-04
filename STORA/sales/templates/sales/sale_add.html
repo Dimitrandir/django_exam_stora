@@ -27,7 +27,7 @@
         </div>
         <div class="pos-header__info">
             <h1>{% translate "New Sale" %}</h1>
-            <p class="pos-header__meta"><span id="live-clock"></span> — {{ user.username }}</p>
+            <p class="pos-header__meta"><span id="live-clock"></span> - {{ user.username }}</p>
         </div>
         <div class="pos-header__right">
             {% comment %}
@@ -597,6 +597,11 @@
             });
         })();
 
+        // Set right before this page deliberately reloads/leaves itself
+        // (tab switch, shortcut edit, Complete Sale) so the "you have items
+        // in the cart" prompt below only fires for an accidental close.
+        let skipSaleLeaveWarning = false;
+
         // -- Basket tabs (top right) -- tapping a different tab switches
         // which draft the server loads on the next request, then reloads
         // the page to actually show it (simplest thing that works, same
@@ -612,7 +617,7 @@
                         'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
                     },
                     body: JSON.stringify({tab: btn.dataset.tab}),
-                }).then(() => location.reload());
+                }).then(() => { skipSaleLeaveWarning = true; location.reload(); });
             });
         });
 
@@ -836,6 +841,23 @@
             if (!draftSaveHealthy) {
                 e.preventDefault();
                 alert('{% translate "Connection trouble -- wait for the warning banner to disappear before saving, so nothing gets lost." %}');
+            }
+        });
+
+        // Closing the browser tab (or navigating away) with items in the
+        // cart asks first -- the cart is autosaved to the session, but a
+        // cashier closing the tab by mistake shouldn't have to find out the
+        // hard way. Complete Sale (a normal submit that wasn't blocked
+        // above) and the deliberate reloads set skipSaleLeaveWarning. The
+        // text itself is the browser's own.
+        document.querySelector('.sale-form__form').addEventListener('submit', function (e) {
+            if (!e.defaultPrevented) skipSaleLeaveWarning = true;
+        });
+        window.addEventListener('beforeunload', function (e) {
+            if (skipSaleLeaveWarning) return;
+            if (saleItemsTable.getData().length > 0) {
+                e.preventDefault();
+                e.returnValue = '';
             }
         });
 
@@ -2028,6 +2050,7 @@
                     alert('{% translate "Could not add this shortcut." %}');
                     return;
                 }
+                skipSaleLeaveWarning = true;
                 location.reload();
             });
 
@@ -2040,6 +2063,7 @@
                     alert('{% translate "Could not remove this shortcut." %}');
                     return;
                 }
+                skipSaleLeaveWarning = true;
                 location.reload();
             }
 

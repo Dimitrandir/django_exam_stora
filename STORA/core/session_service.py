@@ -15,12 +15,30 @@ def clear_cashier_operation_state(request) -> None:
     request.session.modified = True
 
 
+# Extra per-row keys of a still-pending Excel-imported "new product" row on
+# the delivery screens (see deliveries.views._materialize_pending_products)
+# -- kept in a draft / redisplayed POST so such a row survives a failed Save
+# or a page reload. Only copied for rows that actually are pending, so the
+# sales drafts (which share this helper) stay exactly as they were.
+NEW_PRODUCT_STATE_FIELDS = (
+    'new_product', 'new_product_name', 'new_product_code', 'new_product_unit_type',
+    'new_product_delivery_price', 'new_product_sell_price', 'new_product_category',
+    'new_product_supplier', 'new_product_barcode_1', 'new_product_barcode_2',
+    'new_product_barcode_3', 'new_product_attributes', 'new_product_tax_group',
+    'new_product_tax_rate',
+)
+
+
 def extract_formset_state(post_data, prefix: str) -> dict:
     total_forms = int(post_data.get(f'{prefix}-TOTAL_FORMS', 0))
     forms = []
 
     for index in range(total_forms):
+        pending = {}
+        if post_data.get(f'{prefix}-{index}-new_product') == '1':
+            pending = {name: post_data.get(f'{prefix}-{index}-{name}', '') for name in NEW_PRODUCT_STATE_FIELDS}
         forms.append({
+            **pending,
             'id': post_data.get(f'{prefix}-{index}-id', ''),
             'expiry_date': post_data.get(f'{prefix}-{index}-expiry_date', ''),
             'delivery_item': post_data.get(f'{prefix}-{index}-delivery_item', ''),

@@ -122,8 +122,23 @@ login екрана. Ctrl+C да спреш пробното пускане, пр
    - Табче **Details** → Startup type: `Automatic`
    - Табче **Exit actions** → Action: `Restart application` (рестартира сам
      при срив)
-4. `C:\nssm\nssm.exe start STORA` — или просто рестартирай компютъра, услугата
+4. Изходът на waitress в отделен лог файл (без това, ако услугата не тръгне,
+   грешката не се вижда никъде):
+   ```bat
+   C:\nssm\nssm.exe set STORA AppStdout C:\път\до\репото\logs\service.log
+   C:\nssm\nssm.exe set STORA AppStderr C:\път\до\репото\logs\service.log
+   ```
+5. `C:\nssm\nssm.exe start STORA` — или просто рестартирай компютъра, услугата
    тръгва сама.
+
+**`Unexpected status SERVICE_PAUSED in response to START control`** = waitress
+тръгва и веднага спира; NSSM спира да го рестартира и слага услугата на пауза.
+Причината е в `logs\service.log` (виж стъпка 4) или се вижда, като пуснеш
+същата команда ръчно — `nssm get STORA Application` / `AppDirectory` /
+`AppParameters` показват точно какво пуска. Чести причини: грешен път до
+`waitress-serve.exe`, waitress не е инсталиран в `.venv` (`pip install -r
+requirements.txt` с активиран `.venv`), портът (8000) вече е зает от ръчно
+пуснат сървър в друг прозорец.
 
 Проверка/спиране по-нататък: `nssm status STORA`, `nssm stop STORA`,
 `nssm restart STORA`.
@@ -149,26 +164,82 @@ WhiteNoise (`DEBUG=False`) чете статичните файлове в па�
 статичен файл — вижда се веднага), но си остана в стар/дефолтен цвят чак
 до `nssm restart STORA`.
 
-## 8. Дневен бекъп на базата
+## 8. Бекъп на базата (OneDrive)
 
-Създай `backup.bat` (напр. в `C:\stora-backup\backup.bat`):
+Командата `python manage.py backup_db` прави бекъп на базата (`pg_dump`, компресиран файл)
+и копие на `.env` + настройките на услугата, в папка в **OneDrive** — оттам се качва в
+облака сама. Task Scheduler я пуска **на всеки 15 минути**, а тя сама решава дали е време:
 
+- не по-често от `BACKUP_INTERVAL_MINUTES` (по подразбиране 60),
+- и само ако в базата има промени (иначе няма смисъл от същия файл отново),
+- но след `BACKUP_FORCE_AFTER_HOURS` (24) прави бекъп и без промени.
+
+Бекъпът **не спира работата** — продажби/доставки продължават, докато тече (`pg_dump`
+чете "снимка" на базата). Отнема секунди. Над `BACKUP_MAX_SIZE_GB` (3 GB) общо трие най-
+старите файлове, но последните `BACKUP_KEEP_MIN` (7) никога. **Честотата и лимитът се
+сменят само в `.env`**, не в Task Scheduler.
+
+**Настройка (веднъж на обект):**
+
+1. На касовия компютър OneDrive да е инсталиран, влязъл в акаунта на фирмата и да
+   синхронизира (иконката в долния десен ъгъл). Двуфакторна защита на акаунта —
+   задължително, защото в бекъпа е и `.env` с паролите.
+2. В `.env` добави (виж `.env.example`) — `BACKUP_DIR` е папка вътре в OneDrive, с
+   отделна подпапка за всеки обект:
+   ```
+   BACKUP_DIR=C:\Users\<потребител>\OneDrive\STORA-backup\<обект>
+   BACKUP_INTERVAL_MINUTES=60
+   BACKUP_FORCE_AFTER_HOURS=24
+   BACKUP_MAX_SIZE_GB=3
+   BACKUP_KEEP_MIN=7
+   BACKUP_NSSM=C:\nssm\nssm.exe
+   ```
+   `pg_dump` се намира сам (най-новата версия в `C:\Program Files\PostgreSQL`); ако не —
+   `BACKUP_PG_DUMP=` с пълния път до `pg_dump.exe`.
+3. Пусни го веднъж ръчно (от папката на проекта, с активиран `.venv`):
+   ```bat
+   python manage.py backup_db --force
+   ```
+   Трябва да излезе `OK stora_<дата>_<час>.dump (... MB, forced)`, а в `BACKUP_DIR` да има
+   файла, `backup.log` и папка `config` с `.env` и `nssm_STORA.txt`.
+4. Планирай го (в **административен** cmd; пътят до репото и потребителят — реалните;
+   `/RP` пита за паролата на Windows потребителя, за да върви и без влязъл потребител):
+   ```bat
+   schtasks /Create /TN "STORA Backup" /TR "\"C:\път\до\репото\scripts\backup_db.bat\"" /SC MINUTE /MO 15 /RU <потребител> /RP
+   ```
+   Задачата върви като **потребителя на касата**, не като SYSTEM — OneDrive качва само
+   неговата папка (и само докато е влязъл; иначе файловете чакат до следващото влизане).
+
+   **Ако Windows потребителят НЯМА парола** (честа настройка на каса), `/RP` не
+   става — Windows не позволява задача "и без влязъл потребител" за акаунт без
+   парола. Тогава задачата върви само докато потребителят е влязъл (`/IT`) и
+   пуска директно `pythonw.exe` (Python без конзолен прозорец), иначе на всеки
+   15 минути би примигвал черен прозорец върху касовия екран:
+   ```bat
+   schtasks /Create /TN "STORA Backup" /TR "\"C:\път\до\репото\.venv\Scripts\pythonw.exe\" \"C:\път\до\репото\manage.py\" backup_db" /SC MINUTE /MO 15 /RU <потребител> /IT
+   ```
+   (Така изходът на задачата отива в `logs\background_commands.log` вместо в
+   `logs\backup_task.log`; резултатите на самия бекъп са в `backup.log`. Ако задачата
+   се пуска на 60 мин, сложи `BACKUP_INTERVAL_MINUTES=55` — иначе проверка, паднала
+   минута преди изтичането на часа, пропуска и бекъпът става на ~2 часа.)
+
+**Редовно:** последният ред на `backup.log` в OneDrive папката трябва да е `OK` със скорошна
+дата (поне веднъж на денонощие). `FAILED` = няма бекъп — причината е на същия ред.
+Изход на самата задача (ако изобщо не тръгва) — `logs\backup_task.log` в проекта.
+
+**Възстановяване** (ВНИМАНИЕ: `--clean` изтрива сегашното съдържание на базата — първо
+`nssm stop STORA`):
 ```bat
-@echo off
-set PGPASSWORD=паролата-на-stora_usr
-"C:\Program Files\PostgreSQL\16\bin\pg_dump.exe" -U stora_usr -h 127.0.0.1 -F c stora_db > "C:\stora-backup\stora_%date:~-4%-%date:~3,2%-%date:~0,2%.dump"
+"C:\Program Files\PostgreSQL\18\bin\pg_restore.exe" -U stora_usr -h 127.0.0.1 -d stora_db --clean "<BACKUP_DIR>\stora_2026-11-01_14-00.dump"
 ```
+**Нов компютър от нулата:** инсталация по раздели 1–7, но вместо да пишеш `.env` наново —
+копирай `config\.env` от бекъпа; услугата се пресъздава по `config\nssm_STORA.txt`
+(командите вътре са точно тези, с които е създадена); после `pg_restore` на последния файл.
+Поне веднъж пробвай възстановяване в **отделна тестова база**, не върху работната.
 
-После в Windows **Task Scheduler** → Create Task → Trigger: Daily (напр. 03:00
-през нощта, извън работно време) → Action: стартира `backup.bat`.
-
-Възстановяване, ако някога потрябва:
-```bash
-pg_restore -U stora_usr -h 127.0.0.1 -d stora_db --clean stora_2026-09-13.dump
-```
-
-Пази бекъпите на второ място (USB диск, друг компютър) — само на самия
-компютър не пази при хардуерен проблем.
+**Знай:** ако компютърът хване вирус, който криптира файлове, OneDrive ще качи и
+криптираните — тогава бекъпът се връща от историята на версиите / кошчето на OneDrive
+(пазят се 30 дни), не от самата папка.
 
 ## 9. Фискален принтер (Daisy Perfect S01)
 

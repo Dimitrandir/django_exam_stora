@@ -58,6 +58,8 @@
             .catch(function () { return {ok: false, error: msg.unreachable}; });
     }
 
+    // Resolves to the server's answer ({ok, status, ...}), or null if it
+    // couldn't be reached -- the record then stays waiting to be printed.
     function reportResult(job, outcome) {
         return fetch(config.resultUrl, {
             method: 'POST',
@@ -69,7 +71,9 @@
                 error: outcome.error || '',
                 results: outcome.results || [],
             }),
-        }).catch(function () { /* stays PENDING -- Retry Fiscal Print covers it */ });
+        })
+            .then(function (response) { return response.json(); })
+            .catch(function () { return null; /* stays PENDING -- Retry Fiscal Print covers it */ });
     }
 
     function runJob(job) {
@@ -90,7 +94,7 @@
         });
     }
 
-    window.StoraFiscalBridge = {runCommands: runCommands, runJob: runJob, showToast: showToast, messages: msg};
+    window.StoraFiscalBridge = {runCommands: runCommands, reportResult: reportResult, runJob: runJob, showToast: showToast, messages: msg};
 
     var jobEl = document.getElementById('fiscal-bridge-job');
     if (jobEl) runJob(JSON.parse(jobEl.textContent));

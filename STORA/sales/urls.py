@@ -1,6 +1,6 @@
 from django.urls import path
 from . import views
-from .views import SalesDeleteView, SalesDetailView, RefundDetailView
+from .views import SalesDeleteView, SalesDetailView, RefundDetailView, RefundListView
 
 urlpatterns = [
     path('add/', views.sales_add, name='sale_add'),
@@ -11,6 +11,7 @@ urlpatterns = [
     path('pos-pins/remove/<int:pk>/', views.pos_pin_remove, name='pos_pin_remove'),
     path('log-removed-item/', views.log_removed_sale_item, name='log_removed_sale_item'),
     path('refund/', views.refund_find, name='refund_find'),
+    path('refunds/', RefundListView.as_view(), name='refund_list'),
     path('refund/<int:pk>/new/', views.refund_new, name='refund_new'),
     path('refund/<int:pk>/', RefundDetailView.as_view(), name='refund_details'),
     path('refund/<int:pk>/fiscal-retry/', views.refund_fiscal_retry, name='refund_fiscal_retry'),
@@ -22,4 +23,5 @@ urlpatterns = [
     path('fiscal-reports/x/', views.fiscal_report_x, name='fiscal_report_x'),
     path('fiscal-reports/z/', views.fiscal_report_z, name='fiscal_report_z'),
     path('fiscal-reports/period/', views.fiscal_report_period, name='fiscal_report_period'),
+    path('fiscal-reports/service-cash/', views.fiscal_service_cash, name='fiscal_service_cash'),
 ]

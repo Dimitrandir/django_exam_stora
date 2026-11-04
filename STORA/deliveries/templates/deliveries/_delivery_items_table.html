@@ -178,8 +178,8 @@ uses, independent of whether this delivery gets submitted at all.
 <!-- No separate "Transaction Total" -- the Line Total column's own
      bottomCalc sum (with and without VAT) already shows it, right under
      the numbers it's adding up. -->
-<div id="delivery-items-table-card" class="data-table-card">
-    <div id="delivery-items-table" class="table-sm"></div>
+<div id="delivery-items-table-card" class="data-table-card tabulator-classic">
+    <div id="delivery-items-table" class="table-sm tabulator-classic"></div>
 </div>
 
 <div class="d-flex align-items-center gap-2 mt-2 flex-wrap">
@@ -308,6 +308,11 @@ document.addEventListener('DOMContentLoaded', function () {
         var deliveryPrice = imported.delivery_price != null ? imported.delivery_price : 0;
         var sellPrice = imported.sell_price != null ? imported.sell_price : 0;
         var markup = deliveryPrice ? (sellPrice - deliveryPrice) / deliveryPrice * 100 : 0;
+        // The VAT group the import resolved (its own, or the shop default) --
+        // its rate drives the "without VAT" columns exactly like an existing
+        // product's tax group does (see buildRow).
+        var rate = parseFloat(imported.tax_rate) || 0;
+        var withoutVat = rate ? deliveryPrice / (1 + rate / 100) : deliveryPrice;
         return {
             seq: nextSeq++,
             id: '',
@@ -322,13 +327,13 @@ document.addEventListener('DOMContentLoaded', function () {
             // Still editable via the Unit Type column's click-to-switch
             // below, in case the file got it wrong or left it blank.
             unit_type: imported.unit_type || 'piece',
-            tax_rate: 0,
+            tax_rate: rate,
             original_delivery_price: deliveryPrice,
             delivery_quantity: qty,
             price_at_delivery: round2(deliveryPrice),
-            price_without_vat: round2(deliveryPrice),
+            price_without_vat: round2(withoutVat),
             total_price_row: round2(qty * deliveryPrice),
-            total_without_vat: round2(qty * deliveryPrice),
+            total_without_vat: round2(qty * withoutVat),
             sell_price: round2(sellPrice),
             markup_percent: round1(markup),
             expiry_date: '',
@@ -341,11 +346,63 @@ document.addEventListener('DOMContentLoaded', function () {
             new_product_category: imported.category_id || '',
             new_product_supplier: imported.supplier_id || '',
             new_product_barcodes: imported.barcodes || [],
+            new_product_attributes: imported.attributes || {},
+            new_product_tax_group: imported.tax_group_id || '',
             duplicate_candidate: imported.duplicate_candidate || null,
         };
     }
 
+    // The flat new_product_* fields of a still-pending Excel row -- the
+    // exact shape the submit-time hidden inputs (rebuildHiddenInputs) and
+    // the session draft (getDeliveryItemsDraftState) both carry, so a
+    // pending row survives a failed Save and a page reload instead of
+    // vanishing from the grid. new_product_tax_rate is display-only (drives
+    // the "without VAT" columns); the server re-reads the tax GROUP id.
+    function pendingProductFields(data) {
+        var barcodes = data.new_product_barcodes || [];
+        return {
+            new_product: '1',
+            new_product_name: data.name || '',
+            new_product_code: data.internal_code || '',
+            new_product_unit_type: data.unit_type || 'piece',
+            new_product_delivery_price: data.price_at_delivery || '',
+            new_product_sell_price: data.sell_price || '',
+            new_product_category: data.new_product_category || '',
+            new_product_supplier: data.new_product_supplier || '',
+            new_product_barcode_1: barcodes[0] || '',
+            new_product_barcode_2: barcodes[1] || '',
+            new_product_barcode_3: barcodes[2] || '',
+            new_product_attributes: JSON.stringify(data.new_product_attributes || {}),
+            new_product_tax_group: data.new_product_tax_group || '',
+            new_product_tax_rate: data.tax_rate || 0,
+        };
+    }
+
+    // Inverse of pendingProductFields: a draft / redisplayed POST row back
+    // into the `imported` shape buildNewProductRow expects.
+    function pendingRowFromSaved(raw) {
+        var attributes = {};
+        try { attributes = JSON.parse(raw.new_product_attributes || '{}') || {}; } catch (e) { attributes = {}; }
+        var row = buildNewProductRow({
+            internal_code: raw.new_product_code,
+            name: raw.new_product_name,
+            unit_type: raw.new_product_unit_type,
+            quantity: parseFloat(raw.delivery_quantity) || 0,
+            delivery_price: parseFloat(raw.new_product_delivery_price) || 0,
+            sell_price: parseFloat(raw.new_product_sell_price) || 0,
+            tax_rate: raw.new_product_tax_rate,
+            category_id: raw.new_product_category,
+            supplier_id: raw.new_product_supplier,
+            barcodes: [raw.new_product_barcode_1, raw.new_product_barcode_2, raw.new_product_barcode_3].filter(Boolean),
+            attributes: attributes,
+            tax_group_id: raw.new_product_tax_group,
+        });
+        row.expiry_date = raw.expiry_date || '';
+        return row;
+    }
+
     var seedRows = initialRows.map(function (raw) {
+        if (raw.new_product === '1') return pendingRowFromSaved(raw);
         var product = productsById[String(raw.delivery_item)];
         return product ? buildRow(product, raw) : null;
     }).filter(Boolean);
@@ -442,6 +499,7 @@ document.addEventListener('DOMContentLoaded', function () {
             existing.update({delivery_quantity: Number(existing.getData().delivery_quantity) + Number(qty)});
             recalcRow(existing, 'price_at_delivery');
             row.delete();
+            renumberRows();
         } else {
             var updated = buildRow(product, {delivery_quantity: qty});
             updated.seq = data.seq;
@@ -498,8 +556,53 @@ document.addEventListener('DOMContentLoaded', function () {
     // whatever redraw/cleanup is already in flight (e.g. from inside
     // another cell's own `cellEdited` handler -- the Qty -> Price
     // auto-advance case), is what actually gets the editor to open.
-    function focusCellEditor(row, field) {
-        setTimeout(function () {
+    //
+    // `deferred` (default true) skips that tick for a BRAND NEW row with
+    // no redraw-in-flight to wait for (addProductRow/selectBatch's own
+    // table.addRow().then() callbacks, not advanceToNext or the "re-scan
+    // an existing row" path, which still need the default). Confirmed
+    // live: with the defer, the Qty cell sits in its plain (non-editor)
+    // state for one extra tick right after a row is added -- a receiving
+    // clerk who taps that cell themselves in that exact window (out of
+    // habit, to start typing the quantity) finds no editor there yet, so
+    // the tap isn't swallowed and bubbles up as a plain row click instead,
+    // silently marking the brand-new row for deletion. Nothing looks
+    // wrong in the moment -- the editor still opens right after anyway --
+    // so it only surfaces later, as rows that refuse to "unmark".
+    // The grid has its own scroll now (bounded height) -- if part of the
+    // grid is off the screen, scroll the page so the search box sits at the
+    // top, with the grid right under it: the clerk sees the row being
+    // worked on without the page jumping between the search box and the
+    // bottom of a long list.
+    function ensureGridOnScreen() {
+        var card = document.getElementById('delivery-items-table-card');
+        var rect = card.getBoundingClientRect();
+        if (rect.top < 0 || rect.bottom > window.innerHeight) {
+            window.scrollBy(0, searchInput.getBoundingClientRect().top - 8);
+        }
+    }
+
+    // Brief highlight on the row a scan just added or counted up -- a
+    // re-scanned product is usually somewhere in the middle, not last.
+    function flashRow(row) {
+        var el = row.getElement();
+        if (!el) return;
+        el.classList.remove('is-just-scanned');
+        void el.offsetWidth;  // restart the animation on a repeat scan
+        el.classList.add('is-just-scanned');
+        setTimeout(function () { el.classList.remove('is-just-scanned'); }, 1300);
+    }
+
+    // Scrolls the grid to `row` (only if it isn't already visible) -- with
+    // the grid's own scroll, a row outside the view isn't even drawn, so
+    // this has to finish before its Qty editor can open. Never rejects.
+    function revealRow(row) {
+        ensureGridOnScreen();
+        return table.scrollToRow(row, 'nearest', false).catch(function () {});
+    }
+
+    function focusCellEditor(row, field, deferred) {
+        function run() {
             var cell = row.getCell(field);
             cell.edit(true);
             var input = cell.getElement().querySelector('input, textarea');
@@ -507,7 +610,58 @@ document.addEventListener('DOMContentLoaded', function () {
                 input.focus();
                 if (input.select) input.select();
             }
-        }, 0);
+            watchEditorFocus(row, field);
+        }
+        if (deferred === false) {
+            run();
+        } else {
+            setTimeout(run, 0);
+        }
+    }
+
+    // Tabulator redraws the whole table on its own whenever the table's
+    // size changes (its built-in auto-resize) -- and adding a NEW row makes
+    // the table taller, so ~10ms after focusCellEditor opened that row's Qty
+    // editor, the redraw wiped it out again: the clerk saw the cell framed
+    // but couldn't type until clicking it (confirmed live with focus +
+    // renderStarted logs in the console; re-scanning an EXISTING row never
+    // changed the height, so that case always worked). A redraw that runs
+    // while an editor is open also throws inside Tabulator itself
+    // (editorClear) and never finishes -- so its 'renderComplete' event
+    // can't be relied on to notice; this just checks a few times over the
+    // next ~0.6s instead. It reopens the editor only if focus has fallen
+    // back to nowhere (the page body, or a bare cell of this grid with no
+    // editor in it), never stealing it from something the clerk has moved
+    // on to since, and gives up after a few reopen attempts.
+    // Bumped whenever the clerk ends an edit on purpose (Enter, Escape, a
+    // scan routed away) -- any watch still running from before then stops,
+    // instead of reopening an editor the clerk just deliberately closed.
+    var editorWatchToken = 0;
+    function stopEditorFocusWatch() {
+        editorWatchToken += 1;
+    }
+
+    function watchEditorFocus(row, field) {
+        var attempts = 0;
+        var token = ++editorWatchToken;
+        [60, 160, 320, 640].forEach(function (delay) {
+            setTimeout(function () {
+                if (attempts >= 3 || token !== editorWatchToken) return;
+                var active = document.activeElement;
+                var focusLost = !active || active === document.body || !document.body.contains(active) ||
+                    (table.element.contains(active) && !active.matches('input, textarea, select'));
+                if (!focusLost) return;
+                var cell = row.getCell(field);
+                if (!cell || !document.body.contains(cell.getElement())) return;
+                attempts += 1;
+                cell.edit(true);
+                var input = cell.getElement().querySelector('input, textarea');
+                if (input) {
+                    input.focus();
+                    if (input.select) input.select();
+                }
+            }, delay);
+        });
     }
 
     // Tabulator's built-in editor:'number' has no Enter-key handling at
@@ -518,6 +672,72 @@ document.addEventListener('DOMContentLoaded', function () {
     // gives explicit control: Enter calls `success(value)` itself --
     // Tabulator's own documented commit API for a custom editor -- so it's
     // not guessing at the built-in editor's undocumented internals.
+    // A barcode scan that lands in an open Qty/Price editor (the clerk
+    // typed a quantity, then scanned the next product without leaving the
+    // cell -- or scanned twice in a row, since adding a product opens its
+    // Qty editor on purpose) used to be typed INTO the cell: the barcode
+    // became the quantity, and its Enter moved on to Unit Price. Told
+    // apart from a person by speed alone -- a scanner sends its characters
+    // well under 30ms apart, nobody types 4+ characters that fast (same
+    // threshold as looksLikeScannerInput / the scan-anywhere listener
+    // below). On such a burst's Enter: put the cell's old value back,
+    // close the editor, and hand the code to the normal scan path.
+    // Registered before the editor's own keydown handler, so
+    // stopImmediatePropagation() keeps that one from committing.
+    function guardEditorAgainstScans(input, originalValue, cancel) {
+        var fastBuffer = '';
+        var lastKeyTime = 0;
+        input.addEventListener('keydown', function (e) {
+            // The QW2100 (and many scanners) sends Ctrl+B before every code
+            // -- an invisible "start of text" marker (confirmed live via a
+            // keydown log). Modifier keys and Ctrl/Alt/Meta combos are
+            // skipped entirely: not part of the code, and not a reason to
+            // restart the buffer either (Shift can arrive mid-code too).
+            if (e.ctrlKey || e.altKey || e.metaKey ||
+                    ['Control', 'Alt', 'Shift', 'Meta', 'AltGraph'].indexOf(e.key) !== -1) {
+                return;
+            }
+            var now = performance.now();
+            var gap = now - lastKeyTime;
+            lastKeyTime = now;
+            if (e.key === 'Enter') {
+                var code = fastBuffer;
+                fastBuffer = '';
+                if (code.length >= 4) {
+                    e.preventDefault();
+                    e.stopImmediatePropagation();
+                    // Old value back first -- if anything still commits
+                    // on the way out (blur), it commits this, never the code.
+                    input.value = originalValue === null || originalValue === undefined ? '' : originalValue;
+                    stopEditorFocusWatch();
+                    cancel();
+                    setTimeout(function () { routeScannedCode(code); }, 0);
+                }
+                return;
+            }
+            if (e.key.length === 1) {
+                fastBuffer = (fastBuffer !== '' && gap < 30) ? fastBuffer + e.key : e.key;
+            } else {
+                fastBuffer = '';
+            }
+        });
+    }
+
+    // Sends a code caught by guardEditorAgainstScans through the search
+    // box's own Enter handler -- the exact code/barcode match there, same
+    // as a scan into the box itself (existing row +1 / new row, then the
+    // Qty editor opens as usual). A stale dropdown is closed first so Enter
+    // can't pick a highlighted suggestion instead. If nothing matches, the
+    // code stays visible in the search box.
+    function routeScannedCode(code) {
+        resultsBox.classList.remove('is-open');
+        currentResults = [];
+        highlightedIndex = -1;
+        searchInput.value = code;
+        searchInput.focus();
+        searchInput.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true, cancelable: true}));
+    }
+
     function numberEditor(cell, onRendered, success, cancel, editorParams) {
         var input = document.createElement('input');
         // type="text" + inputmode="decimal", not type="number" -- a
@@ -547,6 +767,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         input.addEventListener('blur', commit);
+        guardEditorAgainstScans(input, cell.getValue(), cancel);
         input.addEventListener('keydown', function (e) {
             if (e.key === 'Enter') {
                 e.preventDefault();
@@ -560,6 +781,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 // here, not from cellEdited.
                 advanceToNext(cell);
             } else if (e.key === 'Escape') {
+                stopEditorFocusWatch();
                 cancel();
             }
         });
@@ -756,7 +978,19 @@ document.addEventListener('DOMContentLoaded', function () {
             formatter: scrapReasonFormatter,
         },
         {% endif %}
-    ], {placeholder: '{% translate "No products added to this delivery yet." %}'});
+    ], {
+        placeholder: '{% translate "No products added to this delivery yet." %}',
+        // Column width/visibility remembered per kind of movement -- a
+        // delivery, a write-off and a scrap have different columns (Import,
+        // Scrap Reason), so they don't share one saved layout.
+        persist: 'delivery-items-{{ movement_type|lower }}-v1',
+        // Bounded height with its own scroll (like the Products list),
+        // instead of growing with the page: the search box and the rows
+        // being scanned stay on screen together, the page no longer jumps
+        // down to a new row and back up to the search box. min-height in
+        // style.css keeps it usable on a short screen.
+        height: 'calc(100vh - 230px)',
+    });
 
     // -- Selecting lines to delete -- tap a row to toggle it in/out of the
     // selection (same pattern as the Sales cart, see CLAUDE.md "Триене на
@@ -770,6 +1004,28 @@ document.addEventListener('DOMContentLoaded', function () {
     // screen is mostly used on touch screens with no modifier keys
     // available -- every tap just toggles that one row's membership.
     var selectedRows = new Set();
+
+
+    // Closes the gap deleting a row leaves in "#" (flagged live, with a
+    // screenshot -- row 9 removed left 10..18 still showing those numbers
+    // instead of 9..17, looking like data had gone missing). Doesn't
+    // conflict with buildRow's own "seq never changes on SORT" guarantee
+    // above -- this only runs right after a delete, renumbering 1..N in
+    // whatever order table.getRows() currently reports (add order, unless
+    // the clerk had actively sorted by another column -- an accepted edge
+    // case, still produces a consistent gap-free sequence either way).
+    // nextSeq is reset to continue right after the new last number, so the
+    // next row ADDED after a delete doesn't jump back up to some old
+    // higher value.
+    function renumberRows() {
+        var rows = table.getRows();
+        rows.forEach(function (row, index) {
+            if (row.getData().seq !== index + 1) {
+                row.update({seq: index + 1});
+            }
+        });
+        nextSeq = rows.length + 1;
+    }
 
     function clearRowSelection() {
         selectedRows.forEach(function (row) {
@@ -804,6 +1060,7 @@ document.addEventListener('DOMContentLoaded', function () {
             row.delete();
         });
         selectedRows.clear();
+        renumberRows();
     });
 
     // -- Discount: a data-entry convenience, not a stored/persisted
@@ -922,8 +1179,15 @@ document.addEventListener('DOMContentLoaded', function () {
     // that particular price on the invoice, just wants to skip past it) would
     // silently do nothing if this lived there instead.
     function advanceToNext(cell) {
+        stopEditorFocusWatch();
         var next = nextVisibleField(cell.getField());
-        if (next) focusCellEditor(cell.getRow(), next);
+        if (next) {
+            focusCellEditor(cell.getRow(), next);
+        } else {
+            // End of the row -- straight back to the search box for the next
+            // product (scan or type), instead of leaving the cursor nowhere.
+            setTimeout(function () { searchInput.focus(); }, 0);
+        }
     }
 
     // Recalc/persist side effects only -- advancing focus to the next field
@@ -962,13 +1226,21 @@ document.addEventListener('DOMContentLoaded', function () {
             var newQty = (parseFloat(existing.getData().delivery_quantity) || 0) + 1;
             existing.update({delivery_quantity: newQty});
             recalcRow(existing, 'price_at_delivery');
-            focusCellEditor(existing, 'delivery_quantity');
+            revealRow(existing).then(function () {
+                flashRow(existing);
+                focusCellEditor(existing, 'delivery_quantity');
+            });
             return;
         }
         table.addRow(buildRow(product, {delivery_quantity: 1})).then(function (row) {
             // "add a product -> quantity lights up ready to type" per the
-            // receiving clerk's requested quick-entry flow.
-            focusCellEditor(row, 'delivery_quantity');
+            // receiving clerk's requested quick-entry flow. Not deferred --
+            // see focusCellEditor's own comment for why a brand-new row
+            // doesn't need (and shouldn't have) that extra tick.
+            return revealRow(row).then(function () {
+                flashRow(row);
+                focusCellEditor(row, 'delivery_quantity', false);
+            });
         });
     }
 
@@ -1256,6 +1528,23 @@ document.addEventListener('DOMContentLoaded', function () {
     var currentResults = [];
     var highlightedIndex = -1;
 
+    // -- Telling a barcode-scanner "keystroke burst" apart from a human
+    // typing, so Enter always resolves a scan to an exact code/barcode
+    // match -- even if the digits happen to also fuzzy-match some
+    // product's name/code in a dropdown that's still open from before the
+    // scan started (rare, but possible for a numeric internal_code), which
+    // would otherwise make Enter pick that WRONG highlighted suggestion
+    // instead of the scanned product. Same 30ms/char threshold and
+    // burstStartTime-on-first-character reasoning as sale_add.html's own
+    // looksLikeScannerInput -- ported here now that it's confirmed working
+    // there (see CLAUDE.md).
+    var burstStartTime = null;
+
+    function looksLikeScannerInput(value) {
+        if (!burstStartTime || value.length < 4) return false;
+        return (performance.now() - burstStartTime) / value.length < 30;
+    }
+
     function highlightResult(index) {
         var items = resultsBox.querySelectorAll('.global-search-result');
         items.forEach(function (el) { el.classList.remove('is-highlighted'); });
@@ -1274,6 +1563,19 @@ document.addEventListener('DOMContentLoaded', function () {
         searchInput.value = '';
         currentResults = [];
         highlightedIndex = -1;
+        // Kills whatever debounced search is still pending from the
+        // keystroke(s) that led to this pick (the exact-match/scanner path
+        // especially -- its last character's own 200ms timer is almost
+        // always still armed when Enter arrives right after it). Without
+        // this, confirmed live: it fires ~200ms later anyway, reads the
+        // now-EMPTY searchInput.value this function just set above, and
+        // reopens the dropdown with the generic unfiltered product list --
+        // right after a successful scan, for no reason visible to the
+        // clerk. clearTimeout alone isn't enough if the fetch itself
+        // already left the debounce and is in flight; abort() covers that
+        // too (its .catch ignores AbortError, see runSearch).
+        clearTimeout(debounceTimer);
+        if (currentController) currentController.abort();
         // Not re-focusing searchInput here on purpose -- addProductRow is
         // about to hand real keyboard focus to the new row's Qty cell
         // (focusCellEditor), so the clerk can type the quantity right
@@ -1373,8 +1675,22 @@ document.addEventListener('DOMContentLoaded', function () {
         }, 200);
     }
 
-    searchInput.addEventListener('input', runSearch);
-    searchInput.addEventListener('focus', runSearch);
+    searchInput.addEventListener('input', function () {
+        // Marks the start of a fresh keystroke burst (scan or manual re-
+        // entry) on the FIRST character typed into an empty box, so
+        // looksLikeScannerInput can later measure ms/char from here --
+        // same reasoning as sale_add.html's own input handler.
+        if (searchInput.value.length === 1) burstStartTime = performance.now();
+        runSearch();
+    });
+    // Deliberately NOT also wired to 'focus' (unlike an earlier version of
+    // this file) -- that opened a dropdown of 30 generic, unfiltered
+    // products the instant the box was clicked, before any typing/
+    // scanning happened (flagged live: visually popped up mid-scan,
+    // confusing a receiving clerk who was about to scan, not search by
+    // name). Sales' own search box never had this trigger either. Typing
+    // or scanning still opens it via the 'input' listener below, same as
+    // before.
     document.addEventListener('click', function (e) {
         if (!e.target.closest('#delivery-item-search-input') && !e.target.closest('#delivery-item-search-results')) {
             resultsBox.classList.remove('is-open');
@@ -1404,8 +1720,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // Type, arrow down to the right match, Enter picks it -- lands the
         // cursor in Qty next (see addProductRow), ready to type the
-        // quantity and Enter again to move on to Unit Price.
-        if (hasOpenResults) {
+        // quantity and Enter again to move on to Unit Price. Skipped for
+        // scanner-burst input even if a dropdown happens to be open (e.g.
+        // a debounced search from earlier still resolving) -- falls
+        // through to the exact code/barcode match below instead, see
+        // looksLikeScannerInput above.
+        if (hasOpenResults && !looksLikeScannerInput(searchInput.value.trim())) {
             e.preventDefault();
             selectProduct(currentResults[highlightedIndex >= 0 ? highlightedIndex : 0]);
             return;
@@ -1449,7 +1769,9 @@ document.addEventListener('DOMContentLoaded', function () {
                 expiry_date: batch.expiry_date,
                 source_item: batch.id,
             })).then(function (row) {
-                focusCellEditor(row, 'delivery_quantity');
+                // Not deferred -- same brand-new-row reasoning as
+                // addProductRow's own call, see focusCellEditor's comment.
+                focusCellEditor(row, 'delivery_quantity', false);
             });
             batchResultsBox.classList.remove('is-open');
             batchSearchInput.value = '';
@@ -1566,18 +1888,7 @@ document.addEventListener('DOMContentLoaded', function () {
             // rewrites `delivery_item` above to point at it (or blanks the
             // whole row out, for a quantity-0 "just create it" row).
             if (data.is_new_product) {
-                fields.new_product = '1';
-                fields.new_product_name = data.name || '';
-                fields.new_product_code = data.internal_code || '';
-                fields.new_product_unit_type = data.unit_type || 'piece';
-                fields.new_product_delivery_price = data.price_at_delivery || '';
-                fields.new_product_sell_price = data.sell_price || '';
-                fields.new_product_category = data.new_product_category || '';
-                fields.new_product_supplier = data.new_product_supplier || '';
-                var barcodes = data.new_product_barcodes || [];
-                fields.new_product_barcode_1 = barcodes[0] || '';
-                fields.new_product_barcode_2 = barcodes[1] || '';
-                fields.new_product_barcode_3 = barcodes[2] || '';
+                Object.assign(fields, pendingProductFields(data));
             }
             Object.keys(fields).forEach(function (name) {
                 var input = document.createElement('input');
@@ -1597,7 +1908,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     window.getDeliveryItemsDraftState = function () {
         return {TOTAL_FORMS: table.getData().length, forms: table.getData().map(function (data) {
-            return {
+            var row = {
                 id: data.id || '',
                 delivery_item: data.delivery_item,
                 delivery_quantity: data.delivery_quantity,
@@ -1608,6 +1919,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 scrap_reason: data.scrap_reason || '',
                 DELETE: '',
             };
+            if (data.is_new_product) Object.assign(row, pendingProductFields(data));
+            return row;
         })};
     };
 });

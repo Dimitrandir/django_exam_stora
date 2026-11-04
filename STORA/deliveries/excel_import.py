@@ -9,7 +9,26 @@ Column layout (see build_template_workbook) -- only Name is required, every
 other column may be blank:
   Code | Name | Unit Type | Quantity | Category | Subcategory |
   Delivery Price | Sell Price | Main Supplier | Barcode 1 | Barcode 2 |
-  Barcode 3
+  Barcode 3 | VAT Group | <one extra column per shop-defined ProductAttribute>
+
+VAT Group (a TaxGroup name, e.g. "Б" -- or its rate, "20"/"20%") is found by
+its header text like the attribute columns, not by position, so a file made
+from an older template without it still imports. Blank (or no such column)
+means TaxGroup.default() -- "Б" -- same default a new product gets on the
+product form; a value that matches nothing also falls back to it, with a
+warning. Like everything else it only applies to a genuinely NEW product.
+
+The attribute columns (Brand/Color/Size/... -- whatever this shop defined, see
+products.ProductAttribute) come AFTER the fixed 12 and are matched by their
+header text against the attribute's name (case-insensitive), not by position
+-- the list is different for every shop and can change, so the template
+download (build_template_workbook) is generated from the live list, and a
+file whose extra headers don't match any attribute simply has those columns
+ignored. Like everything else on a row, they only ever apply to a genuinely
+NEW product; a code/barcode match never gets its attributes edited by this
+file. An attribute with a predefined choices list only accepts one of those
+values (case-insensitive, stored in its canonical spelling) -- anything else
+is left blank with a warning, same "never guess" rule as category matching.
 
 Unit Type ("pcs"/"kg", Bulgarian "бр"/"кг" also accepted, case-insensitive)
 only matters for a genuinely NEW product -- it's ignored for a code/barcode
@@ -73,13 +92,18 @@ from django.conf import settings
 from django.contrib.postgres.search import TrigramSimilarity
 from django.utils.translation import gettext as _
 
-from STORA.products.models import Barcode, Category, Product, Suppliers
+from STORA.products.models import Barcode, Category, Product, ProductAttribute, Suppliers, TaxGroup
 
 COLUMN_HEADERS = [
     'Code', 'Name', 'Unit Type', 'Quantity', 'Category', 'Subcategory',
     'Delivery Price', 'Sell Price', 'Main Supplier',
     'Barcode 1', 'Barcode 2', 'Barcode 3',
 ]
+
+# Header text (casefolded) of the optional VAT Group column -- looked up by
+# name among the columns after the fixed 12, English or Bulgarian.
+VAT_GROUP_HEADER = 'VAT Group'
+_VAT_GROUP_HEADERS = {'vat group', 'ддс група', 'ддс'}
 
 # Accepted spellings for the Unit Type column, both languages, lower-cased.
 _WEIGHT_SPELLINGS = {'kg', 'weight', 'кг', 'тегло', 'теглов', 'теглови'}
@@ -109,12 +133,14 @@ SIMILARITY_HIGH = 0.55
 
 def build_template_workbook():
     """Blank .xlsx with just the header row -- served by
-    delivery_import_template for "Download template"."""
+    delivery_import_template for "Download template". The fixed columns
+    followed by one per current ProductAttribute (see module docstring)."""
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = 'Import'
-    ws.append(COLUMN_HEADERS)
-    for col_index in range(1, len(COLUMN_HEADERS) + 1):
+    headers = COLUMN_HEADERS + [VAT_GROUP_HEADER] + [attribute.name for attribute in ProductAttribute.objects.all()]
+    ws.append(headers)
+    for col_index in range(1, len(headers) + 1):
         ws.column_dimensions[openpyxl.utils.get_column_letter(col_index)].width = 16
     return wb
 
@@ -123,6 +149,46 @@ def _clean_str(value):
     if value is None:
         return ''
     return str(value).strip()
+
+
+def _clean_attribute_value(attribute, value):
+    """One Excel cell -> the string to store in Product.attributes for
+    `attribute`. Returns (value, problem): value is '' when the cell was
+    blank OR not acceptable; problem is the raw text to warn about when
+    the attribute has a predefined choices list and the cell isn't one of
+    them (otherwise None). A whole-number float (Excel hands back 42.0 for a
+    typed 42, e.g. a size) is written without the ".0"."""
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    text = _clean_str(value)
+    if not text:
+        return '', None
+    if attribute.choices:
+        for choice in attribute.choices:
+            if choice.casefold() == text.casefold():
+                return choice, None
+        return '', text
+    return text, None
+
+
+def _resolve_tax_group(value, tax_groups):
+    """Excel's VAT Group cell -> (TaxGroup, problem). `tax_groups` is the
+    full list, fetched once per file. Matches by name (case-insensitive),
+    else by rate ("20" / "20%" / "20,0"); a blank cell is not a problem and
+    resolves to None -- the caller applies TaxGroup.default(). `problem` is
+    the raw text when something WAS written but matched nothing."""
+    text = _clean_str(value)
+    if not text:
+        return None, None
+    for group in tax_groups:
+        if group.name.casefold() == text.casefold():
+            return group, None
+    rate = _clean_decimal(text.rstrip('%').strip())
+    if rate is not None:
+        for group in tax_groups:
+            if group.rate == rate:
+                return group, None
+    return None, text
 
 
 def _clean_decimal(value):
@@ -224,6 +290,7 @@ def parse_delivery_import(file_obj):
       {'row_number', 'is_new': True, 'internal_code', 'name', 'unit_type',
        'quantity', 'delivery_price', 'sell_price', 'category_id',
        'category_name', 'supplier_id', 'supplier_name', 'barcodes': [...],
+       'attributes': {attribute id as str: value}, 'tax_group_id', 'tax_rate',
        'duplicate_candidate': {'id', 'name'} | None}
     for a genuinely new product candidate.
 
@@ -243,10 +310,35 @@ def parse_delivery_import(file_obj):
     errors = []
     ai_pending = []
     next_code_counter = None
+    # Name and barcode are UNIQUE on the catalog, so two NEW rows in the same
+    # file sharing either would make the second one fail at Save (taking the
+    # whole delivery down with it) -- caught here instead, per row, so the
+    # rest of the file still loads. casefold(name) / barcode -> first row.
+    seen_new_names = {}
+    seen_new_barcodes = {}
 
     all_rows = list(ws.iter_rows(values_only=True))
     if len(all_rows) <= 1:
         return {'rows': [], 'skipped': [], 'errors': [_('The file has no data rows.')]}
+
+    # Columns past the fixed 12 whose header text names a real ProductAttribute
+    # (case-insensitive) -> {column index: attribute}. Anything else out
+    # there is ignored.
+    attributes_by_name = {a.name.casefold(): a for a in ProductAttribute.objects.all()}
+    attribute_columns = {}
+    vat_group_column = None
+    for col_index, header in enumerate(all_rows[0]):
+        if col_index < len(COLUMN_HEADERS):
+            continue
+        header_text = _clean_str(header).casefold()
+        if header_text in _VAT_GROUP_HEADERS:
+            vat_group_column = col_index
+            continue
+        attribute = attributes_by_name.get(header_text)
+        if attribute:
+            attribute_columns[col_index] = attribute
+    tax_groups = list(TaxGroup.objects.all())
+    default_tax_group = TaxGroup.default()
 
     for row_number, raw_row in enumerate(all_rows[1:], start=2):
         if raw_row is None or all(cell in (None, '') for cell in raw_row):
@@ -289,6 +381,23 @@ def parse_delivery_import(file_obj):
             })
             continue
 
+        first_row_with_name = seen_new_names.get(name.casefold())
+        if first_row_with_name:
+            errors.append(_(
+                'Row %(row)s: "%(name)s" has the same name as row %(first)s -- product names must be '
+                'unique, so this row was skipped. Give it a distinct name in the file and import it again.'
+            ) % {'row': row_number, 'name': name, 'first': first_row_with_name})
+            continue
+        clashing_barcode = next((b for b in barcodes if b in seen_new_barcodes), None)
+        if clashing_barcode:
+            errors.append(_(
+                'Row %(row)s: barcode %(barcode)s is already used by row %(first)s, row skipped.'
+            ) % {'row': row_number, 'barcode': clashing_barcode, 'first': seen_new_barcodes[clashing_barcode]})
+            continue
+        seen_new_names[name.casefold()] = row_number
+        for barcode in barcodes:
+            seen_new_barcodes[barcode] = row_number
+
         duplicate_match, duplicate_sim = _best_name_match(name, Product.objects.all())
 
         category_match, category_sim = (
@@ -316,6 +425,27 @@ def parse_delivery_import(file_obj):
             code = str(next_code_counter)
             next_code_counter += 1
 
+        # Only reached for a genuinely new product (a code/barcode match
+        # `continue`d above) -- see the module docstring.
+        attributes = {}
+        for col_index, attribute in attribute_columns.items():
+            raw_value = cells[col_index] if col_index < len(cells) else None
+            value, rejected = _clean_attribute_value(attribute, raw_value)
+            if rejected:
+                errors.append(_('Row %(row)s: "%(value)s" is not an allowed value for "%(attribute)s", left blank.') % {
+                    'row': row_number, 'value': rejected, 'attribute': attribute.name})
+            if value:
+                attributes[str(attribute.pk)] = value
+
+        tax_group = None
+        if vat_group_column is not None and vat_group_column < len(cells):
+            tax_group, rejected = _resolve_tax_group(cells[vat_group_column], tax_groups)
+            if rejected:
+                errors.append(_(
+                    'Row %(row)s: VAT group "%(value)s" was not found, the default group was used instead.'
+                ) % {'row': row_number, 'value': rejected})
+        tax_group = tax_group or default_tax_group
+
         row = {
             'row_number': row_number,
             'is_new': True,
@@ -326,6 +456,9 @@ def parse_delivery_import(file_obj):
             'delivery_price': float(delivery_price) if delivery_price is not None else None,
             'sell_price': float(sell_price) if sell_price is not None else None,
             'barcodes': barcodes,
+            'attributes': attributes,
+            'tax_group_id': tax_group.pk if tax_group else None,
+            'tax_rate': float(tax_group.rate) if tax_group else 0.0,
             # Resolved in the second pass below, once Layer 2's verdicts
             # (if any) are in -- placeholders for now.
             '_duplicate': (duplicate_match, _classify_similarity(duplicate_sim)),

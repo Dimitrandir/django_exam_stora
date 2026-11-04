@@ -176,3 +176,143 @@ class LegacyPostgresBackendTests(TestCase):
         from STORA.db_backends.postgresql_legacy.base import DatabaseWrapper
 
         self._wrapper(DatabaseWrapper).check_database_version_supported()
+
+
+class BackupDbCommandTests(TestCase):
+    """manage.py backup_db -- pg_dump itself is mocked (it writes a fake file),
+    everything around it (when to back up, rotation, the log) is real."""
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        self._tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+        self.settings_override = override_settings(
+            BACKUP_DIR=str(self.dir), BACKUP_INTERVAL_MINUTES=60, BACKUP_FORCE_AFTER_HOURS=24,
+            BACKUP_MAX_SIZE_GB=3, BACKUP_KEEP_MIN=7, BACKUP_PG_DUMP='/fake/pg_dump', BACKUP_NSSM='',
+        )
+        self.settings_override.enable()
+        self.addCleanup(self.settings_override.disable)
+
+    def _run(self, *args, counter=100, returncode=0):
+        from unittest.mock import patch
+        from django.core.management import call_command
+
+        def fake_run(command, **kwargs):
+            if returncode == 0:
+                out = command[command.index('-f') + 1]
+                with open(out, 'wb') as f:
+                    f.write(b'x' * 1000)
+            return MagicMock(returncode=returncode, stderr='connection refused')
+
+        with patch('STORA.core.management.commands.backup_db.database_change_counter', return_value=counter), \
+                patch('STORA.core.management.commands.backup_db.subprocess.run', side_effect=fake_run), \
+                patch('STORA.core.management.commands.backup_db.shutil.which', return_value=None):
+            call_command('backup_db', *args, stdout=MagicMock())
+
+    def _dumps(self):
+        return sorted(p.name for p in self.dir.glob('stora_*.dump'))
+
+    def _set_last_backup(self, minutes_ago, counter=100):
+        import json
+        from datetime import timedelta
+        from django.utils import timezone
+        (self.dir / '.backup_state.json').write_text(json.dumps({
+            'last_backup_at': (timezone.now() - timedelta(minutes=minutes_ago)).isoformat(), 'counter': counter,
+        }))
+
+    def test_first_run_makes_a_backup_and_logs_it(self):
+        self._run()
+        self.assertEqual(len(self._dumps()), 1)
+        self.assertIn('OK', (self.dir / 'backup.log').read_text())
+        self.assertEqual(list(self.dir.glob('*.part')), [])  # renamed when complete
+
+    def test_skips_when_too_soon(self):
+        self._set_last_backup(minutes_ago=10, counter=1)
+        self._run(counter=999)  # changed, but the interval hasn't passed
+        self.assertEqual(self._dumps(), [])
+
+    def test_skips_when_nothing_changed(self):
+        self._set_last_backup(minutes_ago=90, counter=100)
+        self._run(counter=100)
+        self.assertEqual(self._dumps(), [])
+
+    def test_backs_up_when_changed_and_interval_passed(self):
+        self._set_last_backup(minutes_ago=90, counter=100)
+        self._run(counter=101)
+        self.assertEqual(len(self._dumps()), 1)
+
+    def test_backs_up_without_changes_after_force_after_hours(self):
+        self._set_last_backup(minutes_ago=25 * 60, counter=100)
+        self._run(counter=100)
+        self.assertEqual(len(self._dumps()), 1)
+
+    def test_force_ignores_interval_and_changes(self):
+        self._set_last_backup(minutes_ago=1, counter=100)
+        self._run('--force', counter=100)
+        self.assertEqual(len(self._dumps()), 1)
+
+    def test_pg_dump_failure_is_logged_and_leaves_no_file(self):
+        from django.core.management.base import CommandError
+        with self.assertRaises(CommandError):
+            self._run(returncode=1)
+        self.assertEqual(self._dumps(), [])
+        self.assertEqual(list(self.dir.glob('*.part')), [])
+        self.assertIn('FAILED pg_dump failed: connection refused', (self.dir / 'backup.log').read_text())
+
+    @override_settings(BACKUP_MAX_SIZE_GB=3500 / 1024 ** 3, BACKUP_KEEP_MIN=2)
+    def test_rotation_deletes_oldest_over_the_size_cap_but_keeps_the_minimum(self):
+        for day in range(1, 6):  # 5 old dumps of 1000 bytes each
+            (self.dir / f'stora_2026-01-0{day}_10-00.dump').write_bytes(b'x' * 1000)
+        self._run('--force')  # + 1 new = 6000 bytes, cap 3500 -> keep the newest 3
+        dumps = self._dumps()
+        self.assertEqual(len(dumps), 3)
+        self.assertNotIn('stora_2026-01-01_10-00.dump', dumps)
+        self.assertIn('stora_2026-01-05_10-00.dump', dumps)
+
+    @override_settings(BACKUP_MAX_SIZE_GB=0, BACKUP_KEEP_MIN=2)
+    def test_rotation_never_goes_below_keep_min(self):
+        for day in range(1, 4):
+            (self.dir / f'stora_2026-01-0{day}_10-00.dump').write_bytes(b'x' * 1000)
+        self._run('--force')
+        self.assertEqual(len(self._dumps()), 2)
+
+    @override_settings(BACKUP_DIR='')
+    def test_missing_backup_dir_is_a_clear_error(self):
+        from django.core.management import call_command
+        from django.core.management.base import CommandError
+        with self.assertRaisesMessage(CommandError, 'BACKUP_DIR'):
+            call_command('backup_db', stdout=MagicMock())
+
+
+
+class HomeWhatsNewTests(TestCase):
+    def setUp(self):
+        self.user = Employee.objects.create_user(username='home-viewer', password='pass12345')
+        self.client.force_login(self.user)
+
+    def test_home_shows_whats_new_newest_first_in_bulgarian(self):
+        response = self.client.get(reverse('index'), HTTP_ACCEPT_LANGUAGE='bg')
+        self.assertEqual(response.status_code, 200)
+        entries = response.context['whats_new']
+        self.assertEqual([e['date'] for e in entries], sorted((e['date'] for e in entries), reverse=True))
+        self.assertContains(response, 'Какво ново')
+
+    def test_recent_mark_only_within_recent_days(self):
+        from datetime import date, timedelta
+        from STORA.core.whats_new import RECENT_DAYS, WHATS_NEW, whats_new_for_display
+        newest = WHATS_NEW[0]['date']
+        marked = whats_new_for_display(newest + timedelta(days=RECENT_DAYS + 1))
+        self.assertFalse(marked[0]['is_recent'])
+        self.assertTrue(whats_new_for_display(newest)[0]['is_recent'])
+
+    def test_tiles_follow_permissions(self):
+        # A cashier (the default role) gets the till tile but not New Delivery /
+        # Revision -- checked on the tiles themselves, the top menu has its own links.
+        response = self.client.get(reverse('index'), HTTP_ACCEPT_LANGUAGE='en')
+        tile = '<a href="{}" class="home-tile">'
+        self.assertContains(response, tile.format(reverse('sale_add')))
+        self.assertContains(response, tile.format(reverse('reports_dashboard')))
+        self.assertNotContains(response, tile.format(reverse('delivery_add')))
+        self.assertNotContains(response, tile.format(reverse('revision_home')))

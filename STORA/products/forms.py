@@ -114,7 +114,7 @@ class ProductForms(forms.ModelForm):
         # given database, this just quietly does nothing instead of
         # crashing the form.
         if not self.instance.pk:
-            default_tax_group = TaxGroup.objects.filter(name='Б').first()
+            default_tax_group = TaxGroup.default()
             if default_tax_group:
                 self.fields['tax_group'].initial = default_tax_group.pk
 

@@ -4,10 +4,10 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.postgres.search import TrigramSimilarity
-from django.db import transaction
+from django.db import DataError, IntegrityError, transaction
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render, redirect, get_object_or_404
-from django.urls import reverse_lazy
+from django.urls import reverse, reverse_lazy
 from django.views import View
 from django.views.generic import ListView, DetailView, CreateView, UpdateView, DeleteView
 from django.views.decorators.http import require_POST
@@ -17,24 +17,20 @@ import json
 import logging
 
 from STORA.core.mixins import StaffPermissionRequiredMixin
-from STORA.core.session_service import (
-    clear_cashier_operation_state,
-    extract_formset_state,
-    get_cashier_operation_state,
-    set_cashier_operation_state,
-)
+from STORA.core.session_service import NEW_PRODUCT_STATE_FIELDS, extract_formset_state
 from STORA.core.utils import (
     build_cashier_operation_state,
     build_restore_formset_data,
     get_cashier_operation_type,
     multi_token_icontains_q,
 )
+from STORA.deliveries import tab_state
 from STORA.deliveries.excel_import import build_template_workbook, parse_delivery_import
 from STORA.deliveries.forms import (
     DeliveryForms, DeliveryItemFormSet, DocumentTypeForm, WriteOffForm, ScrapForm, ScrapReasonForm,
 )
 from STORA.deliveries.models import DeliveryAttributes, DeliveryItems, DocumentType, ScrapReason
-from STORA.products.models import Barcode, Product, ProductSupplier, Suppliers
+from STORA.products.models import Barcode, Product, ProductAttribute, ProductSupplier, Suppliers, TaxGroup
 from STORA.products.views import get_free_internal_codes
 
 logger = logging.getLogger(__name__)
@@ -47,8 +43,12 @@ def _items_initial_from_rows(rows):
     resolves `delivery_item` against the already-loaded `products_data` for
     display (code/name/unit_type) -- this only needs to carry the bare
     model values."""
-    return [
-        {
+    items = []
+    for row in rows:
+        is_pending = row.get('new_product') == '1'
+        if not row.get('delivery_item') and not is_pending:
+            continue
+        item = {
             'id': row.get('id') or '',
             'delivery_item': row.get('delivery_item') or '',
             'delivery_quantity': row.get('delivery_quantity') or '',
@@ -58,9 +58,13 @@ def _items_initial_from_rows(rows):
             'source_item': row.get('source_item') or '',
             'scrap_reason': row.get('scrap_reason') or '',
         }
-        for row in rows
-        if row.get('delivery_item')
-    ]
+        if is_pending:
+            # An Excel-imported row that never became a real product (the
+            # Save failed, or the page was reloaded from the draft) -- the
+            # grid rebuilds it from these fields (pendingRowFromSaved).
+            item.update({name: row.get(name, '') for name in NEW_PRODUCT_STATE_FIELDS})
+        items.append(item)
+    return items
 
 
 def _items_initial_from_instance(delivery):
@@ -77,6 +81,103 @@ def _items_initial_from_instance(delivery):
         }
         for item in delivery.items.all()
     ])
+
+
+class PendingProductError(Exception):
+    """An Excel-imported "new product" row couldn't be turned into a real
+    Product at Save time -- the message is already translated and safe to
+    show the clerk as-is (see deliveries_add)."""
+
+
+_ITEM_SUFFIXES = (
+    'id', 'delivery_item', 'delivery_quantity', 'price_at_delivery',
+    'total_price_row', 'expiry_date', 'source_item', 'scrap_reason', 'DELETE',
+)
+
+
+def _rewrite_item_rows(post_data, total_forms, kept_rows):
+    """Replaces every items-<i>-* key in `post_data` with `kept_rows`
+    (dicts of _ITEM_SUFFIXES values), re-indexed from 0, and fixes
+    TOTAL_FORMS. Every old key is cleared first so a dropped row's stale
+    keys can't linger under an index that now belongs to a different row."""
+    for index in range(total_forms):
+        prefix = f'items-{index}-'
+        for key in list(post_data.keys()):
+            if key.startswith(prefix):
+                del post_data[key]
+    for new_index, row in enumerate(kept_rows):
+        prefix = f'items-{new_index}-'
+        for suffix, value in row.items():
+            post_data[prefix + suffix] = value
+    post_data['items-TOTAL_FORMS'] = str(len(kept_rows))
+    return post_data
+
+
+def _without_pending_rows(post_data):
+    """A copy of `post_data` with every Excel-imported "new product" row
+    removed -- for the error redisplay, where those rows were rolled back
+    and never got a real delivery_item id: binding them to the formset would
+    just print a meaningless "delivery_item: This field is required" for
+    each one, on top of the real problem."""
+    post_data = post_data.copy()
+    try:
+        total_forms = int(post_data.get('items-TOTAL_FORMS', 0))
+    except ValueError:
+        return post_data
+    kept_rows = [
+        {suffix: post_data.get(f'items-{index}-{suffix}', '') for suffix in _ITEM_SUFFIXES}
+        for index in range(total_forms)
+        if post_data.get(f'items-{index}-new_product') != '1'
+    ]
+    return _rewrite_item_rows(post_data, total_forms, kept_rows)
+
+
+def _formset_for_redisplay(data, initial=None, quiet=False):
+    """The items formset to render alongside the grid. Pending Excel rows are
+    stripped from `data` first (see _without_pending_rows); if that leaves
+    NOTHING (every row was pending), the formset is left unbound instead --
+    a bound empty one would print "You must add at least one delivery item"
+    for a grid that visibly has rows. `quiet=True` (restoring a saved draft
+    on a plain page load, not re-showing a failed submit) does the same for
+    a draft with no rows at all: nothing was submitted, so no validation
+    message belongs on screen."""
+    stripped = _without_pending_rows(data)
+    had_pending = any(
+        data.get(f'items-{i}-new_product') == '1'
+        for i in range(int(data.get('items-TOTAL_FORMS', 0) or 0))
+    )
+    if stripped.get('items-TOTAL_FORMS') == '0' and (had_pending or quiet):
+        return DeliveryItemFormSet(prefix='items')
+    return DeliveryItemFormSet(stripped, prefix='items', initial=initial)
+
+
+def _clean_pending_attributes(raw_json, attributes_by_id):
+    """`new_product_attributes` hidden field (a JSON object, attribute id ->
+    value, built from the Excel import -- see excel_import) -> the dict to
+    store on Product.attributes. It arrives through a plain POST, so it's
+    re-checked here rather than trusted: ids that aren't a real
+    ProductAttribute, blank/non-string values, and values outside a
+    choices-restricted attribute's list are all dropped, same rules as
+    ProductForms' own attribute fields. A malformed blob just yields {} --
+    attributes are optional, never a reason to fail the whole delivery."""
+    if not raw_json:
+        return {}
+    try:
+        data = json.loads(raw_json)
+    except ValueError:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    cleaned = {}
+    for attribute_id, value in data.items():
+        attribute = attributes_by_id.get(str(attribute_id))
+        if attribute is None or not isinstance(value, str):
+            continue
+        value = value.strip()
+        if not value or (attribute.choices and value not in attribute.choices):
+            continue
+        cleaned[str(attribute.pk)] = value
+    return cleaned
 
 
 def _materialize_pending_products(post_data):
@@ -125,12 +226,12 @@ def _materialize_pending_products(post_data):
     except ValueError:
         return post_data
 
-    item_suffixes = (
-        'id', 'delivery_item', 'delivery_quantity', 'price_at_delivery',
-        'total_price_row', 'expiry_date', 'source_item', 'scrap_reason', 'DELETE',
-    )
+    item_suffixes = _ITEM_SUFFIXES
     next_code_counter = None
     kept_rows = []
+    attributes_by_id = {str(a.pk): a for a in ProductAttribute.objects.all()}
+    tax_groups_by_id = {str(g.pk): g for g in TaxGroup.objects.all()}
+    default_tax_group = TaxGroup.default()
 
     for index in range(total_forms):
         prefix = f'items-{index}-'
@@ -174,27 +275,44 @@ def _materialize_pending_products(post_data):
         if unit_type not in (Product.PIECE, Product.WEIGHT):
             unit_type = Product.PIECE
 
-        product = Product.objects.create(
-            internal_code=code,
-            name=name,
-            unit_type=unit_type,
-            delivery_price=delivery_price if delivery_price > 0 else None,
-            sell_price=sell_price,
-            category_id=category_id,
-        )
+        try:
+            product = Product.objects.create(
+                internal_code=code,
+                name=name,
+                unit_type=unit_type,
+                delivery_price=delivery_price if delivery_price > 0 else None,
+                sell_price=sell_price,
+                category_id=category_id,
+                # Posted id re-checked (comes from a plain POST); anything
+                # blank/unknown falls back to the shop's default group,
+                # same as a new product on the product form.
+                tax_group=tax_groups_by_id.get(post_data.get(prefix + 'new_product_tax_group') or '') or default_tax_group,
+                attributes=_clean_pending_attributes(post_data.get(prefix + 'new_product_attributes'), attributes_by_id),
+            )
 
-        for position, barcode_code in enumerate(
-            [b for b in (
-                post_data.get(prefix + 'new_product_barcode_1'),
-                post_data.get(prefix + 'new_product_barcode_2'),
-                post_data.get(prefix + 'new_product_barcode_3'),
-            ) if b],
-            start=1,
-        ):
-            Barcode.objects.create(product=product, code=barcode_code, position=position)
+            for position, barcode_code in enumerate(
+                [b for b in (
+                    post_data.get(prefix + 'new_product_barcode_1'),
+                    post_data.get(prefix + 'new_product_barcode_2'),
+                    post_data.get(prefix + 'new_product_barcode_3'),
+                ) if b],
+                start=1,
+            ):
+                Barcode.objects.create(product=product, code=barcode_code, position=position)
 
-        if supplier_id:
-            ProductSupplier.objects.get_or_create(product=product, supplier_id=supplier_id, defaults={'position': 1})
+            if supplier_id:
+                ProductSupplier.objects.get_or_create(product=product, supplier_id=supplier_id, defaults={'position': 1})
+        except (IntegrityError, DataError):
+            # Name/code/barcode are UNIQUE (or too long for the column) --
+            # most often two rows of the SAME file sharing a name or
+            # barcode, or a name that already exists in the catalog. The
+            # whole delivery is rolled back by the caller; say exactly
+            # WHICH product tripped it instead of a generic failure.
+            raise PendingProductError(_(
+                'Could not create the new product "%(name)s" -- its name, code or barcode is probably '
+                'already used by another product, or by another row of this delivery. Nothing was '
+                'saved: remove or fix that row and try again.'
+            ) % {'name': name})
 
         raw_qty = post_data.get(prefix + 'delivery_quantity') or '0'
         try:
@@ -209,23 +327,7 @@ def _materialize_pending_products(post_data):
         # else: product-only row -- created above, nothing added to
         # kept_rows, so it never reaches the formset at all.
 
-    # Every items-<i>-* key gets rewritten from kept_rows below, at
-    # whatever new (possibly different) index it lands on -- clear the
-    # old ones first so a dropped row's stale keys can't linger under an
-    # index that now belongs to a different, kept row.
-    for index in range(total_forms):
-        prefix = f'items-{index}-'
-        for key in list(post_data.keys()):
-            if key.startswith(prefix):
-                del post_data[key]
-
-    for new_index, row in enumerate(kept_rows):
-        prefix = f'items-{new_index}-'
-        for suffix, value in row.items():
-            post_data[prefix + suffix] = value
-
-    post_data[total_forms_key] = str(len(kept_rows))
-    return post_data
+    return _rewrite_item_rows(post_data, total_forms, kept_rows)
 
 
 @login_required
@@ -246,7 +348,16 @@ def deliveries_add(request, movement_type=DeliveryAttributes.MOVEMENT_DELIVERY):
 
     formset_prefix = 'items'
     operation_type = get_cashier_operation_type(request.path)
-    state = get_cashier_operation_state(request)
+    # Which of the 3 parallel drafts (tab_state) this page belongs to. A
+    # POST names its tab explicitly (hidden `draft_tab`, rendered below) so
+    # a second browser window can't redirect the save to the wrong draft.
+    if request.method == "POST" and request.POST.get('draft_tab') in tab_state.TAB_IDS:
+        draft_tab = request.POST['draft_tab']
+    elif request.method == "POST":
+        draft_tab = tab_state.get_active_tab(request)
+    else:
+        draft_tab = tab_state.resolve_tab_for_page(request, operation_type)
+    state = tab_state.get_tab_draft(request, draft_tab)
     delivery_draft = None
     formset_initial = []
     delivery_items_initial = []
@@ -285,6 +396,11 @@ def deliveries_add(request, movement_type=DeliveryAttributes.MOVEMENT_DELIVERY):
                     formset.save()
                 else:
                     transaction.set_rollback(True)
+        except PendingProductError as exc:
+            # A specific, already-explained reason (see _materialize_pending_
+            # products) -- shown as-is instead of the generic message below.
+            messages.error(request, str(exc))
+            delivery = None
         except Exception:
             # Anything unexpected here (a DB error, a bug) must not behave
             # any differently from "the form was invalid" as far as the
@@ -307,7 +423,7 @@ def deliveries_add(request, movement_type=DeliveryAttributes.MOVEMENT_DELIVERY):
             delivery = None
 
         if delivery is not None:
-            clear_cashier_operation_state(request)
+            tab_state.clear_tab_draft(request, draft_tab)
             if movement_type != DeliveryAttributes.MOVEMENT_DELIVERY:
                 return redirect('delivery_details', pk=delivery.pk)
             # deliveries_list isn't in the nav menu anymore (superseded by
@@ -336,29 +452,32 @@ def deliveries_add(request, movement_type=DeliveryAttributes.MOVEMENT_DELIVERY):
             formset_data=extracted_state,
             active=True,
         )
-        set_cashier_operation_state(request, delivery_draft)
+        tab_state.set_tab_draft(request, draft_tab, delivery_draft)
 
         form = form_class(request.POST, current_user=request.user)
         formset_initial = extracted_state.get('forms', [])
-        formset = DeliveryItemFormSet(
-            request.POST,
-            prefix=formset_prefix,
-            initial=formset_initial,
-        )
+        formset = _formset_for_redisplay(request.POST, initial=formset_initial)
     else:
         if state and state.get('type') == operation_type and state.get('active'):
             form = form_class(initial=state.get('data', {}), current_user=request.user)
-            formset_initial = state.get('formset_data', {}).get('forms', []) or [{}]
+            # Only rows that actually hold something -- a header-only draft
+            # (autosaved when the supplier/number changed, grid still
+            # empty) used to be padded with one blank row here, which the
+            # bound formset then flagged as "delivery_item/quantity
+            # required" on a plain page load.
+            formset_initial = [
+                row for row in state.get('formset_data', {}).get('forms', [])
+                if row.get('delivery_item') or row.get('new_product') == '1'
+            ]
+            # Pending Excel rows live only in the grid (delivery_items_initial
+            # below), not in the bound formset (see _formset_for_redisplay).
             restore_post_data = build_restore_formset_data(formset_prefix, formset_initial)
             delivery_items_initial = _items_initial_from_rows(formset_initial)
             draft_supplier_id = state.get('data', {}).get('supplier') or None
             selected_supplier = Suppliers.objects.filter(pk=draft_supplier_id).first() if draft_supplier_id else None
             selected_supplier_name = selected_supplier.name if selected_supplier else ''
 
-            formset = DeliveryItemFormSet(
-                data=restore_post_data,
-                prefix=formset_prefix,
-            )
+            formset = _formset_for_redisplay(restore_post_data, quiet=True)
             delivery_draft = state
         else:
             form = form_class(current_user=request.user)
@@ -374,6 +493,8 @@ def deliveries_add(request, movement_type=DeliveryAttributes.MOVEMENT_DELIVERY):
         'delivery_formset_initial_count': len(formset_initial) if formset_initial else 0,
         'delivery_items_initial': delivery_items_initial,
         'selected_supplier_name': selected_supplier_name,
+        'delivery_tab': draft_tab,
+        'delivery_tabs_summary': tab_state.tabs_summary(request),
         'movement_type': movement_type,
         'is_write_off': is_write_off,
         'is_scrap': is_scrap,
@@ -414,16 +535,22 @@ def delivery_import_excel(request):
 
 
 @login_required
+@permission_required('deliveries.add_deliveryattributes', raise_exception=True)
 @require_POST
 def delivery_draft_save(request):
     payload = json.loads(request.body.decode('utf-8'))
     form_data = payload.get('form_data', {})
     formset_data = payload.get('formset_data', {})
-    # The same draft-save endpoint is shared by the delivery and write-off
-    # add screens -- the caller tells us which page it was on so the draft
-    # is tagged with the right operation_type, otherwise a write-off draft
-    # would get saved (and later resumed) as a delivery.
+    # The same draft-save endpoint is shared by the delivery, write-off and
+    # scrap add screens -- the caller tells us which page it was on so the
+    # draft is tagged with the right operation_type, otherwise a write-off
+    # draft would get saved (and later resumed) as a delivery.
     path = payload.get('path') or '/deliveries/add/'
+    # ...and which of the 3 parallel drafts it belongs to (falls back to
+    # the session's active tab for an older page that doesn't send one).
+    tab = payload.get('tab')
+    if tab not in tab_state.TAB_IDS:
+        tab = tab_state.get_active_tab(request)
 
     draft = build_cashier_operation_state(
         operation_type=get_cashier_operation_type(path) or 'delivery',
@@ -432,8 +559,48 @@ def delivery_draft_save(request):
         formset_data=formset_data,
         active=True,
     )
-    set_cashier_operation_state(request, draft)
+    tab_state.set_tab_draft(request, tab, draft)
     return JsonResponse({'status': 'ok'})
+
+
+@login_required
+@permission_required('deliveries.add_deliveryattributes', raise_exception=True)
+@require_POST
+def switch_delivery_tab(request):
+    """Switches which of the 3 parallel drafts is active and tells the JS
+    which page to load next: the target tab's own screen if it holds a
+    draft (a write-off draft must reopen on the write-off page), otherwise
+    the page the clerk is already on (an empty tab takes whatever kind of
+    operation they start there)."""
+    payload = json.loads(request.body.decode('utf-8'))
+    tab = payload.get('tab')
+    if tab not in tab_state.TAB_IDS:
+        return JsonResponse({'error': _('Invalid tab.')}, status=400)
+    draft = tab_state.get_tab_draft(request, tab)
+    if tab_state.draft_has_items(draft) and get_cashier_operation_type(draft.get('path', '')):
+        next_path = draft['path']
+    else:
+        current_path = payload.get('path') or ''
+        next_path = current_path if get_cashier_operation_type(current_path) else reverse('delivery_add')
+    tab_state.set_active_tab(request, tab)
+    return JsonResponse({'status': 'ok', 'path': next_path})
+
+
+@login_required
+@permission_required('deliveries.add_deliveryattributes', raise_exception=True)
+def cancel_delivery_tab(request):
+    """The add screens' "Cancel" -- discards just the draft on the tab the
+    page was rendered for (?tab=) and lands on a fresh screen of the same
+    kind, leaving the other two tabs untouched."""
+    tab = request.GET.get('tab')
+    if tab not in tab_state.TAB_IDS:
+        tab = tab_state.get_active_tab(request)
+    tab_state.clear_tab_draft(request, tab)
+    tab_state.set_active_tab(request, tab)
+    return redirect({
+        DeliveryAttributes.MOVEMENT_WRITE_OFF: 'writeoff_add',
+        DeliveryAttributes.MOVEMENT_SCRAP: 'scrap_add',
+    }.get(request.GET.get('type'), 'delivery_add'))
 
 
 class DeliveryDetailView(LoginRequiredMixin, StaffPermissionRequiredMixin, DetailView):

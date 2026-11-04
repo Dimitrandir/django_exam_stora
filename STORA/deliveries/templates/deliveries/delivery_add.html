@@ -14,6 +14,22 @@
 <section class="delivery-form{% if is_write_off or is_scrap %} delivery-form--writeoff{% endif %}">
     <header class="page-header">
         <h1>{% if is_write_off %}{% translate "New Write-off" %}{% elif is_scrap %}{% translate "New Scrap" %}{% else %}{% translate "New Delivery" %}{% endif %}</h1>
+        {% comment %}
+        3 parallel open operations -- park this one on its tab, start
+        another on a different tab, switch back any time. Each tab keeps its
+        own draft server-side (see STORA.deliveries.tab_state); a tab can
+        hold a delivery, a write-off or a scrap. A filled dot = the tab has
+        products in it.
+        {% endcomment %}
+        <div class="op-tabs" role="tablist" aria-label="{% translate 'Open operations' %}">
+            {% for tab in delivery_tabs_summary %}
+            <button type="button" role="tab" class="op-tab-btn{% if tab.is_active %} is-active{% endif %}{% if tab.has_items %} has-items{% endif %}"
+                    data-tab="{{ tab.tab }}" aria-selected="{% if tab.is_active %}true{% else %}false{% endif %}"
+                    title="{% if tab.type == 'delivery' %}{% translate 'Delivery in progress' %}{% elif tab.type == 'write_off' %}{% translate 'Write-off in progress' %}{% elif tab.type == 'scrap' %}{% translate 'Scrap in progress' %}{% else %}{% translate 'Empty' %}{% endif %}">
+                {{ tab.tab }}
+            </button>
+            {% endfor %}
+        </div>
     </header>
 
     <div id="draft-connectivity-banner" class="connectivity-warning-banner" style="display:none;">
@@ -44,6 +60,7 @@
 
     <form method="post" class="delivery-form__form">
         {% csrf_token %}
+        <input type="hidden" name="draft_tab" value="{{ delivery_tab }}">
 
         <section class="delivery-form__general">
             <header class="section-header">
@@ -118,7 +135,7 @@
 
         <footer class="page-actions">
             <button type="submit" class="button-save">{% if is_write_off %}{% translate "Complete Write-off" %}{% elif is_scrap %}{% translate "Complete Scrap" %}{% else %}{% translate "Complete Delivery" %}{% endif %}</button>
-            <a href="{% url 'clear_cashier_operation' %}" class="button-cancel"
+            <a href="{% url 'cancel_delivery_tab' %}?tab={{ delivery_tab }}&type={{ movement_type }}" class="button-cancel"
                onclick="return confirm('{% translate "Cancel this delivery? Everything entered so far will be discarded." %}');">{% translate "Cancel" %}</a>
         </footer>
     </form>
@@ -255,6 +272,7 @@
                     },
                     body: JSON.stringify({
                         path: window.location.pathname,
+                        tab: "{{ delivery_tab }}",
                         form_data: {
                             receiver: "{{ user.pk }}",
                             supplier: document.getElementById('id_supplier') ? document.getElementById('id_supplier').value : '',
@@ -280,9 +298,36 @@
         document.getElementById('delivery-items-table').addEventListener('click', function () {
             setTimeout(saveDraft, 0);
         });
-        document.querySelector('.delivery-form__form').addEventListener('change', function (e) {
-            if (e.target.closest('#delivery-items-table')) setTimeout(saveDraft, 0);
+        // Any field of the form, not just the grid -- supplier / document
+        // number / comment used to be saved only as a side effect of the
+        // next grid click.
+        document.querySelector('.delivery-form__form').addEventListener('change', function () {
+            setTimeout(saveDraft, 0);
         });
+
+        // -- Open-operation tabs: save this one's latest state first (the
+        // header fields might have changed since the last autosave), then
+        // let the server say which page the target tab lives on. --
+        var skipLeaveWarning = false;
+        document.querySelectorAll('.op-tab-btn').forEach(function (btn) {
+            btn.addEventListener('click', async function () {
+                if (btn.classList.contains('is-active')) return;
+                await saveDraft();
+                const response = await fetch("{% url 'switch_delivery_tab' %}", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                    },
+                    body: JSON.stringify({tab: btn.dataset.tab, path: window.location.pathname})
+                });
+                if (!response.ok) return;
+                const result = await response.json();
+                skipLeaveWarning = true;
+                window.location.href = result.path;
+            });
+        });
+
 
         // Blocks Save/Complete while the autosave is known to be failing --
         // submitting now risks the exact same "looks saved, isn't" trap the
@@ -294,6 +339,26 @@
             if (!draftSaveHealthy) {
                 e.preventDefault();
                 alert('{% translate "Connection trouble -- wait for the warning banner to disappear before saving, so nothing gets lost." %}');
+            }
+        });
+        // -- Warn before closing/leaving the page with products still in the
+        // grid (a closed browser tab used to silently lose a delivery).
+        // Not shown when leaving on purpose: Complete, Cancel (has its own
+        // confirm) or switching tabs. The text itself is the browser's. --
+        // Registered AFTER the other submit/click handlers on purpose, so
+        // e.defaultPrevented already says whether they blocked it (the
+        // connection-trouble guard above, or a declined Cancel confirm).
+        document.querySelector('.delivery-form__form').addEventListener('submit', function (e) {
+            if (!e.defaultPrevented) skipLeaveWarning = true;
+        });
+        document.querySelector('.button-cancel').addEventListener('click', function (e) {
+            if (!e.defaultPrevented) skipLeaveWarning = true;
+        });
+        window.addEventListener('beforeunload', function (e) {
+            if (skipLeaveWarning || !window.getDeliveryItemsDraftState) return;
+            if (window.getDeliveryItemsDraftState().forms.length > 0) {
+                e.preventDefault();
+                e.returnValue = '';
             }
         });
     </script>

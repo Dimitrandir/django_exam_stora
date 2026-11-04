@@ -91,6 +91,16 @@ main {
 /* Opt-out of the centered "card" look for pages that want to use the full
    browser width -- e.g. data tables, where the card's max-width just wastes
    space on the sides. Set via {% block main_class %}main-wide{% endblock %}. */
+/* A centered <main> is a flex item of <body> (flex column, margin auto),
+   so with no width of its own it shrinks to its content. On a page with a
+   Tabulator table that loops: the table sizes its columns from <main>'s
+   width, and <main>'s width comes from the table -- seen live on Refund a
+   Sale: the table ended up wider than the card, the last column cut off.
+   A fixed width (still capped by max-width above) breaks the loop. */
+main:has(.data-table-card) {
+    width: 100%;
+}
+
 main.main-wide {
     max-width: none;
     width: 100%;
@@ -201,6 +211,19 @@ body.report-table-focus .container-fluid {
 body.report-table-focus .page-header,
 body.report-table-focus .report-page__filter-bar,
 body.report-table-focus .form-errors {
+    display: none;
+}
+
+/* Deliveries/Write-off/Scrap's own "General Information" section (receiver,
+   supplier, document type/number/date) sits above the items grid, same
+   layering problem as the period/filter bar above -- asked for live
+   specifically for this screen's Full Screen mode ("без метаданните за
+   документа отгоре"). .delivery-form__general only exists on this one
+   template family, so scoping it under the shared .report-table-focus
+   class here doesn't touch any other report page already using that same
+   toggle. The grid's own small "Products" section-header stays, same
+   "one still-useful line of context" reasoning as the rule above. */
+body.report-table-focus .delivery-form__general {
     display: none;
 }
 
@@ -583,6 +606,33 @@ input[type="text"], input[type="number"], input[type="email"], select, textarea 
 .is-selected-for-delete {
     outline: 2px solid #d39e00;
     outline-offset: -2px;
+}
+
+/* Deliveries grid: the row a scan just added or counted up glows for a
+   moment (flashRow in _delivery_items_table.html) -- the grid scrolls on
+   its own now, so this is what tells the clerk which row changed.
+   Animated on the CELLS, not the row: the vendor theme sets the row's
+   background with !important, which an animation can't override. */
+@keyframes delivery-row-scanned {
+    from { background-color: #bfeeda; }
+    to { background-color: transparent; }
+}
+
+.tabulator-row.is-just-scanned .tabulator-cell {
+    animation: delivery-row-scanned 1.2s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .tabulator-row.is-just-scanned .tabulator-cell {
+        animation: none;
+        background-color: #dff6ec;
+    }
+}
+
+/* Bounded height (calc(100vh - 230px), set by Tabulator) -- but never so
+   short on a small screen that only a couple of rows fit. */
+#delivery-items-table {
+    min-height: 320px;
 }
 
 /* Django's {{ form.errors }} output on its own is just plain unstyled
@@ -1587,7 +1637,21 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
     justify-content: space-between;
 }
 
+/* POS "Shortcuts" title -- the global h2 size took too much of the narrow
+   panel, especially the longer Bulgarian "Бързи бутони" (asked for live).
+   Same small section-title size as the report/product form headers. */
+.sale-form__categories .section-header h2 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--primary-color);
+}
+
 .category-edit-btn {
+    /* A touch higher than centered on the title -- centered, it sat too
+       close to the dashed shortcut bar right under it (asked for live). */
+    position: relative;
+    top: -4px;
     border: 1px solid #adb5bd;
     border-radius: 0.4rem;
     padding: 0.3rem 0.7rem;
@@ -1950,6 +2014,53 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
     content: "− ";
     color: var(--danger-color);
     font-weight: 700;
+}
+
+/* Open-operation tabs (1/2/3) on the delivery / write-off / scrap add
+   screens -- pill buttons next to the page title. Filled = that tab has
+   products in it, solid = the tab you're on. Color set explicitly because
+   of the global `button { color: white }` rule. */
+.delivery-form .page-header {
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    flex-wrap: wrap;
+}
+
+.op-tabs {
+    display: flex;
+    gap: 0.4rem;
+}
+
+.op-tab-btn {
+    min-width: 2.4rem;
+    padding: 0.3rem 0.8rem;
+    border: 1.5px solid var(--brand-blue-deep);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--brand-blue-deep);
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.op-tab-btn.has-items:not(.is-active) {
+    background: rgba(43, 111, 209, 0.12);
+}
+
+.op-tab-btn.has-items:not(.is-active)::after {
+    content: "";
+    display: inline-block;
+    width: 0.4rem;
+    height: 0.4rem;
+    margin-left: 0.35rem;
+    border-radius: 50%;
+    background: var(--brand-blue-deep);
+    vertical-align: middle;
+}
+
+.op-tab-btn.is-active {
+    background: var(--brand-blue-deep);
+    color: #ffffff;
 }
 
 .qty-negative {
@@ -3290,6 +3401,12 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
     mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 
+/* Funnel with a diagonal slash through it -- "remove the filters". */
+.icon-btn__glyph--filter-off {
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3 4h18l-7 8.5V19l-4 2v-8.5zM3.4 2l18.6 18.6-1.4 1.4L2 3.4z'/%3E%3C/svg%3E") center / contain no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3 4h18l-7 8.5V19l-4 2v-8.5zM3.4 2l18.6 18.6-1.4 1.4L2 3.4z'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
 .icon-btn__label {
     max-width: 0;
     opacity: 0;
@@ -3572,6 +3689,18 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
     max-width: 220px;
 }
 
+/* Positioning box for the ⌨ toggle (.sale-keyboard-toggle-btn is
+   position: absolute) -- without it the button flew off to the right edge
+   of the page. Padding keeps typed text clear of the icon. */
+.refund-search-q-wrapper {
+    position: relative;
+    display: inline-flex;
+}
+
+.refund-search-q-wrapper input[name="q"] {
+    padding-right: 2.2rem;
+}
+
 .refund-search-form input[name="date"] {
     max-width: 160px;
 }
@@ -3763,4 +3892,471 @@ body.pos-compact-nav.pos-nav-open nav.navbar {
     background-color: #fdecea;
     border: 1px solid var(--danger-color);
     color: #7a1f14;
+}
+
+/* Tabulator's built-in number editor (Products grid "Enable Edit": Sell/
+   Delivery Price, Markup %) is a real <input type="number">, which the
+   browser decorates with up/down spinner arrows on every such cell --
+   noise in a grid where people type the value (asked for live: "две
+   стрелки нагоре и надолу" on every cell, remove them). Only inside
+   Tabulator tables -- ordinary form inputs elsewhere keep theirs. The
+   custom numberEditors (Deliveries/Sales/Revision/...) are type="text"
+   already and never showed them. */
+.tabulator input[type="number"],
+.bulk-actions-bar input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+
+.tabulator input[type="number"]::-webkit-outer-spin-button,
+.tabulator input[type="number"]::-webkit-inner-spin-button,
+.bulk-actions-bar input[type="number"]::-webkit-outer-spin-button,
+.bulk-actions-bar input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+/* The Products bulk bar (category / price / attribute / "Load into")
+   should fit on ONE row at normal desktop widths (flagged live from a
+   screenshot: it wrapped onto two) -- slightly tighter gap between its
+   controls; it still wraps as a fallback on a genuinely narrow window. */
+.bulk-actions-bar {
+    gap: 0.4rem !important;
+}
+
+/* -- Home screen (templates/index.html): greeting, quick-access tiles, and
+   the "What's new" timeline. STYLES.md palette; the timeline is the one
+   bold element, the tiles stay quiet white surfaces. -- */
+.home {
+    max-width: 1040px;
+    margin: 0 auto;
+}
+
+.home-greeting {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.25rem 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+/* The global h1 carries 40px + a blue underline + padding, meant for page
+   titles -- too heavy for a greeting. */
+.home-greeting h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    margin: 0;
+    padding: 0;
+    border-bottom: none;
+    color: #1f2a37;
+}
+
+.home-greeting__date {
+    margin: 0;
+    color: #5b6675;
+    font-size: 1rem;
+}
+
+.home-actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2.5rem;
+}
+
+.home-tile {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    padding: 1.25rem 1.25rem 1.1rem;
+    background: #ffffff;
+    border-radius: 20px;
+    box-shadow: 0 1px 2px rgba(31, 42, 55, 0.06), 0 6px 18px rgba(43, 111, 209, 0.08);
+    color: #1f2a37;
+    text-decoration: none;
+    transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.home-tile:hover {
+    box-shadow: 0 2px 4px rgba(31, 42, 55, 0.08), 0 10px 26px rgba(43, 111, 209, 0.16);
+    transform: translateY(-1px);
+    color: #1f2a37;
+}
+
+.home-tile:focus-visible {
+    outline: 3px solid var(--brand-cyan-mid);
+    outline-offset: 2px;
+}
+
+.home-tile__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    margin-bottom: 0.4rem;
+    border-radius: 14px;
+    background: rgba(77, 217, 245, 0.18);
+    color: var(--brand-blue-deep);
+    font-size: 1.35rem;
+}
+
+.home-tile__label {
+    font-size: 1.1rem;
+    font-weight: 700;
+}
+
+.home-tile__hint {
+    font-size: 0.875rem;
+    font-weight: 400;
+    color: #5b6675;
+}
+
+.home-news {
+    max-width: 46rem;
+}
+
+.home-news h2 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #1f2a37;
+    margin: 0 0 1.25rem;
+}
+
+.news-timeline {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    position: relative;
+}
+
+/* The rail: one line down the left, behind every dot. */
+.news-timeline::before {
+    content: "";
+    position: absolute;
+    left: 7px;
+    top: 0.6rem;
+    bottom: 0.6rem;
+    width: 2px;
+    background: rgba(43, 111, 209, 0.2);
+    border-radius: 2px;
+}
+
+.news-entry {
+    position: relative;
+    padding: 0 0 1.5rem 2.25rem;
+}
+
+.news-entry:last-child {
+    padding-bottom: 0;
+}
+
+/* Dot on the rail: hollow for older entries, filled for recent ones. */
+.news-entry::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0.35rem;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #ffffff;
+    border: 2px solid rgba(43, 111, 209, 0.45);
+    box-sizing: border-box;
+}
+
+.news-entry.is-recent::before {
+    background: var(--brand-blue-deep);
+    border-color: var(--brand-blue-deep);
+    box-shadow: 0 0 0 4px rgba(77, 217, 245, 0.35);
+}
+
+.news-entry__head {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 0.4rem;
+}
+
+.news-entry__head time {
+    font-weight: 700;
+    color: #1f2a37;
+}
+
+.news-entry__badge {
+    padding: 0.1rem 0.6rem;
+    border-radius: 999px;
+    background: rgba(77, 217, 245, 0.25);
+    color: var(--brand-blue-deep);
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.news-entry__points {
+    margin: 0;
+    padding-left: 1.1rem;
+    color: #3d4754;
+    line-height: 1.55;
+}
+
+.news-entry__points li + li {
+    margin-top: 0.3rem;
+}
+
+/* Older entries step back so the recent ones lead. */
+.news-entry:not(.is-recent) .news-entry__head time,
+.news-entry:not(.is-recent) .news-entry__points {
+    color: #6b7582;
+}
+
+.news-entry.is-recent .news-entry__points {
+    padding: 0.75rem 1rem 0.75rem 2rem;
+    background: #ffffff;
+    border-radius: 16px;
+    box-shadow: 0 1px 2px rgba(31, 42, 55, 0.05);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .home-tile {
+        transition: none;
+    }
+    .home-tile:hover {
+        transform: none;
+    }
+}
+
+/* -- Fiscal reports screen (sales/fiscal_reports.html). Same language as
+   the home screen: white rounded cards, pill buttons; blue = a normal
+   action, red outline = can't be undone (Z report, cash out). Every button
+   sets its own color -- the global `button { color: white; padding }`
+   rule would leak in otherwise. -- */
+.fiscal-page {
+    max-width: 760px;
+    margin: 0 auto;
+}
+
+.fiscal-page__header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.fiscal-page__header h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    margin: 0 0 0.25rem;
+    padding: 0;
+    border-bottom: none;
+    color: #1f2a37;
+}
+
+.fiscal-page__intro {
+    margin: 0;
+    color: #5b6675;
+}
+
+.fiscal-card {
+    background: #ffffff;
+    border-radius: 20px;
+    box-shadow: 0 1px 2px rgba(31, 42, 55, 0.06), 0 6px 18px rgba(43, 111, 209, 0.08);
+    padding: 1.4rem 1.5rem;
+    margin-bottom: 1.25rem;
+}
+
+.fiscal-card h2 {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #1f2a37;
+    margin: 0 0 1rem;
+}
+
+.fiscal-card__hint {
+    margin: -0.5rem 0 1rem;
+    color: #5b6675;
+    font-size: 0.925rem;
+}
+
+.fiscal-action-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.4rem 0;
+}
+
+.fiscal-action-row .fiscal-btn {
+    min-width: 8.5rem;
+    justify-content: center;
+}
+
+.fiscal-action-row p {
+    margin: 0;
+    color: #3d4754;
+}
+
+.fiscal-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    border-radius: 999px;
+    padding: 0.6rem 1.25rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+    line-height: 1.2;
+    cursor: pointer;
+    text-decoration: none;
+    border: 1.5px solid transparent;
+    transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.fiscal-btn:focus-visible,
+.fiscal-chip:focus-visible {
+    outline: 3px solid var(--brand-cyan-mid);
+    outline-offset: 2px;
+}
+
+.fiscal-btn:disabled {
+    opacity: 0.55;
+    cursor: wait;
+}
+
+.fiscal-btn--primary {
+    background: var(--brand-blue-deep);
+    border-color: var(--brand-blue-deep);
+    color: #ffffff;
+}
+
+.fiscal-btn--primary:hover:not(:disabled) {
+    background: #2560b8;
+    color: #ffffff;
+    box-shadow: 0 4px 12px rgba(43, 111, 209, 0.3);
+}
+
+.fiscal-btn--danger {
+    background: #ffffff;
+    border-color: var(--danger-color);
+    color: #c0392b;
+}
+
+.fiscal-btn--danger:hover:not(:disabled) {
+    background: #fdecea;
+    color: #c0392b;
+}
+
+.fiscal-btn--quiet {
+    background: #ffffff;
+    border-color: rgba(43, 111, 209, 0.35);
+    color: var(--brand-blue-deep);
+}
+
+.fiscal-btn--quiet:hover {
+    background: var(--light-bg);
+    color: var(--brand-blue-deep);
+}
+
+.fiscal-fields {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.75rem 1rem;
+    margin-bottom: 1rem;
+}
+
+.fiscal-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    margin: 0;
+    flex: 0 1 11rem;
+}
+
+.fiscal-field--wide {
+    flex: 1 1 14rem;
+}
+
+.fiscal-field span {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #3d4754;
+}
+
+.fiscal-field input {
+    border: 1px solid #cfd6df;
+    border-radius: 12px;
+    padding: 0.55rem 0.8rem;
+    font-size: 1rem;
+    background: #ffffff;
+    color: #1f2a37;
+}
+
+.fiscal-field input:focus {
+    outline: none;
+    border-color: var(--brand-cyan-mid);
+    box-shadow: 0 0 0 3px rgba(77, 217, 245, 0.3);
+}
+
+.fiscal-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+.fiscal-presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.fiscal-chip {
+    border-radius: 999px;
+    padding: 0.35rem 0.9rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    background: rgba(77, 217, 245, 0.15);
+    border: 1px solid transparent;
+    color: var(--brand-blue-deep);
+    cursor: pointer;
+}
+
+.fiscal-chip:hover {
+    background: rgba(77, 217, 245, 0.28);
+}
+
+.fiscal-chip.is-active {
+    background: #ffffff;
+    border-color: var(--brand-blue-deep);
+}
+
+.fiscal-status {
+    margin: 1rem 0 0;
+    padding: 0.6rem 0.9rem;
+    border-radius: 12px;
+    font-weight: 600;
+    font-size: 0.95rem;
+}
+
+.fiscal-status.is-ok {
+    background: rgba(47, 174, 107, 0.12);
+    color: var(--brand-green-deep);
+}
+
+.fiscal-status.is-error {
+    background: #fdecea;
+    color: #b03a2e;
+}
+
+@media (max-width: 560px) {
+    .fiscal-action-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.4rem;
+    }
+}
+
+.fiscal-page > .fiscal-status {
+    margin: 0 0 1.25rem;
 }
