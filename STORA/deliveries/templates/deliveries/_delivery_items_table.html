@@ -178,8 +178,8 @@ uses, independent of whether this delivery gets submitted at all.
 <!-- No separate "Transaction Total" -- the Line Total column's own
      bottomCalc sum (with and without VAT) already shows it, right under
      the numbers it's adding up. -->
-<div id="delivery-items-table-card" class="data-table-card">
-    <div id="delivery-items-table" class="table-sm"></div>
+<div id="delivery-items-table-card" class="data-table-card tabulator-classic">
+    <div id="delivery-items-table" class="table-sm tabulator-classic"></div>
 </div>
 
 <div class="d-flex align-items-center gap-2 mt-2 flex-wrap">
@@ -569,6 +569,38 @@ document.addEventListener('DOMContentLoaded', function () {
     // silently marking the brand-new row for deletion. Nothing looks
     // wrong in the moment -- the editor still opens right after anyway --
     // so it only surfaces later, as rows that refuse to "unmark".
+    // The grid has its own scroll now (bounded height) -- if part of the
+    // grid is off the screen, scroll the page so the search box sits at the
+    // top, with the grid right under it: the clerk sees the row being
+    // worked on without the page jumping between the search box and the
+    // bottom of a long list.
+    function ensureGridOnScreen() {
+        var card = document.getElementById('delivery-items-table-card');
+        var rect = card.getBoundingClientRect();
+        if (rect.top < 0 || rect.bottom > window.innerHeight) {
+            window.scrollBy(0, searchInput.getBoundingClientRect().top - 8);
+        }
+    }
+
+    // Brief highlight on the row a scan just added or counted up -- a
+    // re-scanned product is usually somewhere in the middle, not last.
+    function flashRow(row) {
+        var el = row.getElement();
+        if (!el) return;
+        el.classList.remove('is-just-scanned');
+        void el.offsetWidth;  // restart the animation on a repeat scan
+        el.classList.add('is-just-scanned');
+        setTimeout(function () { el.classList.remove('is-just-scanned'); }, 1300);
+    }
+
+    // Scrolls the grid to `row` (only if it isn't already visible) -- with
+    // the grid's own scroll, a row outside the view isn't even drawn, so
+    // this has to finish before its Qty editor can open. Never rejects.
+    function revealRow(row) {
+        ensureGridOnScreen();
+        return table.scrollToRow(row, 'nearest', false).catch(function () {});
+    }
+
     function focusCellEditor(row, field, deferred) {
         function run() {
             var cell = row.getCell(field);
@@ -946,7 +978,19 @@ document.addEventListener('DOMContentLoaded', function () {
             formatter: scrapReasonFormatter,
         },
         {% endif %}
-    ], {placeholder: '{% translate "No products added to this delivery yet." %}'});
+    ], {
+        placeholder: '{% translate "No products added to this delivery yet." %}',
+        // Column width/visibility remembered per kind of movement -- a
+        // delivery, a write-off and a scrap have different columns (Import,
+        // Scrap Reason), so they don't share one saved layout.
+        persist: 'delivery-items-{{ movement_type|lower }}-v1',
+        // Bounded height with its own scroll (like the Products list),
+        // instead of growing with the page: the search box and the rows
+        // being scanned stay on screen together, the page no longer jumps
+        // down to a new row and back up to the search box. min-height in
+        // style.css keeps it usable on a short screen.
+        height: 'calc(100vh - 230px)',
+    });
 
     // -- Selecting lines to delete -- tap a row to toggle it in/out of the
     // selection (same pattern as the Sales cart, see CLAUDE.md "Триене на
@@ -1182,7 +1226,10 @@ document.addEventListener('DOMContentLoaded', function () {
             var newQty = (parseFloat(existing.getData().delivery_quantity) || 0) + 1;
             existing.update({delivery_quantity: newQty});
             recalcRow(existing, 'price_at_delivery');
-            focusCellEditor(existing, 'delivery_quantity');
+            revealRow(existing).then(function () {
+                flashRow(existing);
+                focusCellEditor(existing, 'delivery_quantity');
+            });
             return;
         }
         table.addRow(buildRow(product, {delivery_quantity: 1})).then(function (row) {
@@ -1190,7 +1237,10 @@ document.addEventListener('DOMContentLoaded', function () {
             // receiving clerk's requested quick-entry flow. Not deferred --
             // see focusCellEditor's own comment for why a brand-new row
             // doesn't need (and shouldn't have) that extra tick.
-            focusCellEditor(row, 'delivery_quantity', false);
+            return revealRow(row).then(function () {
+                flashRow(row);
+                focusCellEditor(row, 'delivery_quantity', false);
+            });
         });
     }
 

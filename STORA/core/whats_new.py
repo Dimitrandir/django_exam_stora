@@ -20,6 +20,10 @@ WHATS_NEW = [
     {
         'date': date(2026, 11, 4),
         'points': [
+            _('Deliveries, write-offs and scrap: the products table looks like the Products list, keeps its own '
+              'scroll, and remembers the columns you chose.'),
+            _('After a scan, the table scrolls to that product and it lights up for a moment.'),
+            _('The Full Screen button of a delivery works again.'),
             _('Fiscal reports: a new, clearer screen. The result of each report shows right under it, and the period '
               'report has quick buttons for this month, last month and this year.'),
             _('Deliveries, write-offs and scrap: scanning a barcode while a quantity box is open now adds 1 to that '

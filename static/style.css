@@ -598,6 +598,33 @@ input[type="text"], input[type="number"], input[type="email"], select, textarea 
     outline-offset: -2px;
 }
 
+/* Deliveries grid: the row a scan just added or counted up glows for a
+   moment (flashRow in _delivery_items_table.html) -- the grid scrolls on
+   its own now, so this is what tells the clerk which row changed.
+   Animated on the CELLS, not the row: the vendor theme sets the row's
+   background with !important, which an animation can't override. */
+@keyframes delivery-row-scanned {
+    from { background-color: #bfeeda; }
+    to { background-color: transparent; }
+}
+
+.tabulator-row.is-just-scanned .tabulator-cell {
+    animation: delivery-row-scanned 1.2s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .tabulator-row.is-just-scanned .tabulator-cell {
+        animation: none;
+        background-color: #dff6ec;
+    }
+}
+
+/* Bounded height (calc(100vh - 230px), set by Tabulator) -- but never so
+   short on a small screen that only a couple of rows fit. */
+#delivery-items-table {
+    min-height: 320px;
+}
+
 /* Django's {{ form.errors }} output on its own is just plain unstyled
    text -- easy to miss entirely at the top of a long form. Styled to read
    as an unmissable "something's wrong" banner, not blend into the page. */
