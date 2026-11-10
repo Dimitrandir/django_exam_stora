@@ -52,8 +52,10 @@ DEVICE_ERROR_HINTS = {
     # 76/78 are missing from the ECRCommApp guide's table; text from the
     # Perfect S 01 user manual (daisy.bg, 2025-06-28 edition).
     '76': 'the device needs information from the NRA (NAP) server -- call service',
-    '78': 'the device is waiting for a CHANGE from the NRA (NAP) server -- wait for it to apply automatically '
-          '(the modem must be online), then try again; if it persists, call service',
+    # 78: confirmed live 2026-11-10 -- leaving PC mode on the device and
+    # going back in cleared it at once.
+    '78': 'the device is waiting for a CHANGE from the NRA (NAP) server -- on the device, exit PC mode and go '
+          'back into PC mode, then try again; if it persists, call service',
     '82': 'no daily report in the last 24 hours -- run a Z report',
     '108': 'wrong operator password',
     '118': 'operation not allowed',
