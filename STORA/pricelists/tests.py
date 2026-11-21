@@ -386,3 +386,50 @@ class PriceListViewTests(TestCase):
         items = response.context['items_data']
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0]['new_price'], 2.7)
+
+
+class PriceListPreloadTests(TestCase):
+    """Products list "Load into... > Price list": ?preload=<ids> on the
+    create/edit page adds a PRODUCT row (no discount yet) per product."""
+
+    def setUp(self):
+        self.manager = User.objects.create_user(username='pl_manager_pre', password='pass12345', role=User.MANAGER)
+        self.product_a = Product.objects.create(
+            internal_code='PL000101', name='PL Preload A', sell_price=Decimal('2.00'), quantity=0,
+        )
+        self.product_b = Product.objects.create(
+            internal_code='PL000102', name='PL Preload B', sell_price=Decimal('3.00'), quantity=0,
+        )
+        self.client.force_login(self.manager)
+
+    def test_create_preloads_selected_products_without_a_discount(self):
+        response = self.client.get(
+            reverse('price_list_create') + f'?preload={self.product_a.pk},{self.product_b.pk},abc'
+        )
+        rows = response.context['existing_rules']
+        self.assertEqual([r['target_id'] for r in rows], [self.product_a.pk, self.product_b.pk])
+        self.assertTrue(all(r['scope_type'] == 'PRODUCT' and r['discount_percent'] is None for r in rows))
+        self.assertEqual(rows[0]['target_name'], 'PL000101 — PL Preload A')
+
+    def test_edit_keeps_saved_rules_and_skips_products_already_in_the_list(self):
+        start, end = _period()
+        price_list = PriceList.objects.create(name='Preload Edit', start_date=start, end_date=end,
+                                              created_by=self.manager)
+        PriceListRule.objects.create(price_list=price_list, scope_type='PRODUCT', product=self.product_a,
+                                     discount_percent=10)
+        response = self.client.get(
+            reverse('price_list_edit', args=[price_list.pk]) + f'?preload={self.product_a.pk},{self.product_b.pk}'
+        )
+        rows = response.context['existing_rules']
+        self.assertEqual([r['target_id'] for r in rows], [self.product_a.pk, self.product_b.pk])
+        self.assertEqual(rows[0]['discount_percent'], 10.0)
+        self.assertIsNone(rows[1]['discount_percent'])
+
+    def test_products_list_offers_only_open_price_lists(self):
+        start, end = _period()
+        PriceList.objects.create(name='Open List', start_date=start, end_date=end, created_by=self.manager)
+        past = timezone.localdate() - timedelta(days=30)
+        PriceList.objects.create(name='Old List', start_date=past, end_date=past, created_by=self.manager)
+        response = self.client.get(reverse('product_list'))
+        names = [pl.name for pl in response.context['open_price_lists']]
+        self.assertEqual(names, ['Open List'])

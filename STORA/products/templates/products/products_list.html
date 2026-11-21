@@ -67,7 +67,7 @@
     </button>
     {% endif %}
     {% endif %}
-    {% if perms.revisions.add_revisionattributes or perms.deliveries.add_deliveryattributes or perms.orders.add_orderattributes %}
+    {% if perms.revisions.add_revisionattributes or perms.deliveries.add_deliveryattributes or perms.orders.add_orderattributes or perms.pricelists.add_pricelist or perms.pricelists.change_pricelist %}
     {# One dropdown + a go button instead of five buttons in a row (asked for live -- the bar was too wide); the button, not the dropdown's own change event, does the navigation so arrowing through a closed <select> can't fling the clerk to another screen. #}
     <select id="bulk-load-select" class="pill-input" style="width: 125px;">
         <option value="">{% translate "Load into..." %}</option>
@@ -81,6 +81,16 @@
         {% endif %}
         {% if perms.orders.add_orderattributes %}
         <option value="{% url 'order_new' %}">{% translate "Order" %}</option>
+        {% endif %}
+        {% if perms.pricelists.add_pricelist or open_price_lists %}
+        <optgroup label="{% translate "Price list" %}">
+            {% if perms.pricelists.add_pricelist %}
+            <option value="{% url 'price_list_create' %}">{% translate "+ New price list" %}</option>
+            {% endif %}
+            {% for price_list in open_price_lists %}
+            <option value="{% url 'price_list_edit' price_list.pk %}">{{ price_list.name }}</option>
+            {% endfor %}
+        </optgroup>
         {% endif %}
     </select>
     <button type="button" id="bulk-load-apply-btn" class="icon-btn icon-btn--apply icon-btn--sm" disabled>
@@ -1033,7 +1043,7 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    // "Load into Revision/Delivery/Write-off/Scrap" -- hands the selected
+    // "Load into Revision/Delivery/Write-off/Scrap/Price list" -- hands the selected
     // products off to that screen via ?preload=<id1>,<id2>,... in the URL,
     // instead of the clerk having to re-search each one by hand there.
     // Each target screen reads this off window.location.search itself

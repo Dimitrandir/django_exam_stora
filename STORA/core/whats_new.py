@@ -18,6 +18,13 @@ RECENT_DAYS = 7
 
 WHATS_NEW = [
     {
+        'date': date(2026, 11, 21),
+        'points': [
+            _('Products: select products and add them to a new or an existing price list from the "Load into" '
+              'menu.'),
+        ],
+    },
+    {
         'date': date(2026, 11, 4),
         'points': [
             _('Tables: shorter price headers ("Del. price", "Sell price"); the hint under the delivery table is now '

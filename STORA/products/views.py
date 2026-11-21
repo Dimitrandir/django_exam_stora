@@ -36,6 +36,7 @@ from STORA.products.forms import (
     RecipeIngredientFormSet, ProductHistoryPeriodForm, TaxGroupForm, ProductAttributeForm,
 )
 from STORA.products.models import Product, Barcode, Category, Suppliers, TaxGroup, ProductAttribute
+from STORA.pricelists.models import PriceList
 from STORA.pricelists.services import resolve_prices
 from STORA.sales.models import SaleAttributes, SaleItems
 from STORA.sales.tasks import backfill_recipe_ingredient_stock
@@ -160,6 +161,13 @@ class ProductListView(LoginRequiredMixin, StaffPermissionRequiredMixin, ListView
         context['attribute_defs'] = [
             {'id': a.pk, 'name': a.name, 'choices': a.choices} for a in product_attributes
         ]
+        # "Load into... > Price list" (bulk bar) -- only lists that are
+        # still running or yet to start; adding products to an expired one
+        # would change nothing at the till.
+        if self.request.user.has_perm('pricelists.change_pricelist'):
+            context['open_price_lists'] = PriceList.objects.filter(
+                is_deleted=False, end_date__gte=timezone.localdate(),
+            ).order_by('name')
         return context
 
 

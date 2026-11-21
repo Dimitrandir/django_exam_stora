@@ -11,7 +11,7 @@ from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
-from django.utils.translation import gettext as _, pgettext_lazy
+from django.utils.translation import gettext as _, ngettext, pgettext_lazy
 from django.views.decorators.http import require_GET, require_POST
 from django.views.generic import ListView
 
@@ -107,6 +107,38 @@ def _resubmitted_rules_data(raw_json):
         return []
 
 
+def _with_preloaded_products(request, rows):
+    """Adds a PRODUCT row (no discount yet) for every product id in
+    ?preload=<id>,<id>,... -- the Products list's "Load into... > Price
+    list" bulk action. Products the list already has a product rule for
+    are skipped, unknown/garbage ids are ignored. Only on GET: a POST
+    already carries the whole grid in rules_json."""
+    raw = request.GET.get('preload', '')
+    ids = [int(part) for part in raw.split(',') if part.strip().isdigit()]
+    if not ids:
+        return rows
+    already = {str(r['target_id']) for r in rows if r['scope_type'] == PriceListRule.SCOPE_PRODUCT}
+    added = 0
+    for product in Product.objects.filter(pk__in=ids).order_by('internal_code'):
+        if str(product.pk) in already:
+            continue
+        added += 1
+        rows.append({
+            'scope_type': PriceListRule.SCOPE_PRODUCT,
+            'target_id': product.pk,
+            # Same "code — name" text the page's own product search adds.
+            'target_name': f'{product.internal_code} — {product.name}',
+            'discount_percent': None,
+            'fixed_price': None,
+        })
+    if added:
+        messages.info(request, ngettext(
+            '%(count)s product added. Set a discount or a fixed price for it, then Save.',
+            '%(count)s products added. Set a discount or a fixed price for each, then Save.',
+            added) % {'count': added})
+    return rows
+
+
 def _picker_context():
     return {
         'categories_data': list(Category.objects.values('id', 'name')),
@@ -150,7 +182,10 @@ def price_list_create(request):
         return render(request, 'pricelists/price_list_form.html', context)
 
     form = PriceListForm()
-    context = {'form': form, 'rules_error': None, 'existing_rules': [], **_picker_context()}
+    context = {
+        'form': form, 'rules_error': None,
+        'existing_rules': _with_preloaded_products(request, []), **_picker_context(),
+    }
     return render(request, 'pricelists/price_list_form.html', context)
 
 
@@ -193,7 +228,7 @@ def price_list_edit(request, pk):
     form = PriceListForm(instance=price_list)
     context = {
         'form': form, 'rules_error': None, 'price_list': price_list,
-        'existing_rules': _rules_data(price_list), **_picker_context(),
+        'existing_rules': _with_preloaded_products(request, _rules_data(price_list)), **_picker_context(),
     }
     return render(request, 'pricelists/price_list_form.html', context)
 
