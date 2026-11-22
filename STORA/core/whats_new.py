@@ -18,6 +18,13 @@ RECENT_DAYS = 7
 
 WHATS_NEW = [
     {
+        'date': date(2026, 11, 22),
+        'points': [
+            _('Excel import of a delivery: the delivery and sell prices in the file are now used for products that '
+              'already exist too, instead of the old prices.'),
+        ],
+    },
+    {
         'date': date(2026, 11, 21),
         'points': [
             _('Products: select products and add them to a new or an existing price list from the "Load into" '

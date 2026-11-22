@@ -1404,13 +1404,28 @@ document.addEventListener('DOMContentLoaded', function () {
                             var existing = table.getRows().find(function (r) {
                                 return String(r.getData().delivery_item) === String(product.id);
                             });
+                            // The file's own prices win over the catalog
+                            // ones (an empty cell keeps the catalog price),
+                            // same as typing them into the row by hand.
+                            var filePrices = {};
+                            if (imported.delivery_price != null) filePrices.price_at_delivery = imported.delivery_price;
+                            if (imported.sell_price != null) filePrices.sell_price = imported.sell_price;
+                            var row;
                             if (existing) {
-                                existing.update({
+                                existing.update(Object.assign({
                                     delivery_quantity: Number(existing.getData().delivery_quantity) + Number(imported.quantity),
-                                });
+                                }, filePrices));
                                 recalcRow(existing, 'price_at_delivery');
+                                row = Promise.resolve(existing);
                             } else {
-                                table.addRow(buildRow(product, {delivery_quantity: imported.quantity}));
+                                row = table.addRow(buildRow(product, Object.assign({delivery_quantity: imported.quantity}, filePrices)));
+                            }
+                            // A new sell price is saved to the product right
+                            // away -- persistSellPrice, the same path a
+                            // hand-typed Sell Price takes.
+                            var previousSellPrice = parseFloat(product.sell_price) || 0;
+                            if (imported.sell_price != null && round2(imported.sell_price) !== round2(previousSellPrice)) {
+                                row.then(function (r) { persistSellPrice(r, previousSellPrice); });
                             }
                         } else {
                             table.addRow(buildNewProductRow(imported));

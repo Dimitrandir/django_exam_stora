@@ -1227,6 +1227,22 @@ class ExcelImportParsingTests(TestCase):
         self.assertFalse(row['is_new'])
         self.assertEqual(row['product_id'], self.product.pk)
         self.assertEqual(row['quantity'], 3.0)
+        # Empty price cells -> None, the grid keeps the catalog prices.
+        self.assertIsNone(row['delivery_price'])
+        self.assertIsNone(row['sell_price'])
+
+    def test_code_match_carries_the_file_prices(self):
+        # Regression (2026-11-22): new prices in the file for an existing
+        # product were dropped and the old catalog prices used instead.
+        buf = _build_import_xlsx([('EXIST01', self.product.name, '', 3, '', '', '1.35', '2.60', '', '', '', '')])
+        result = parse_delivery_import(buf)
+        row = result['rows'][0]
+        self.assertFalse(row['is_new'])
+        self.assertEqual(row['delivery_price'], 1.35)
+        self.assertEqual(row['sell_price'], 2.6)
+        # Parsing alone never edits the catalog.
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.sell_price, Decimal('2.00'))
 
     def test_barcode_match_with_zero_quantity_is_skipped(self):
         buf = _build_import_xlsx([('', 'Whatever Name', '', 0, '', '', '', '', '', '9990001112223', '', '')])

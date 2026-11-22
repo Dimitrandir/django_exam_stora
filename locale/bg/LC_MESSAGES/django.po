@@ -5,7 +5,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: STORA\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-21 18:57+0000\n"
+"POT-Creation-Date: 2026-11-22 15:19+0000\n"
 "PO-Revision-Date: 2026-10-02 00:00+0000\n"
 "Language-Team: Bulgarian\n"
 "Language: bg\n"
@@ -255,13 +255,21 @@ msgstr "Регистрация"
 
 #: STORA/core/whats_new.py:23
 msgid ""
+"Excel import of a delivery: the delivery and sell prices in the file are now "
+"used for products that already exist too, instead of the old prices."
+msgstr ""
+"Импорт на доставка от Excel: доставната и продажната цена от файла вече се "
+"взимат и за съществуващи продукти, вместо старите цени."
+
+#: STORA/core/whats_new.py:30
+msgid ""
 "Products: select products and add them to a new or an existing price list "
 "from the \"Load into\" menu."
 msgstr ""
 "Продукти: маркирай продукти и ги добави в нова или съществуваща ценова листа "
 "от менюто „Зареди в...“."
 
-#: STORA/core/whats_new.py:30
+#: STORA/core/whats_new.py:37
 msgid ""
 "Tables: shorter price headers (\"Del. price\", \"Sell price\"); the hint "
 "under the delivery table is now behind a \"?\" button."
@@ -269,7 +277,7 @@ msgstr ""
 "Таблиците: по-кратки заглавия на цените („Дост. цена“, „Прод. цена“); "
 "пояснението под таблицата на доставката вече е зад бутон „?“."
 
-#: STORA/core/whats_new.py:32
+#: STORA/core/whats_new.py:39
 msgid ""
 "Deliveries, write-offs and scrap: the products table looks like the Products "
 "list, keeps its own scroll, and remembers the columns you chose."
@@ -277,17 +285,17 @@ msgstr ""
 "Доставки, изписване и брак: таблицата с продуктите изглежда като списъка "
 "„Продукти“, превърта се отделно и помни избраните колони."
 
-#: STORA/core/whats_new.py:34
+#: STORA/core/whats_new.py:41
 msgid ""
 "After a scan, the table scrolls to that product and it lights up for a "
 "moment."
 msgstr "След сканиране таблицата отива на този продукт и той светва за момент."
 
-#: STORA/core/whats_new.py:35
+#: STORA/core/whats_new.py:42
 msgid "The Full Screen button of a delivery works again."
 msgstr "Бутонът „Цял екран“ в доставката отново работи."
 
-#: STORA/core/whats_new.py:36
+#: STORA/core/whats_new.py:43
 msgid ""
 "Refund a Sale: the keyboard button sits inside the search box again, and the "
 "table fits the page."
@@ -295,7 +303,7 @@ msgstr ""
 "Сторниране на продажба: бутонът за клавиатура отново е в полето за търсене, а"
 " таблицата се събира в страницата."
 
-#: STORA/core/whats_new.py:37
+#: STORA/core/whats_new.py:44
 msgid ""
 "Fiscal reports: a new, clearer screen. The result of each report shows right "
 "under it, and the period report has quick buttons for this month, last month "
@@ -305,7 +313,7 @@ msgstr ""
 "точно под него, а отчетът за период има бързи бутони за този месец, миналия "
 "месец и тази година."
 
-#: STORA/core/whats_new.py:39
+#: STORA/core/whats_new.py:46
 msgid ""
 "Deliveries, write-offs and scrap: scanning a barcode while a quantity box is "
 "open now adds 1 to that product, instead of typing the barcode in as the "
@@ -315,7 +323,7 @@ msgstr ""
 "е отворено, вече добавя 1 бройка към продукта, вместо да записва баркода като"
 " количество."
 
-#: STORA/core/whats_new.py:41
+#: STORA/core/whats_new.py:48
 msgid ""
 "After you scan a new product, the cursor waits in its quantity box, so you "
 "can type the count straight away."
@@ -323,14 +331,14 @@ msgstr ""
 "След сканиране на нов продукт курсорът остава в полето за количество и можете"
 " веднага да напишете бройката."
 
-#: STORA/core/whats_new.py:43
+#: STORA/core/whats_new.py:50
 msgid ""
 "Enter on the last box of a row takes you back to the search box for the next "
 "product."
 msgstr ""
 "Enter на последното поле в реда ви връща в търсачката за следващия продукт."
 
-#: STORA/core/whats_new.py:44
+#: STORA/core/whats_new.py:51
 msgid ""
 "The hidden character some barcode scanners send before every code no longer "
 "breaks the scan."
@@ -338,14 +346,14 @@ msgstr ""
 "Скритият символ, който някои баркод четци пращат пред всеки код, вече не "
 "обърква сканирането."
 
-#: STORA/core/whats_new.py:50
+#: STORA/core/whats_new.py:57
 msgid ""
 "The database is backed up to OneDrive automatically every hour, whenever "
 "something has changed."
 msgstr ""
 "Базата се архивира автоматично в OneDrive на всеки час, когато има промени."
 
-#: STORA/core/whats_new.py:56
+#: STORA/core/whats_new.py:63
 msgid ""
 "New \"All refunds\" list, showing whether the fiscal receipt of each refund "
 "was printed."
@@ -353,7 +361,7 @@ msgstr ""
 "Нов списък „Всички сторна“, който показва дали фискалният бон на всяко сторно"
 " е отпечатан."
 
-#: STORA/core/whats_new.py:57
+#: STORA/core/whats_new.py:64
 msgid ""
 "A refund whose fiscal receipt did not print now says why, and has a button to"
 " print it."
@@ -361,7 +369,7 @@ msgstr ""
 "Сторно, чийто фискален бон не е излязъл, вече показва причината и има бутон "
 "за отпечатване."
 
-#: STORA/core/whats_new.py:58
+#: STORA/core/whats_new.py:65
 msgid ""
 "X report now sends the fiscal device its own \"report without reset\" "
 "command."
@@ -369,7 +377,7 @@ msgstr ""
 "X отчетът вече праща към фискалния апарат неговата собствена команда „отчет "
 "без нулиране“."
 
-#: STORA/core/whats_new.py:64
+#: STORA/core/whats_new.py:71
 msgid ""
 "Deliveries, write-offs and scrap: up to 3 open at the same time. Switch "
 "between them with the 1/2/3 buttons next to the title."
@@ -377,14 +385,14 @@ msgstr ""
 "Доставка, изписване и брак: до 3 отворени едновременно. Превключвате между "
 "тях с бутоните 1/2/3 до заглавието."
 
-#: STORA/core/whats_new.py:66
+#: STORA/core/whats_new.py:73
 msgid ""
 "Closing a delivery or a sale that still has products in it now asks first."
 msgstr ""
 "Затваряне на доставка или продажба, в която има продукти, вече пита за "
 "потвърждение."
 
-#: STORA/core/whats_new.py:67
+#: STORA/core/whats_new.py:74
 msgid ""
 "Products added from an Excel import stay in the delivery after a failed save "
 "or a page reload."
@@ -392,7 +400,7 @@ msgstr ""
 "Продуктите от импорт от Excel остават в доставката след неуспешен запис или "
 "презареждане на страницата."
 
-#: STORA/core/whats_new.py:73
+#: STORA/core/whats_new.py:80
 msgid ""
 "Products: a \"Clear filters\" button, so a filter on a hidden column cannot "
 "hide products unnoticed."
@@ -400,14 +408,14 @@ msgstr ""
 "Продукти: бутон „Изчисти филтрите“, за да не може филтър на скрита колона "
 "незабелязано да крие продукти."
 
-#: STORA/core/whats_new.py:74
+#: STORA/core/whats_new.py:81
 msgid ""
 "Excel import: new VAT group column. Left empty, the product gets group Б."
 msgstr ""
 "Импорт от Excel: нова колона „ДДС група“. Ако е празна, продуктът получава "
 "група Б."
 
-#: STORA/core/whats_new.py:80
+#: STORA/core/whats_new.py:87
 msgid ""
 "Products: set an attribute (color, size...) for many selected products at "
 "once."
@@ -415,7 +423,7 @@ msgstr ""
 "Продукти: задаване на атрибут (цвят, размер...) на много избрани продукти "
 "наведнъж."
 
-#: STORA/core/whats_new.py:81
+#: STORA/core/whats_new.py:88
 msgid ""
 "Products: the actions for selected products fit on one row, and \"Load into\""
 " is a single menu."
@@ -423,7 +431,7 @@ msgstr ""
 "Продукти: действията за избраните продукти се събират на един ред, а „Зареди "
 "в“ е едно меню."
 
-#: STORA/core/whats_new.py:82
+#: STORA/core/whats_new.py:89
 msgid ""
 "Excel import: two new products with the same name or barcode in one file no "
 "longer stop the whole delivery."
@@ -431,7 +439,7 @@ msgstr ""
 "Импорт от Excel: два нови продукта с еднакво име или баркод в един файл вече "
 "не спират цялата доставка."
 
-#: STORA/core/whats_new.py:89
+#: STORA/core/whats_new.py:96
 msgid ""
 "Product attributes can be filled in from the Excel import and edited directly"
 " in the Products list."
@@ -439,26 +447,26 @@ msgstr ""
 "Атрибутите на продуктите могат да се попълват от импорта от Excel и да се "
 "редактират направо в списъка с продукти."
 
-#: STORA/deliveries/excel_import.py:305
+#: STORA/deliveries/excel_import.py:310
 msgid "Could not read this file -- is it a real .xlsx?"
 msgstr "Файлът не може да бъде прочетен -- истински .xlsx ли е?"
 
-#: STORA/deliveries/excel_import.py:322
+#: STORA/deliveries/excel_import.py:327
 msgid "The file has no data rows."
 msgstr "Файлът няма редове с данни."
 
-#: STORA/deliveries/excel_import.py:354
+#: STORA/deliveries/excel_import.py:359
 #, python-format
 msgid "Row %(row)s: name is required, row skipped."
 msgstr "Ред %(row)s: името е задължително, редът е пропуснат."
 
-#: STORA/deliveries/excel_import.py:373
+#: STORA/deliveries/excel_import.py:378
 #, python-format
 msgid "Row %(row)s: \"%(name)s\" already exists, skipped (quantity was 0)."
 msgstr ""
 "Ред %(row)s: „%(name)s“ вече съществува, пропуснат (количеството беше 0)."
 
-#: STORA/deliveries/excel_import.py:387
+#: STORA/deliveries/excel_import.py:395
 #, python-format
 msgid ""
 "Row %(row)s: \"%(name)s\" has the same name as row %(first)s -- product names"
@@ -469,7 +477,7 @@ msgstr ""
 "продуктите трябва да са уникални, затова този ред е пропуснат. Дай му "
 "различно име във файла и го импортирай отново."
 
-#: STORA/deliveries/excel_import.py:394
+#: STORA/deliveries/excel_import.py:402
 #, python-format
 msgid ""
 "Row %(row)s: barcode %(barcode)s is already used by row %(first)s, row "
@@ -478,7 +486,7 @@ msgstr ""
 "Ред %(row)s: баркод %(barcode)s вече се ползва от ред %(first)s, редът е "
 "пропуснат."
 
-#: STORA/deliveries/excel_import.py:435
+#: STORA/deliveries/excel_import.py:443
 #, python-format
 msgid ""
 "Row %(row)s: \"%(value)s\" is not an allowed value for \"%(attribute)s\", "
@@ -487,7 +495,7 @@ msgstr ""
 "Ред %(row)s: \"%(value)s\" не е позволена стойност за \"%(attribute)s\", "
 "оставено празно."
 
-#: STORA/deliveries/excel_import.py:445
+#: STORA/deliveries/excel_import.py:453
 #, python-format
 msgid ""
 "Row %(row)s: VAT group \"%(value)s\" was not found, the default group was "
@@ -684,7 +692,7 @@ msgid "Delivery Item"
 msgstr "Артикул от доставка"
 
 #: STORA/deliveries/models.py:160
-#: STORA/deliveries/templates/deliveries/_delivery_items_table.html:1838
+#: STORA/deliveries/templates/deliveries/_delivery_items_table.html:1853
 #: STORA/deliveries/templates/deliveries/delivery_details.html:49
 #: STORA/deliveries/templates/deliveries/delivery_details.html:141
 msgid "Delivery Items"
@@ -1065,25 +1073,25 @@ msgstr "Импортиране…"
 msgid "Import failed."
 msgstr "Импортът е неуспешен."
 
-#: STORA/deliveries/templates/deliveries/_delivery_items_table.html:1421
+#: STORA/deliveries/templates/deliveries/_delivery_items_table.html:1436
 msgid "row(s) loaded into the grid."
 msgstr "ред(а) заредени в таблицата."
 
-#: STORA/deliveries/templates/deliveries/_delivery_items_table.html:1422
+#: STORA/deliveries/templates/deliveries/_delivery_items_table.html:1437
 msgid "skipped (already exist):"
 msgstr "пропуснати (вече съществуват):"
 
-#: STORA/deliveries/templates/deliveries/_delivery_items_table.html:1424
+#: STORA/deliveries/templates/deliveries/_delivery_items_table.html:1439
 msgid "Nothing to import."
 msgstr "Няма нищо за импортиране."
 
-#: STORA/deliveries/templates/deliveries/_delivery_items_table.html:1432
+#: STORA/deliveries/templates/deliveries/_delivery_items_table.html:1447
 msgid "Import failed (network error)."
 msgstr "Импортът е неуспешен (мрежова грешка)."
 
-#: STORA/deliveries/templates/deliveries/_delivery_items_table.html:1470
-#: STORA/deliveries/templates/deliveries/_delivery_items_table.html:1646
-#: STORA/deliveries/templates/deliveries/_delivery_items_table.html:1790
+#: STORA/deliveries/templates/deliveries/_delivery_items_table.html:1485
+#: STORA/deliveries/templates/deliveries/_delivery_items_table.html:1661
+#: STORA/deliveries/templates/deliveries/_delivery_items_table.html:1805
 #: STORA/deliveries/templates/deliveries/delivery_add.html:184
 #: STORA/deliveries/templates/deliveries/delivery_edit.html:153
 #: STORA/products/templates/products/_recipe_formset.html:223
@@ -1095,11 +1103,11 @@ msgstr "Импортът е неуспешен (мрежова грешка)."
 msgid "No matches"
 msgstr "Няма съвпадения"
 
-#: STORA/deliveries/templates/deliveries/_delivery_items_table.html:1798
+#: STORA/deliveries/templates/deliveries/_delivery_items_table.html:1813
 msgid "exp."
 msgstr "годен до"
 
-#: STORA/deliveries/templates/deliveries/_delivery_items_table.html:1798
+#: STORA/deliveries/templates/deliveries/_delivery_items_table.html:1813
 msgid "qty"
 msgstr "к-во"
 

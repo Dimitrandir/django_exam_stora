@@ -44,8 +44,13 @@ from the moment the product is created, not fixed up later by hand.
 Matching rules (worked out with the shop owner before building this):
 - Code or any of the 3 barcodes matching an existing product means this row
   IS that product -- a positive quantity delivers more of it, a zero
-  quantity is a no-op (the product already exists, nothing to do), never a
-  price/category/etc. edit of the existing product (the file is for
+  quantity is a no-op (the product already exists, nothing to do). The
+  row's Delivery Price / Sell Price, when filled in, go onto the grid row
+  exactly as if typed there by hand (asked for live, 2026-11-22: a file
+  with new prices kept the old catalog ones and had to be retyped) -- so
+  the delivery price lands on the delivery line, and a new sell price is
+  saved to the product the same way a hand-typed one is. Name/category/
+  etc. of the existing product are never touched (the file is for
   receiving goods, not bulk-editing the catalog). Exact code/barcode
   matches never go through the fuzzy layers below at all.
 - Category/Subcategory/Main Supplier are matched by name via Postgres
@@ -378,6 +383,9 @@ def parse_delivery_import(file_obj):
                 'is_new': False,
                 'product_id': matched_product.pk,
                 'quantity': float(quantity),
+                # None = empty cell, the grid keeps the catalog price.
+                'delivery_price': float(delivery_price) if delivery_price is not None else None,
+                'sell_price': float(sell_price) if sell_price is not None else None,
             })
             continue
 
