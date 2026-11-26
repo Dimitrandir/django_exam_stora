@@ -18,6 +18,13 @@ RECENT_DAYS = 7
 
 WHATS_NEW = [
     {
+        'date': date(2026, 11, 26),
+        'points': [
+            _('Barcode scanners that end a code with Tab instead of Enter now work everywhere, even when the cursor '
+              'is not in the search box.'),
+        ],
+    },
+    {
         'date': date(2026, 11, 22),
         'points': [
             _('Excel import of a delivery: the delivery and sell prices in the file are now used for products that '
